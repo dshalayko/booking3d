@@ -63,6 +63,11 @@ dig +short printers.example.com
 
 ### Пользователь и SSH
 
+Если образ провайдера уже отдаёт непривилегированного пользователя с sudo и
+твоим ключом (на облачных образах Ubuntu это `ubuntu`) — своего создавать не
+надо, работай под ним, и дальше читай `/home/booking/booking` как
+`/home/<пользователь>/booking`. Иначе:
+
 ```bash
 adduser booking
 usermod -aG sudo booking
@@ -101,6 +106,19 @@ ufw его не разрешал. В нашем compose это учтено: н�
 Caddy (80/443 — они и так открыты), Postgres не публикует ничего, а приложение
 привязано к `127.0.0.1`. Если будешь добавлять сервисы — держи это в голове.
 
+### Swap
+
+Нужен, если у сервера меньше 2 ГБ RAM: `pip install` при сборке образа —
+самый тяжёлый момент за всё время жизни системы, и на 1 ГБ он падает по OOM,
+а без swap следом за ним может умереть и Postgres.
+
+```bash
+fallocate -l 2G /swapfile && chmod 600 /swapfile && mkswap /swapfile && swapon /swapfile
+echo '/swapfile none swap sw 0 0' >> /etc/fstab
+```
+
+Вторая строка нужна, чтобы swap вернулся после перезагрузки.
+
 ### Автообновления безопасности
 
 ```bash
@@ -122,8 +140,8 @@ usermod -aG docker booking
 ## 3. Файлы проекта
 
 ```bash
-cd /home/booking
-git clone <репозиторий> booking
+cd ~
+git clone https://github.com/dshalayko/booking3d.git booking
 cd booking
 ```
 
@@ -192,6 +210,8 @@ services:
   caddy:
     image: caddy:2-alpine
     restart: unless-stopped
+    environment:
+      SITE_DOMAIN: "${SITE_DOMAIN:?не задано в .env — SITE_DOMAIN}"
     ports:
       - "80:80"
       - "443:443"
@@ -219,7 +239,7 @@ volumes:
 ### `Caddyfile`
 
 ```
-printers.example.com {
+{$SITE_DOMAIN} {
     encode gzip
     reverse_proxy app:8000
 
@@ -236,6 +256,9 @@ printers.example.com {
 }
 ```
 
+Домен подставляется из `SITE_DOMAIN` в `.env`, сам файл править не нужно —
+иначе на сервере каждый `git pull` конфликтовал бы с локальной правкой.
+
 Сертификат Caddy получит и будет продлевать сам, ничего настраивать не нужно.
 
 ### `.env`
@@ -247,6 +270,7 @@ cp .env.example .env
 ```ini
 TZ=Europe/Nicosia
 PUBLIC_BASE_URL=https://printers.example.com
+SITE_DOMAIN=printers.example.com
 
 UI_LANG=ru
 PRINTER_NAMES="P2S #1,P2S #2"

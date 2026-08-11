@@ -39,6 +39,11 @@ services:
   caddy:
     image: caddy:2-alpine
     restart: unless-stopped
+    environment:
+      # Caddyfile читает его как {$SITE_DOMAIN}; без него Caddy поднялся бы с
+      # пустым именем сайта и молча не стал получать сертификат.
+      # кавычки обязательны: двоеточие в тексте ошибки иначе ломает YAML
+      SITE_DOMAIN: "${SITE_DOMAIN:?не задано в .env — SITE_DOMAIN}"
     ports:
       - "80:80"
       - "443:443"

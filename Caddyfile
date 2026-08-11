@@ -1,5 +1,6 @@
-# Замени домен на свой перед деплоем.
-printers.example.com {
+# Домен берётся из SITE_DOMAIN в .env — файл править не нужно, иначе на сервере
+# каждый `git pull` конфликтовал бы с локальной правкой.
+{$SITE_DOMAIN} {
     encode gzip
     reverse_proxy app:8000
 
