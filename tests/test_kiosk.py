@@ -3,7 +3,7 @@ from datetime import UTC, datetime
 import pytest
 
 from app.api.kiosk import duration_options
-from app.config import settings
+from app.config import Settings, settings
 from app.enums import PrinterStatus
 from app.models import Printer
 from app.services import auth
@@ -138,6 +138,14 @@ class TestOccupy:
 
         assert response.status_code == 403
 
+    async def test_kiosk_device_required_by_default(self):
+        """Тестовый режим не должен однажды уехать в прод незамеченным.
+
+        Проверяем дефолт в коде, а не `settings`: у того, кто прямо сейчас
+        гоняет открытый доступ у себя, набор не должен краснеть.
+        """
+        assert Settings.model_fields["kiosk_open_access"].default is False
+
     async def test_wrong_pin_shows_error_screen(self, client, printers, make_user):
         await make_user(pin="4242")
         await enroll(client)
@@ -187,6 +195,60 @@ class TestOccupy:
 
         assert response.status_code == 409
         assert "зарезервирован" in response.text.lower()
+
+
+class TestOpenAccess:
+    """`KIOSK_OPEN_ACCESS` — прогон цикла до того, как iPad повешен на стену."""
+
+    @pytest.fixture(autouse=True)
+    def open_access(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setattr(settings, "kiosk_open_access", True)
+
+    async def test_occupy_without_enrolled_device(self, client, db, printers, make_user):
+        printer_id = printers[0].id
+        await make_user(name="Пётр", pin="4242")
+
+        response = await client.post(
+            f"/occupy/{printer_id}", data={"pin": "4242", "minutes": "120"}
+        )
+
+        assert response.status_code == 303
+        db.expire_all()
+        assert (await db.get(Printer, printer_id)).status == PrinterStatus.PRINTING
+
+    async def test_queue_join_without_enrolled_device(self, client, db, printers, make_user):
+        user = await make_user(pin="4242")
+        await printers_svc.occupy(db, await make_user(), printers[0].id, 60)
+        await printers_svc.occupy(db, await make_user(), printers[1].id, 60)
+        await db.commit()
+
+        response = await client.post("/queue/join", data={"pin": "4242"})
+
+        assert response.status_code == 303
+        assert await queue_svc.position_of(db, user.id) == 1
+
+    async def test_keypad_is_shown_without_enrolled_device(self, client, printers):
+        response = await client.get(f"/occupy/{printers[0].id}")
+
+        assert "keypad" in response.text
+
+    async def test_wrong_pin_still_refused(self, client, printers, make_user):
+        """Открытый доступ снимает привязку к устройству, но не проверку PIN."""
+        await make_user(pin="4242")
+
+        response = await client.post(
+            f"/occupy/{printers[0].id}",
+            data={"pin": "0000", "minutes": "60"},
+            headers={"accept": "text/html"},
+        )
+
+        assert response.status_code == 401
+
+    async def test_admin_stays_closed(self, client):
+        """Режим про киоск: админку он не открывает."""
+        response = await client.get("/admin")
+
+        assert response.status_code == 403
 
 
 class TestReleaseAndQueue:

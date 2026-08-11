@@ -26,7 +26,7 @@ Db = Annotated[AsyncSession, Depends(get_db)]
 
 def require_kiosk_device(request: Request) -> None:
     """Правило 11: PIN вводится только на устройстве-киоске."""
-    if not auth.is_kiosk_device(request.cookies.get(auth.DEVICE_COOKIE)):
+    if not is_kiosk(request):
         raise HTTPException(status.HTTP_403_FORBIDDEN, t.ERR_KIOSK_ONLY)
 
 
@@ -36,6 +36,15 @@ def require_admin(request: Request) -> None:
 
 
 def is_kiosk(request: Request) -> bool:
+    """Может ли этот запрос вводить PIN.
+
+    Проверка здесь, а не в `auth.is_kiosk_device`: та отвечает на вопрос
+    «подписана ли эта cookie нашим секретом», и подмешивать в неё режим доступа
+    значило бы, что при `KIOSK_OPEN_ACCESS` подделанный токен считается
+    настоящим.
+    """
+    if settings.kiosk_open_access:
+        return True
     return auth.is_kiosk_device(request.cookies.get(auth.DEVICE_COOKIE))
 
 
