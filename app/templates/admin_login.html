@@ -1,0 +1,13 @@
+{% extends "base.html" %}
+{% block title %}{{ t.admin_login_title }}{% endblock %}
+
+{% block content %}
+<main class="sheet sheet-center">
+  <form class="confirm" method="post" action="/admin/login">
+    <h1>{{ t.admin_title }}</h1>
+    <p class="confirm-hint">{{ t.admin_login_hint }} <code>ADMIN_SECRET</code>.</p>
+    <input class="text-input" type="password" name="secret" autocomplete="off" autofocus>
+    <button class="btn btn-primary btn-wide" type="submit">{{ t.admin_login_submit }}</button>
+  </form>
+</main>
+{% endblock %}

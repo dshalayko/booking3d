@@ -1,0 +1,22 @@
+{% extends "base.html" %}
+{% set auto_return = true %}
+{% block title %}{{ title }}{% endblock %}
+
+{% block content %}
+<main class="sheet">
+  <header class="sheet-head">
+    <a class="btn btn-small btn-ghost" href="/">{{ t.cancel }}</a>
+    <h1>{{ title }}</h1>
+  </header>
+
+  <form class="sheet-body" method="post" action="{{ action }}" data-guard>
+    {% include "_keypad.html" %}
+
+    <div class="confirm">
+      <p class="confirm-subject">{{ subject }}</p>
+      <p class="confirm-hint">{{ hint }}</p>
+      <button class="btn btn-primary btn-wide" type="submit">{{ submit }}</button>
+    </div>
+  </form>
+</main>
+{% endblock %}

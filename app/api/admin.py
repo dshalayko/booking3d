@@ -1,0 +1,140 @@
+"""Админка.
+
+Снаружи недоступна: Caddy отдаёт на `/admin*` 404, заходить нужно через
+SSH-туннель (см. DEPLOY.md). Вход по `ADMIN_SECRET`, а не по 4-значному PIN —
+панель с правом снимать чужие печати не должна открываться перебором.
+
+Смысл раздела один: застрявшее состояние чинится отсюда, а не походом в psql.
+"""
+
+from datetime import UTC, datetime
+
+from fastapi import APIRouter, Depends, Form, HTTPException, Request, status
+from fastapi.responses import HTMLResponse, RedirectResponse, Response
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app import texts as t
+from app.api.deps import Db, require_admin
+from app.api.kiosk import templates
+from app.bot import notify, texts
+from app.enums import PrinterStatus
+from app.models import User
+from app.services import activity as activity_svc
+from app.services import auth
+from app.services import board as board_svc
+from app.services import printers as printers_svc
+from app.services import queue as queue_svc
+
+router = APIRouter(prefix="/admin")
+
+FLASH_MESSAGES = t.FLASH_ADMIN
+
+
+async def acting_admin(db: AsyncSession) -> User:
+    """От чьего имени пишутся действия админки.
+
+    `ADMIN_SECRET` — это право оператора, а не учётная запись, но доменные
+    функции требуют пользователя, чтобы записать «кто снял». Личности за
+    секретом нет, поэтому берём первого админа в базе.
+    """
+    admin = await db.scalar(select(User).where(User.is_admin.is_(True)).order_by(User.id))
+    if admin is None:
+        raise HTTPException(status.HTTP_409_CONFLICT, t.ERR_NO_ADMIN_IN_DB)
+    return admin
+
+
+@router.get("/login", response_class=HTMLResponse, include_in_schema=False)
+async def login_form(request: Request) -> Response:
+    return templates.TemplateResponse(request, "admin_login.html", {})
+
+
+@router.get("", response_class=HTMLResponse, dependencies=[Depends(require_admin)])
+async def dashboard(request: Request, db: Db, flash: str = "") -> Response:
+    board = await board_svc.build(db)
+    users = list((await db.scalars(select(User).order_by(User.name))).all())
+    return templates.TemplateResponse(
+        request,
+        "admin.html",
+        {
+            "board": board,
+            "users": users,
+            "events": await activity_svc.recent(db),
+            "flash": FLASH_MESSAGES.get(flash),
+            "PrinterStatus": PrinterStatus,
+        },
+    )
+
+
+@router.post("/printers/{printer_id}/break", dependencies=[Depends(require_admin)])
+async def break_printer(
+    request: Request, db: Db, printer_id: int, note: str = Form("")
+) -> Response:
+    admin = await acting_admin(db)
+    result = await printers_svc.set_broken(db, admin, printer_id, note=note.strip() or None)
+    await db.commit()
+
+    if result.owner_user_id is not None:
+        await notify.send_to_user(
+            db,
+            result.owner_user_id,
+            texts.print_cancelled_by_admin(result.printer_name, note.strip() or None),
+        )
+    return _back("broken")
+
+
+@router.post("/printers/{printer_id}/fix", dependencies=[Depends(require_admin)])
+async def fix_printer(request: Request, db: Db, printer_id: int) -> Response:
+    admin = await acting_admin(db)
+    result = await printers_svc.clear_broken(db, admin, printer_id)
+    await db.commit()
+    await notify.announce_offers(db, result.offers)
+    return _back("fixed")
+
+
+@router.post("/printers/{printer_id}/cancel", dependencies=[Depends(require_admin)])
+async def cancel_session(
+    request: Request, db: Db, printer_id: int, reason: str = Form("")
+) -> Response:
+    """Снять чужую печать. Причина обязательна: человек должен понять, за что."""
+    reason = reason.strip()
+    if not reason:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, t.ERR_REASON_REQUIRED)
+
+    admin = await acting_admin(db)
+    result = await printers_svc.release(db, admin, printer_id, reason=reason)
+    await db.commit()
+
+    if result.owner_user_id is not None and result.owner_user_id != admin.id:
+        await notify.send_to_user(
+            db, result.owner_user_id, texts.print_cancelled_by_admin(result.printer_name, reason)
+        )
+    await notify.announce_offers(db, result.offers)
+    return _back("cancelled")
+
+
+@router.post("/queue/{user_id}/remove", dependencies=[Depends(require_admin)])
+async def remove_from_queue(request: Request, db: Db, user_id: int) -> Response:
+    result = await queue_svc.leave(db, user_id, now=datetime.now(UTC))
+    await db.commit()
+    await notify.send_to_user(db, user_id, texts.removed_from_queue())
+    await notify.announce_offers(db, result.offers)
+    return _back("removed")
+
+
+@router.post("/users/{user_id}/pin", dependencies=[Depends(require_admin)])
+async def reset_pin(db: Db, user_id: int) -> Response:
+    """Сбросить PIN человеку, который его забыл и не может дойти до бота."""
+    user = await db.get(User, user_id)
+    if user is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, t.ERR_USER_NOT_FOUND)
+
+    pin = await auth.assign_pin(db, user)
+    await db.commit()
+    # PIN уходит только в Telegram: в редиректе он попал бы в логи и историю.
+    await notify.send_to_user(db, user_id, texts.pin_changed(pin))
+    return _back("pin_reset")
+
+
+def _back(flash: str) -> RedirectResponse:
+    return RedirectResponse(f"/admin?flash={flash}", status_code=status.HTTP_303_SEE_OTHER)

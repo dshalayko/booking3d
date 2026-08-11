@@ -1,0 +1,21 @@
+[project]
+name = "booking"
+version = "0.1.0"
+description = "Бронирование 3D-принтеров в коворкинге"
+requires-python = ">=3.12"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
+asyncio_mode = "auto"
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]
+
+[tool.ruff.lint.per-file-ignores]
+# Язык интерфейса фиксируется до импорта приложения — порядок здесь значимый.
+"tests/conftest.py" = ["E402"]

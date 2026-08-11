@@ -1,0 +1,22 @@
+# Dockerfile делает `COPY . .`, поэтому мусор из каталога иначе попадёт в образ
+# и будет ломать кеш слоёв при каждой сборке на сервере.
+.git
+.gitignore
+.dockerignore
+
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+
+.idea/
+.claude/
+.DS_Store
+*.log
+
+# секреты передаются через env_file, внутрь образа их запекать нельзя
+.env
+
+backups/

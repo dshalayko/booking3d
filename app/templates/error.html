@@ -1,0 +1,13 @@
+{% extends "base.html" %}
+{% set auto_return = true %}
+{% block title %}{{ t.error_title }}{% endblock %}
+
+{% block content %}
+<main class="sheet sheet-center">
+  <div class="error">
+    <p class="error-mark">!</p>
+    <p class="error-text">{{ message }}</p>
+    <a class="btn btn-primary btn-wide" href="/">{{ t.error_ok }}</a>
+  </div>
+</main>
+{% endblock %}

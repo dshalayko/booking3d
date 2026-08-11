@@ -1,0 +1,28 @@
+{% extends "base.html" %}
+{% set auto_return = true %}
+{% block title %}{{ t.occupy_title.format(printer=printer.name) }}{% endblock %}
+
+{% block content %}
+<main class="sheet">
+  <header class="sheet-head">
+    <a class="btn btn-small btn-ghost" href="/">{{ t.cancel }}</a>
+    <h1>{{ t.occupy_heading.format(printer=printer.name) }}</h1>
+  </header>
+
+  <form class="sheet-body" method="post" action="/occupy/{{ printer.id }}" data-guard>
+    {% include "_keypad.html" %}
+
+    <div class="durations">
+      <p class="durations-label">{{ t.occupy_duration_label }}</p>
+      <div class="durations-grid">
+        {% for option in durations %}
+          <button class="btn btn-duration" type="submit" name="minutes" value="{{ option.minutes }}">
+            {{ option.label }}
+          </button>
+        {% endfor %}
+      </div>
+      <p class="durations-hint">{{ t.occupy_hint }}</p>
+    </div>
+  </form>
+</main>
+{% endblock %}

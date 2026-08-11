@@ -1,0 +1,15 @@
+{% extends "base.html" %}
+{% block title %}{{ t.offline_title }}{% endblock %}
+
+{% block content %}
+<main class="sheet sheet-center">
+  <div class="error">
+    <p class="error-mark">…</p>
+    <p class="error-text">
+      {{ t.offline_line1 }}<br>
+      {{ t.offline_line2 }}
+    </p>
+    <a class="btn btn-primary btn-wide" href="/">{{ t.offline_retry }}</a>
+  </div>
+</main>
+{% endblock %}

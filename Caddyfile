@@ -1,0 +1,16 @@
+# Замени домен на свой перед деплоем.
+printers.example.com {
+    encode gzip
+    reverse_proxy app:8000
+
+    # админка недоступна из интернета — только через SSH-туннель на localhost:8000
+    @admin path /admin*
+    respond @admin 404
+
+    header {
+        Strict-Transport-Security "max-age=31536000"
+        X-Content-Type-Options "nosniff"
+        X-Frame-Options "DENY"
+        Referrer-Policy "same-origin"
+    }
+}

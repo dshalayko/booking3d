@@ -1,0 +1,16 @@
+.env
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+.idea/
+backups/
+*.log
+
+# macOS
+.DS_Store
+
+# локальные разрешения Claude Code — у каждого свои
+.claude/settings.local.json

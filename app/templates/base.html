@@ -1,0 +1,26 @@
+<!doctype html>
+{# Надписи берутся из app/texts.py: `t` и `t_js` — глобальные в Jinja. #}
+<html lang="{{ t.lang }}">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="{{ t.app_short_title }}">
+  <meta name="theme-color" content="#12141a">
+  <title>{% block title %}{{ t.app_title }}{% endblock %}</title>
+  <link rel="manifest" href="/static/manifest.webmanifest">
+  <link rel="stylesheet" href="/static/app.css">
+</head>
+{# Счётчики времени app.js дорисовывает сам, поэтому его строки едут в атрибуте.
+   Не инлайновым <script>: страница не должна содержать ни одного, иначе
+   отражённый XSS перестаёт быть заметен и глазами, и тестом. #}
+<body data-texts="{{ t_js | tojson | forceescape }}"
+      {%- if auto_return|default(false) %} data-autoreturn="60"{% endif %}>
+  <div id="offline-banner" class="banner banner-offline" hidden>
+    {{ t.offline_banner }}
+  </div>
+  {% block content %}{% endblock %}
+  <script src="/static/app.js"></script>
+</body>
+</html>

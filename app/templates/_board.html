@@ -1,0 +1,72 @@
+{# Живая часть главного экрана: сама перезапрашивается каждые 10 секунд. #}
+{% set free = printers | selectattr("is_free") | list %}
+
+<div class="hero">
+  {% if free %}
+    <a class="btn btn-hero" href="/occupy/{{ free[0].id }}">
+      {{ t.board_occupy_cta }}
+      <span class="btn-sub">{{ t.board_free_of.format(free=free | length, total=printers | length) }}</span>
+    </a>
+  {% else %}
+    <a class="btn btn-hero btn-hero-wait" href="/queue/join">
+      {{ t.board_queue_cta }}
+      <span class="btn-sub">{{ t.board_all_busy }}</span>
+    </a>
+  {% endif %}
+</div>
+
+<div class="tiles">
+  {% for printer in printers %}
+    <section class="tile tile-{{ printer.status }}{% if printer.reserved_for %} tile-reserved{% endif %}">
+      <h2 class="tile-name">{{ printer.name }}</h2>
+
+      {% if printer.status == "broken" %}
+        <p class="tile-status">{{ t.tile_broken }}</p>
+        {% if printer.note %}<p class="tile-note">{{ printer.note }}</p>{% endif %}
+
+      {% elif printer.status == "printing" %}
+        <p class="tile-status">{{ t.tile_printing }}</p>
+        <p class="tile-owner">{{ printer.owner_name }}</p>
+        <p class="tile-time" data-eta="{{ printer.eta_at | iso }}">
+          {{ t.tile_until.format(time=printer.eta_at | hhmm) }}
+        </p>
+        <a class="btn btn-ghost" href="/release/{{ printer.id }}">{{ t.tile_release }}</a>
+
+      {% elif printer.status == "done_wait" %}
+        <p class="tile-status">{{ t.tile_done_wait }}</p>
+        <p class="tile-owner">{{ printer.owner_name }}</p>
+        <p class="tile-time" data-since="{{ printer.done_since | iso }}">
+          {{ t.tile_done_at.format(time=printer.done_since | hhmm) }}
+        </p>
+        <a class="btn btn-primary" href="/release/{{ printer.id }}">{{ t.tile_claimed }}</a>
+
+      {% elif printer.reserved_for %}
+        <p class="tile-status">{{ t.tile_reserved }}</p>
+        <p class="tile-owner">{{ printer.reserved_for }}</p>
+        <p class="tile-time">{{ t.tile_until.format(time=printer.reserved_until | hhmm) }}</p>
+        <a class="btn btn-ghost" href="/occupy/{{ printer.id }}">{{ t.tile_its_me }}</a>
+
+      {% else %}
+        <p class="tile-status">{{ t.tile_free }}</p>
+        <a class="btn btn-primary" href="/occupy/{{ printer.id }}">{{ t.tile_occupy }}</a>
+      {% endif %}
+    </section>
+  {% endfor %}
+</div>
+
+<footer class="queue">
+  {% if queue %}
+    <ol class="queue-list">
+      {% for person in queue %}
+        <li class="{% if person.offered %}queue-offered{% endif %}">
+          <span class="queue-pos">{{ person.position }}</span>{{ person.name }}
+          {%- if person.offered %} <span class="queue-tag">{{ t.queue_offered }}</span>{% endif %}
+        </li>
+      {% endfor %}
+    </ol>
+    <a class="btn btn-small" href="/queue/leave">{{ t.queue_leave }}</a>
+  {% else %}
+    <p class="queue-empty">{{ t.queue_empty }}</p>
+    <a class="btn btn-small" href="/queue/join">{{ t.queue_join }}</a>
+  {% endif %}
+</footer>

@@ -1,0 +1,302 @@
+/* Экран висит на стене: статус должен читаться с трёх метров, а любая цель
+   нажиматься пальцем без прицеливания. Отсюда крупный шрифт и кнопки от 72px.
+   Внешних зависимостей нет намеренно — CDN отвалится ровно тогда, когда
+   отвалится интернет, а именно в этот момент экран и должен быть читаемым. */
+
+:root {
+  --bg: #12141a;
+  --card: #1c1f28;
+  --text: #f2f4f8;
+  --muted: #9aa3b2;
+  --free: #2ecc71;
+  --busy: #e74c3c;
+  --wait: #f1c40f;
+  --broken: #7f8c8d;
+  --accent: #3b82f6;
+  --radius: 18px;
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+  margin: 0;
+  height: 100%;
+  background: var(--bg);
+  color: var(--text);
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  -webkit-text-size-adjust: 100%;
+  -webkit-tap-highlight-color: transparent;
+}
+
+body {
+  display: flex;
+  flex-direction: column;
+  padding: 20px;
+  gap: 16px;
+  overflow: hidden;              /* главный экран не должен скроллиться */
+}
+
+/* --- баннеры --- */
+
+.banner {
+  padding: 14px 20px;
+  border-radius: var(--radius);
+  font-size: 22px;
+  font-weight: 600;
+  text-align: center;
+}
+.banner-ok { background: rgba(46, 204, 113, .15); color: var(--free); }
+.banner-offline { background: rgba(231, 76, 60, .15); color: var(--busy); }
+
+/* --- главный экран --- */
+
+#board {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  min-height: 0;
+}
+
+.hero { flex: 0 0 auto; }
+
+.tiles {
+  flex: 1;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+  gap: 16px;
+  min-height: 0;
+}
+
+.tile {
+  background: var(--card);
+  border-radius: var(--radius);
+  border-left: 12px solid var(--broken);
+  padding: 22px 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-height: 0;
+}
+.tile-free { border-left-color: var(--free); }
+.tile-printing { border-left-color: var(--busy); }
+.tile-done_wait { border-left-color: var(--wait); }
+.tile-broken { border-left-color: var(--broken); opacity: .65; }
+.tile-reserved { border-left-color: var(--accent); }
+
+.tile-name { margin: 0; font-size: 30px; font-weight: 700; }
+.tile-status { margin: 0; font-size: 40px; font-weight: 800; line-height: 1.1; }
+.tile-free .tile-status { color: var(--free); }
+.tile-printing .tile-status { color: var(--busy); }
+.tile-done_wait .tile-status { color: var(--wait); }
+.tile-reserved .tile-status { color: var(--accent); }
+.tile-owner { margin: 0; font-size: 26px; color: var(--text); }
+.tile-time { margin: 0; font-size: 24px; color: var(--muted); }
+.tile-note { margin: 0; font-size: 20px; color: var(--muted); }
+.tile .btn { margin-top: auto; }
+
+/* --- очередь --- */
+
+.queue {
+  flex: 0 0 auto;
+  background: var(--card);
+  border-radius: var(--radius);
+  padding: 14px 20px;
+  display: flex;
+  align-items: center;
+  gap: 20px;
+  flex-wrap: wrap;
+}
+.queue-list {
+  list-style: none;
+  display: flex;
+  gap: 18px;
+  margin: 0;
+  padding: 0;
+  flex: 1;
+  flex-wrap: wrap;
+  font-size: 22px;
+}
+.queue-list li { display: flex; align-items: center; gap: 8px; }
+.queue-pos {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px; height: 30px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, .1);
+  font-size: 17px;
+}
+.queue-offered { color: var(--accent); font-weight: 700; }
+.queue-tag { font-size: 16px; text-transform: uppercase; letter-spacing: .04em; }
+.queue-empty { margin: 0; flex: 1; font-size: 22px; color: var(--muted); }
+
+/* --- кнопки --- */
+
+.btn {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  min-height: 72px;
+  padding: 16px 28px;
+  border: none;
+  border-radius: var(--radius);
+  background: rgba(255, 255, 255, .08);
+  color: var(--text);
+  font: inherit;
+  font-size: 26px;
+  font-weight: 700;
+  text-decoration: none;
+  cursor: pointer;
+  text-align: center;
+}
+.btn:active { transform: scale(.98); }
+.btn-primary { background: var(--accent); }
+.btn-ghost { background: rgba(255, 255, 255, .06); color: var(--muted); }
+.btn-small { min-height: 52px; padding: 10px 18px; font-size: 19px; }
+.btn-wide { width: 100%; }
+.btn-hero {
+  width: 100%;
+  min-height: 108px;
+  background: var(--free);
+  color: #10231a;
+  font-size: 38px;
+}
+.btn-hero-wait { background: var(--accent); color: #fff; }
+.btn-sub { font-size: 20px; font-weight: 500; opacity: .8; }
+
+/* --- экраны действий --- */
+
+.sheet {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 22px;
+  min-height: 0;
+}
+.sheet-center { justify-content: center; align-items: center; }
+.sheet-head { display: flex; align-items: center; gap: 20px; }
+.sheet-head h1 { margin: 0; font-size: 32px; font-weight: 700; }
+.sheet-body {
+  flex: 1;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+  gap: 28px;
+  align-content: start;
+  min-height: 0;
+}
+
+
+/* --- клавиатура --- */
+
+.keypad { display: flex; flex-direction: column; gap: 12px; }
+.keypad-label { font-size: 22px; color: var(--muted); }
+.keypad-display {
+  font-size: 46px;
+  letter-spacing: 18px;
+  background: var(--card);
+  border-radius: var(--radius);
+  padding: 12px 20px;
+  text-align: center;
+  color: var(--muted);
+}
+.keypad-display[data-filled="1"] { color: var(--text); }
+.keypad-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
+.key {
+  min-height: 78px;
+  border: none;
+  border-radius: var(--radius);
+  background: var(--card);
+  color: var(--text);
+  font: inherit;
+  font-size: 32px;
+  font-weight: 700;
+  cursor: pointer;
+}
+.key:active { background: rgba(255, 255, 255, .16); }
+.keypad-hint { margin: 0; font-size: 18px; color: var(--muted); }
+
+/* --- длительности и подтверждение --- */
+
+.durations { display: flex; flex-direction: column; gap: 12px; }
+.durations-label, .confirm-subject { margin: 0; font-size: 24px; color: var(--muted); }
+.durations-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
+.btn-duration { min-height: 88px; font-size: 28px; background: var(--card); }
+.durations-hint, .confirm-hint { margin: 0; font-size: 19px; color: var(--muted); line-height: 1.4; }
+.confirm { display: flex; flex-direction: column; gap: 16px; justify-content: center; }
+
+.error { text-align: center; max-width: 560px; display: flex; flex-direction: column; gap: 20px; }
+.error-mark {
+  margin: 0 auto;
+  width: 92px; height: 92px;
+  border-radius: 50%;
+  background: rgba(241, 196, 15, .16);
+  color: var(--wait);
+  font-size: 52px;
+  font-weight: 800;
+  display: flex; align-items: center; justify-content: center;
+}
+.error-text { margin: 0; font-size: 28px; line-height: 1.35; }
+
+/* --- админка ---
+   Открывается с ноутбука через SSH-туннель, а не с планшета, поэтому здесь
+   плотнее и мельче: нужна информация, а не кнопки под палец. */
+
+.admin { flex: 1; overflow: auto; display: flex; flex-direction: column; gap: 20px; }
+.admin-head { display: flex; align-items: center; justify-content: space-between; }
+.admin-head h1 { margin: 0; font-size: 26px; }
+.admin-block { background: var(--card); border-radius: var(--radius); padding: 16px 20px; }
+.admin-block h2 { margin: 0 0 12px; font-size: 18px; color: var(--muted); font-weight: 600; }
+
+.admin-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 10px 0;
+  border-top: 1px solid rgba(255, 255, 255, .06);
+  flex-wrap: wrap;
+}
+.admin-row:first-of-type { border-top: none; }
+.admin-row-main { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; font-size: 17px; }
+.admin-dim { color: var(--muted); font-size: 15px; }
+.admin-actions { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+.admin-form { display: flex; gap: 8px; align-items: center; }
+
+.admin-status {
+  font-size: 13px;
+  text-transform: uppercase;
+  letter-spacing: .04em;
+  padding: 3px 10px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, .08);
+}
+.admin-status-free { color: var(--free); }
+.admin-status-printing { color: var(--busy); }
+.admin-status-done_wait { color: var(--wait); }
+.admin-status-broken { color: var(--muted); }
+
+.admin-log { margin: 0; padding-left: 20px; display: flex; flex-direction: column; gap: 6px; }
+.admin-log li { font-size: 16px; }
+
+.text-input {
+  background: rgba(255, 255, 255, .06);
+  border: 1px solid rgba(255, 255, 255, .12);
+  border-radius: 10px;
+  color: var(--text);
+  font: inherit;
+  font-size: 16px;
+  padding: 10px 14px;
+  min-width: 180px;
+}
+.text-input:focus { outline: 2px solid var(--accent); }
+
+/* Телефоны: те же экраны, одна колонка, скролл разрешён. */
+@media (max-width: 700px) {
+  body { overflow: auto; padding: 14px; }
+  .tile-status { font-size: 32px; }
+  .btn-hero { min-height: 88px; font-size: 30px; }
+  .sheet-body { grid-template-columns: 1fr; }
+}

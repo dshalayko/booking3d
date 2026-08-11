@@ -1,0 +1,15 @@
+{# Цифровая клавиатура: на киоске системная клавиатура iOS съедает пол-экрана. #}
+<div class="keypad" data-keypad>
+  <label class="keypad-label">{{ t.keypad_label }}</label>
+  <output class="keypad-display" data-keypad-display>····</output>
+  <input type="hidden" name="pin" data-keypad-value value="">
+  <div class="keypad-grid">
+    {% for digit in "123456789" %}
+      <button type="button" class="key" data-key="{{ digit }}">{{ digit }}</button>
+    {% endfor %}
+    <button type="button" class="key key-wide" data-key="clear">{{ t.keypad_clear }}</button>
+    <button type="button" class="key" data-key="0">0</button>
+    <button type="button" class="key" data-key="back">⌫</button>
+  </div>
+  <p class="keypad-hint">{{ t.keypad_hint }}</p>
+</div>
