@@ -150,6 +150,38 @@
     setTimeout(function () { node.remove(); }, parseInt(node.dataset.autohide, 10) * 1000);
   });
 
+  // --- не давать экрану гаснуть -------------------------------------------
+  // Погасший планшет — это неработающее табло: пока никто его не разбудил,
+  // статусов на стене нет. «Автоблокировка → Никогда» в настройках iPad от
+  // этого спасает не всегда: режим энергосбережения возвращает блокировку
+  // через 30 секунд, и настройку легко потерять при сбросе устройства.
+  // Wake Lock система снимает при каждом уходе страницы из видимости
+  // (блокировка, переключение вкладки), поэтому берём его заново
+  // по visibilitychange, а не один раз при загрузке.
+  // Нужен https — по http (и в Safari до 16.4) запрос просто не выполнится,
+  // и экран останется на настройках iPad.
+
+  var wakeLock = null;
+
+  function keepAwake() {
+    if (!navigator.wakeLock || document.visibilityState !== "visible") return;
+    if (wakeLock && !wakeLock.released) return;
+    navigator.wakeLock.request("screen")
+      .then(function (lock) {
+        wakeLock = lock;
+        lock.addEventListener("release", function () { wakeLock = null; });
+      })
+      .catch(function () {});
+  }
+
+  document.addEventListener("visibilitychange", keepAwake);
+  // Ещё и по первому касанию: если в момент загрузки запрос отклонили
+  // (страница открылась в фоне), жест — второй надёжный шанс.
+  ["click", "touchend"].forEach(function (name) {
+    document.addEventListener(name, keepAwake, { passive: true });
+  });
+  keepAwake();
+
   // --- офлайн-заглушка -----------------------------------------------------
 
   if ("serviceWorker" in navigator && location.protocol === "https:") {

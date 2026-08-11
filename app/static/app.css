@@ -16,7 +16,11 @@
   --radius: 18px;
 }
 
-* { box-sizing: border-box; }
+/* manipulation убирает у Safari двойной тап как жест зума: на стене в него
+   попадают случайно — второй тап по кнопке, и табло остаётся увеличенным, а
+   отмотать его обратно на киоске нечем. Пинч двумя пальцами при этом жив,
+   поэтому увеличить текст, если понадобилось, по-прежнему можно. */
+* { box-sizing: border-box; touch-action: manipulation; }
 
 html, body {
   margin: 0;
@@ -31,10 +35,26 @@ html, body {
 body {
   display: flex;
   flex-direction: column;
-  padding: 20px;
+  /* Страница занимает весь экран, включая полосу под часами (`viewport-fit=cover`
+     и `black-translucent` в base.html): системные часы рисуются поверх нашего
+     фона, а не на отдельной белой полосе. Спрятать их веб-страница не может, но
+     заезжать под них содержимым не должна — отсюда safe-area. `max` вместо
+     простого сложения: на устройствах без выреза insets нулевые, и отступ
+     остаётся ровно тот же, что и был. */
+  padding:
+    max(20px, env(safe-area-inset-top))
+    max(20px, env(safe-area-inset-right))
+    max(20px, env(safe-area-inset-bottom))
+    max(20px, env(safe-area-inset-left));
   gap: 16px;
   overflow: hidden;              /* главный экран не должен скроллиться */
+  /* Раз двойной тап больше не зумит, Safari отдаёт ему выделение слова —
+     на табло это синие пятна поверх статусов. В админке текст, наоборот,
+     копируют руками, поэтому там выделение возвращаем. */
+  -webkit-user-select: none;
+  user-select: none;
 }
+.admin, .text-input { -webkit-user-select: text; user-select: text; }
 
 /* --- баннеры --- */
 
@@ -295,7 +315,14 @@ body {
 
 /* Телефоны: те же экраны, одна колонка, скролл разрешён. */
 @media (max-width: 700px) {
-  body { overflow: auto; padding: 14px; }
+  body {
+    overflow: auto;
+    padding:
+      max(14px, env(safe-area-inset-top))
+      max(14px, env(safe-area-inset-right))
+      max(14px, env(safe-area-inset-bottom))
+      max(14px, env(safe-area-inset-left));
+  }
   .tile-status { font-size: 32px; }
   .btn-hero { min-height: 88px; font-size: 30px; }
   .sheet-body { grid-template-columns: 1fr; }
