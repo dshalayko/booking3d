@@ -25,6 +25,7 @@ from app.services import auth
 from app.services import board as board_svc
 from app.services import printers as printers_svc
 from app.services import queue as queue_svc
+from app.services import users as users_svc
 
 router = APIRouter(prefix="/admin")
 
@@ -120,6 +121,30 @@ async def remove_from_queue(request: Request, db: Db, user_id: int) -> Response:
     await notify.send_to_user(db, user_id, texts.removed_from_queue())
     await notify.announce_offers(db, result.offers)
     return _back("removed")
+
+
+@router.post("/users/{user_id}/name", dependencies=[Depends(require_admin)])
+async def rename_user(db: Db, user_id: int, name: str = Form("")) -> Response:
+    """Поправить логин, введённый при регистрации с опечаткой.
+
+    Прошлые записи в журнале тоже начнут показывать новый логин: журнал
+    собирается из таблиц по `users.name`, отдельных копий имени нигде нет. Для
+    исправления опечатки это ровно то, что нужно.
+    """
+    user = await db.get(User, user_id)
+    if user is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, t.ERR_USER_NOT_FOUND)
+
+    previous = await users_svc.rename(db, user, name)
+    if previous == user.name:
+        return _back("renamed")
+
+    new_name = user.name
+    await db.commit()
+    # Человек должен знать: под этим логином его видно на планшете, и в чужом
+    # переименовании ему проще заметить ошибку, чем админу.
+    await notify.send_to_user(db, user_id, texts.name_changed(previous, new_name))
+    return _back("renamed")
 
 
 @router.post("/users/{user_id}/pin", dependencies=[Depends(require_admin)])

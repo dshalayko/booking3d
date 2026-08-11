@@ -105,6 +105,12 @@ BOT_ALREADY_REGISTERED = (
 
 BOT_PIN_CHANGED = "Новый PIN: <b>{pin}</b>\nСтарый больше не работает."
 
+BOT_NAME_CHANGED = (
+    "Администратор поправил ваш логин: было <b>{previous}</b>, стало <b>{login}</b>.\n"
+    "Под ним вас видно на планшете у принтеров. PIN не менялся.\n"
+    "Если это ошибка — напишите администратору коворкинга."
+)
+
 BOT_NOT_REGISTERED = "Сначала напишите /start — я спрошу корпоративный логин и выдам PIN."
 
 
@@ -259,6 +265,8 @@ ERR_TOO_MANY_ATTEMPTS = "Слишком много попыток, подожд�
 ERR_NO_ADMIN_IN_DB = "В базе нет ни одного админа. Заведите: python -m app.cli make_admin <tg_id>"
 ERR_REASON_REQUIRED = "Укажите причину"
 ERR_USER_NOT_FOUND = "Человек не найден"
+ERR_LOGIN_FORMAT = "Логин — латиницей вида n_username, например d_shalayko"
+ERR_LOGIN_TAKEN = "Логин {login} уже занят другим человеком"
 
 
 # --- киоск: плашки после действия --------------------------------------------
@@ -276,6 +284,7 @@ FLASH_ADMIN = {
     "cancelled": "Печать снята",
     "removed": "Человек убран из очереди",
     "pin_reset": "Новый PIN отправлен в Telegram",
+    "renamed": "Логин изменён",
 }
 
 
@@ -414,6 +423,7 @@ UI = {
     "admin_people": "Люди ({count})",
     "admin_role": "админ",
     "admin_tg": "tg {chat_id}",
+    "admin_rename": "Переименовать",
     "admin_new_pin": "Новый PIN",
     "admin_events": "Последние события",
     "admin_no_events": "Пока ничего не происходило",

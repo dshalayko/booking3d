@@ -4,7 +4,7 @@ from sqlalchemy import select
 from app.bot import notify
 from app.config import settings
 from app.enums import PrinterStatus, QueueStatus, SessionStatus
-from app.models import Printer, PrintSession, QueueEntry
+from app.models import Printer, PrintSession, QueueEntry, User
 from app.services import activity as activity_svc
 from app.services import auth
 from app.services import printers as printers_svc
@@ -172,6 +172,92 @@ class TestQueueAndUsers:
         db.expire_all()
         assert (await db.get(QueueEntry, join.entry_id)).status == QueueStatus.LEFT
         assert [text for chat, text in outbox if chat == waiting_chat]
+
+    async def test_rename_fixes_a_typo_in_the_login(
+        self, client, db, printers, make_user, outbox
+    ):
+        await make_user(is_admin=True)
+        person = await make_user(name="d_shalyako")
+        person_id, person_chat = person.id, person.tg_chat_id
+        await db.commit()
+        await login(client)
+        outbox.clear()
+
+        response = await client.post(
+            f"/admin/users/{person_id}/name", data={"name": " D_Shalayko "}
+        )
+
+        assert response.status_code == 303
+        db.expire_all()
+        assert (await db.get(User, person_id)).name == "d_shalayko"
+        # Под логином человека видно на планшете, поэтому правку он получает в бот
+        assert [text for chat, text in outbox if chat == person_chat]
+
+    async def test_rename_keeps_the_pin_and_the_open_print(
+        self, client, db, printers, make_user, outbox
+    ):
+        await make_user(is_admin=True)
+        person = await make_user(name="d_shalyako", pin="4242")
+        person_id = person.id
+        occupied = await printers_svc.occupy(db, person, printers[0].id, 60)
+        await db.commit()
+        await login(client)
+
+        await client.post(f"/admin/users/{person_id}/name", data={"name": "d_shalayko"})
+
+        db.expire_all()
+        assert (await auth.user_by_pin(db, "4242")).id == person_id
+        session = await db.get(PrintSession, occupied.session_id)
+        assert session.user_id == person_id
+        assert session.status == SessionStatus.PRINTING
+
+    async def test_rename_rejects_a_login_someone_else_has(
+        self, client, db, printers, make_user, outbox
+    ):
+        await make_user(is_admin=True)
+        await make_user(name="d_shalayko")
+        person = await make_user(name="a_petrov")
+        person_id = person.id
+        await db.commit()
+        await login(client)
+        outbox.clear()
+
+        response = await client.post(
+            f"/admin/users/{person_id}/name", data={"name": "d_shalayko"}
+        )
+
+        assert response.status_code == 409
+        db.expire_all()
+        assert (await db.get(User, person_id)).name == "a_petrov"
+        assert not outbox
+
+    async def test_rename_rejects_what_is_not_a_login(
+        self, client, db, printers, make_user, outbox
+    ):
+        await make_user(is_admin=True)
+        person = await make_user(name="a_petrov")
+        person_id = person.id
+        await db.commit()
+        await login(client)
+        outbox.clear()
+
+        response = await client.post(f"/admin/users/{person_id}/name", data={"name": "Анна"})
+
+        assert response.status_code == 400
+        db.expire_all()
+        assert (await db.get(User, person_id)).name == "a_petrov"
+        assert not outbox
+
+    async def test_rename_is_closed_without_login(self, client, db, make_user):
+        person = await make_user(name="a_petrov")
+        person_id = person.id
+        await db.commit()
+
+        response = await client.post(f"/admin/users/{person_id}/name", data={"name": "b_ivanov"})
+
+        assert response.status_code == 403
+        db.expire_all()
+        assert (await db.get(User, person_id)).name == "a_petrov"
 
     async def test_reset_pin_sends_it_only_to_telegram(
         self, client, db, printers, make_user, outbox

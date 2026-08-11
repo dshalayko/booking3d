@@ -51,3 +51,11 @@ class TooManyAttempts(DomainError):
 
 class PinTaken(DomainError):
     """PIN уже занят другим человеком."""
+
+
+class LoginInvalid(DomainError):
+    """Строка не похожа на корпоративный логин."""
+
+
+class LoginTaken(DomainError):
+    """Логин уже носит другой человек."""

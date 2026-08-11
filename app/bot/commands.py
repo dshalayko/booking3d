@@ -5,7 +5,6 @@
 без Telegram, вебхуков и моков. В `bot.py` остаётся только проводка.
 """
 
-import re
 from datetime import UTC, datetime
 
 from sqlalchemy import select
@@ -19,18 +18,7 @@ from app.services import board as board_svc
 from app.services import printers as printers_svc
 from app.services import queue as queue_svc
 from app.services.errors import AlreadyInQueue, DomainError, NotInQueue
-
-# Корпоративный логин: `d_shalayko`. Две буквы до подчёркивания допускаем —
-# у людей с двойным именем логин выглядит как `ab_surname`, и упереться в
-# отказ им было бы некуда: другого способа зарегистрироваться нет.
-# Длина укладывается в users.name (64).
-LOGIN_RE = re.compile(r"[a-z]{1,2}_[a-z0-9-]{2,60}")
-
-
-def normalize_login(value: str) -> str | None:
-    """Корпоративный логин из того, что человек написал. None — это не логин."""
-    login = (value or "").strip().lstrip("@").lower()
-    return login if LOGIN_RE.fullmatch(login) else None
+from app.services.users import normalize_login
 
 
 async def start(db: AsyncSession, chat_id: int) -> str:

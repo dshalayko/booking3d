@@ -78,7 +78,7 @@ BOT_COMMAND_DESCRIPTIONS = {
 BOT_ASK_LOGIN = (
     "Send me your work login — the same one you use for email, "
     "shaped like <b>n_username</b>.\n"
-    "For example: <code>d_shalayko</code>.\n\n"
+    "For example: <code>i_ivanov</code>.\n\n"
     "Your PIN comes right after. Your login is what everyone sees on the tablet "
     "by the printers when you book one."
 )
@@ -86,7 +86,7 @@ BOT_ASK_LOGIN = (
 BOT_BAD_LOGIN = (
     "That doesn't look like a work login.\n"
     "It should look like <b>n_username</b> in Latin letters: a letter, an underscore, "
-    "then your surname. For example: <code>d_shalayko</code>."
+    "then your surname. For example: <code>i_ivanov</code>."
 )
 
 BOT_LOGIN_TAKEN = (
@@ -107,6 +107,12 @@ BOT_ALREADY_REGISTERED = (
 )
 
 BOT_PIN_CHANGED = "Your new PIN: <b>{pin}</b>\nThe old one stops working now."
+
+BOT_NAME_CHANGED = (
+    "An admin fixed your login: it was <b>{previous}</b>, now it's <b>{login}</b>.\n"
+    "That's what everyone sees on the tablet by the printers. Your PIN hasn't changed.\n"
+    "If this looks wrong, message the coworking admin."
+)
 
 BOT_NOT_REGISTERED = "Send /start first — I'll ask for your work login and give you a PIN."
 
@@ -265,6 +271,8 @@ ERR_NO_ADMIN_IN_DB = (
 )
 ERR_REASON_REQUIRED = "Please say why"
 ERR_USER_NOT_FOUND = "No such person"
+ERR_LOGIN_FORMAT = "A login looks like n_username in Latin letters, e.g. i_ivanov"
+ERR_LOGIN_TAKEN = "The login {login} already belongs to someone else"
 
 
 # --- kiosk: banners after an action ------------------------------------------
@@ -282,6 +290,7 @@ FLASH_ADMIN = {
     "cancelled": "Print cancelled",
     "removed": "Taken out of the line",
     "pin_reset": "New PIN sent over Telegram",
+    "renamed": "Login updated",
 }
 
 
@@ -419,6 +428,7 @@ UI = {
     "admin_people": "People ({count})",
     "admin_role": "admin",
     "admin_tg": "tg {chat_id}",
+    "admin_rename": "Rename",
     "admin_new_pin": "New PIN",
     "admin_events": "Recent activity",
     "admin_no_events": "Nothing has happened yet",

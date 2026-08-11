@@ -24,6 +24,8 @@ from app.services.errors import (
     AuthFailed,
     DomainError,
     InvalidDuration,
+    LoginInvalid,
+    LoginTaken,
     NotAdmin,
     NotInQueue,
     OfferNotActive,
@@ -57,7 +59,9 @@ STATUS_BY_ERROR: dict[type[DomainError], int] = {
     AlreadyInQueue: 409,
     OfferNotActive: 409,
     PinTaken: 409,
+    LoginTaken: 409,
     InvalidDuration: 400,
+    LoginInvalid: 400,
 }
 
 

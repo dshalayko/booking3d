@@ -69,6 +69,10 @@ def pin_changed(pin: str) -> str:
     return t.BOT_PIN_CHANGED.format(pin=pin)
 
 
+def name_changed(previous: str, login: str) -> str:
+    return t.BOT_NAME_CHANGED.format(previous=previous, login=login)
+
+
 # --- статус ------------------------------------------------------------------
 
 
