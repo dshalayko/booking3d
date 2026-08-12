@@ -144,7 +144,7 @@ cmd_reset() {
     docker compose exec -T db psql -U booking booking -q -c "
         TRUNCATE sessions, queue RESTART IDENTITY;
         DELETE FROM users WHERE tg_chat_id IN (900011, 900012);
-        UPDATE printers SET status='free', note=NULL;"
+        UPDATE machines SET status='free', note=NULL;"
     say "состояние очищено, тестовые люди удалены"
 }
 

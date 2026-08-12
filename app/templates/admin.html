@@ -5,77 +5,88 @@
 <main class="admin">
   <header class="admin-head">
     <h1>{{ t.admin_title }}</h1>
-    <a class="btn btn-small btn-ghost" href="/">{{ t.admin_to_board }}</a>
+    <nav class="admin-tabs">
+      <span class="admin-tab admin-tab-active">{{ t.admin_tab_summary }}</span>
+      <a class="admin-tab" href="/admin/machines">{{ t.admin_tab_machines }}</a>
+      <a class="btn btn-small btn-ghost" href="/">{{ t.admin_to_board }}</a>
+    </nav>
   </header>
 
   {% if flash %}<div class="banner banner-ok">{{ flash }}</div>{% endif %}
 
-  <section class="admin-block">
-    <h2>{{ t.admin_printers }}</h2>
-    {% for printer in board.printers %}
-      <article class="admin-row">
-        <div class="admin-row-main">
-          <strong>{{ printer.name }}</strong>
-          <span class="admin-status admin-status-{{ printer.status }}">{{ printer.status }}</span>
-          {% if printer.owner_name %}
-            <span class="admin-dim">
-              {{ t.admin_owner_until.format(name=printer.owner_name, time=printer.eta_at | hhmm) }}
-            </span>
-          {% endif %}
-          {% if printer.reserved_for %}
-            <span class="admin-dim">
-              {{ t.admin_reserved.format(name=printer.reserved_for,
-                                         time=printer.reserved_until | hhmm) }}
-            </span>
-          {% endif %}
-          {% if printer.note %}<span class="admin-dim">{{ printer.note }}</span>{% endif %}
-        </div>
-
-        <div class="admin-actions">
-          {% if printer.status == "broken" %}
-            <form method="post" action="/admin/printers/{{ printer.id }}/fix">
-              <button class="btn btn-small btn-primary" type="submit">{{ t.admin_fix }}</button>
-            </form>
-          {% else %}
-            {% if printer.owner_name %}
-              <form class="admin-form" method="post"
-                    action="/admin/printers/{{ printer.id }}/cancel">
-                <input class="text-input" type="text" name="reason"
-                       placeholder="{{ t.admin_reason_placeholder }}" required>
-                <button class="btn btn-small" type="submit">{{ t.admin_cancel_print }}</button>
-              </form>
-            {% endif %}
-            <form class="admin-form" method="post" action="/admin/printers/{{ printer.id }}/break">
-              <input class="text-input" type="text" name="note"
-                     placeholder="{{ t.admin_note_placeholder }}">
-              <button class="btn btn-small" type="submit">{{ t.admin_break }}</button>
-            </form>
-          {% endif %}
-        </div>
-      </article>
-    {% endfor %}
-  </section>
-
-  <section class="admin-block">
-    <h2>{{ t.admin_queue }}</h2>
-    {% if board.queue %}
-      {% for person in board.queue %}
+  {% for group in board.groups %}
+    <section class="admin-block">
+      <h2>{{ MACHINE_KIND_TITLE.get(group.kind, group.kind) }}</h2>
+      {% for machine in group.machines %}
         <article class="admin-row">
           <div class="admin-row-main">
-            <strong>{{ person.position }}. {{ person.name }}</strong>
-            {% if person.offered %}<span class="admin-dim">{{ t.queue_offered }}</span>{% endif %}
+            <strong>{{ machine.name }}</strong>
+            <span class="admin-status admin-status-{{ machine.status }}">{{ machine.status }}</span>
+            {% if machine.owner_name %}
+              <span class="admin-dim">
+                {{ t.admin_owner_until.format(name=machine.owner_name, time=machine.eta_at | hhmm) }}
+              </span>
+            {% endif %}
+            {% if machine.reserved_for %}
+              <span class="admin-dim">
+                {{ t.admin_reserved.format(name=machine.reserved_for,
+                                           time=machine.reserved_until | hhmm) }}
+              </span>
+            {% endif %}
+            {% if machine.note %}<span class="admin-dim">{{ machine.note }}</span>{% endif %}
           </div>
+
           <div class="admin-actions">
-            <form method="post" action="/admin/queue/{{ person.user_id }}/remove">
-              <button class="btn btn-small" type="submit">{{ t.admin_remove }}</button>
-            </form>
+            {% if machine.status == "broken" %}
+              <form method="post" action="/admin/machines/{{ machine.id }}/fix">
+                <button class="btn btn-small btn-primary" type="submit">{{ t.admin_fix }}</button>
+              </form>
+            {% else %}
+              {% if machine.owner_name %}
+                <form class="admin-form" method="post"
+                      action="/admin/machines/{{ machine.id }}/cancel">
+                  <input class="text-input" type="text" name="reason"
+                         placeholder="{{ t.admin_reason_placeholder }}" required>
+                  <button class="btn btn-small" type="submit">{{ t.admin_cancel_work }}</button>
+                </form>
+              {% endif %}
+              <form class="admin-form" method="post" action="/admin/machines/{{ machine.id }}/break">
+                <input class="text-input" type="text" name="note"
+                       placeholder="{{ t.admin_note_placeholder }}">
+                <button class="btn btn-small" type="submit">{{ t.admin_break }}</button>
+              </form>
+            {% endif %}
           </div>
         </article>
       {% endfor %}
-    {% else %}
-      <p class="admin-dim">{{ t.admin_empty }}</p>
-    {% endif %}
-  </section>
+    </section>
+
+    <section class="admin-block">
+      <h2>{{ t.admin_queue_of.format(title=MACHINE_KIND_TITLE.get(group.kind, group.kind)) }}</h2>
+      {% if group.queue %}
+        {% for person in group.queue %}
+          <article class="admin-row">
+            <div class="admin-row-main">
+              <strong>{{ person.position }}. {{ person.name }}</strong>
+              {% if person.offered %}<span class="admin-dim">{{ t.queue_offered }}</span>{% endif %}
+            </div>
+            <div class="admin-actions">
+              <form method="post" action="/admin/queue/{{ person.user_id }}/remove">
+                <button class="btn btn-small" type="submit">{{ t.admin_remove }}</button>
+              </form>
+            </div>
+          </article>
+        {% endfor %}
+      {% else %}
+        <p class="admin-dim">{{ t.admin_empty }}</p>
+      {% endif %}
+    </section>
+  {% else %}
+    <section class="admin-block">
+      <h2>{{ t.admin_machines }}</h2>
+      <p class="admin-dim">{{ t.board_park_empty }}</p>
+    </section>
+  {% endfor %}
 
   <section class="admin-block">
     <h2>{{ t.admin_people.format(count=users | length) }}</h2>

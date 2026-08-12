@@ -5,7 +5,7 @@ iPad висит на стене постоянно, поэтому:
 * главный экран доступен без входа — статусы видны всем;
 * каждое действие требует PIN — вошедшего между запросами не помним (правило
   10): планшет общий, и следующий у экрана не должен ни ждать чужую сессию, ни
-  занять принтер от чужого имени;
+  занять машину от чужого имени;
 * всё помещается в один экран без скролла, цели не меньше 60 px;
 * никаких внешних CDN: страница должна собираться из того, что отдал сервер.
 """
@@ -21,13 +21,13 @@ from app import texts as t
 from app.api.deps import Db, client_key, is_kiosk
 from app.bot import notify, texts
 from app.config import settings
-from app.enums import PrinterStatus
-from app.models import Printer, User
+from app.enums import MachineKind, MachineStatus
+from app.models import Machine, User
 from app.services import auth
 from app.services import board as board_svc
-from app.services import printers as printers_svc
+from app.services import machines as machines_svc
 from app.services import queue as queue_svc
-from app.services.errors import AuthFailed, PrinterNotAvailable
+from app.services.errors import AuthFailed, MachineKindUnknown, MachineNotAvailable
 
 router = APIRouter()
 templates = Jinja2Templates(directory="app/templates")
@@ -49,18 +49,22 @@ templates.env.filters["iso"] = _iso
 # ответ, включая экран ошибки из main.py.
 templates.env.globals["t"] = t.UI
 templates.env.globals["t_js"] = t.JS
+# Названия типов оборудования: шаблонам они нужны и на доске, и в админке, а
+# передавать один и тот же словарь в каждый контекст — лишний повод забыть.
+templates.env.globals["MACHINE_KIND_TITLE"] = t.MACHINE_KIND_TITLE
+templates.env.globals["MACHINE_KIND_ONE"] = t.MACHINE_KIND_ONE
+templates.env.globals["MACHINE_KINDS"] = tuple(MachineKind)
 
 FLASH_MESSAGES = t.FLASH_KIOSK
 
-NIGHT_UNTIL = time(9, 0)  # «ночь» — это печать до утра
+NIGHT_UNTIL = time(9, 0)  # «ночь» — это работа до утра
 
 
 async def build_board(db: AsyncSession) -> dict:
     """Данные главного экрана для шаблонов."""
     state = await board_svc.build(db)
     return {
-        "printers": state.printers,
-        "queue": state.queue,
+        "groups": state.groups,
         "free_count": state.free_count,
         "now": state.now,
     }
@@ -77,7 +81,7 @@ def duration_options(now: datetime) -> list[dict]:
     options = [
         {"label": label, "minutes": minutes} for minutes, label in t.DURATION_LABELS.items()
     ]
-    if night_minutes >= printers_svc.MIN_DURATION_MINUTES:
+    if night_minutes >= machines_svc.MIN_DURATION_MINUTES:
         options.append({"label": t.DURATION_NIGHT, "minutes": night_minutes})
     return options
 
@@ -102,6 +106,13 @@ def _done(flash: str) -> RedirectResponse:
     return RedirectResponse(f"/?flash={flash}", status_code=status.HTTP_303_SEE_OTHER)
 
 
+def _valid_kind(kind: str) -> str:
+    """Тип из адреса. Экран подтверждения не должен открываться на опечатке."""
+    if kind not in tuple(MachineKind):
+        raise MachineKindUnknown(t.ERR_MACHINE_KIND_UNKNOWN.format(kind=kind))
+    return kind
+
+
 # --- экраны ------------------------------------------------------------------
 
 
@@ -113,61 +124,61 @@ async def board(request: Request, db: Db, flash: str = "") -> Response:
     return templates.TemplateResponse(request, "kiosk.html", context)
 
 
-@router.get("/partials/printers", response_class=HTMLResponse)
-async def printers_partial(request: Request, db: Db) -> Response:
+@router.get("/partials/board", response_class=HTMLResponse)
+async def board_partial(request: Request, db: Db) -> Response:
     """Кусок страницы, который сам перезапрашивается каждые 10 секунд."""
     context = await build_board(db)
     context["kiosk"] = is_kiosk(request)
     return templates.TemplateResponse(request, "_board.html", context)
 
 
-@router.get("/occupy/{printer_id}", response_class=HTMLResponse)
-async def occupy_form(request: Request, db: Db, printer_id: int) -> Response:
-    printer = await db.get(Printer, printer_id)
-    if printer is None:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, t.ERR_PRINTER_NOT_FOUND)
+@router.get("/occupy/{machine_id}", response_class=HTMLResponse)
+async def occupy_form(request: Request, db: Db, machine_id: int) -> Response:
+    machine = await db.get(Machine, machine_id)
+    if machine is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, t.ERR_MACHINE_NOT_FOUND)
 
     # Тупиковую форму показывать нельзя: человек введёт PIN, выберет время и
-    # только тогда узнает, что принтер занят.
-    if printer.status == PrinterStatus.BROKEN:
-        raise PrinterNotAvailable(t.ERR_PRINTER_BROKEN.format(printer=printer.name))
-    if printer.status != PrinterStatus.FREE:
-        raise PrinterNotAvailable(t.ERR_PRINTER_BUSY.format(printer=printer.name))
+    # только тогда узнает, что машина занята.
+    if machine.status == MachineStatus.BROKEN:
+        raise MachineNotAvailable(t.ERR_MACHINE_BROKEN.format(machine=machine.name))
+    if machine.status != MachineStatus.FREE:
+        raise MachineNotAvailable(t.ERR_MACHINE_BUSY.format(machine=machine.name))
 
     return templates.TemplateResponse(
         request,
         "occupy.html",
         {
-            "printer": printer,
+            "machine": machine,
             "durations": duration_options(datetime.now(UTC)),
         },
     )
 
 
-@router.post("/occupy/{printer_id}")
+@router.post("/occupy/{machine_id}")
 async def occupy_action(
     request: Request,
     db: Db,
-    printer_id: int,
+    machine_id: int,
     minutes: int = Form(...),
     pin: str = Form(""),
 ) -> Response:
     user = await resolve_actor(request, db, pin)
-    result = await printers_svc.occupy(db, user, printer_id, minutes)
+    result = await machines_svc.occupy(db, user, machine_id, minutes)
     await db.commit()
     await notify.send_to_user(
-        db, user.id, texts.occupied(result.printer_name, result.eta_at, datetime.now(UTC))
+        db, user.id, texts.occupied(result.machine_name, result.eta_at, datetime.now(UTC))
     )
     return _done("occupied")
 
 
-@router.get("/release/{printer_id}", response_class=HTMLResponse)
-async def release_form(request: Request, db: Db, printer_id: int) -> Response:
-    printer = await db.get(Printer, printer_id)
-    if printer is None:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, t.ERR_PRINTER_NOT_FOUND)
+@router.get("/release/{machine_id}", response_class=HTMLResponse)
+async def release_form(request: Request, db: Db, machine_id: int) -> Response:
+    machine = await db.get(Machine, machine_id)
+    if machine is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, t.ERR_MACHINE_NOT_FOUND)
 
-    claimed = printer.status == PrinterStatus.DONE_WAIT
+    claimed = machine.status == MachineStatus.DONE_WAIT
     title = t.CONFIRM_CLAIM_TITLE if claimed else t.CONFIRM_RELEASE_TITLE
     hint = t.CONFIRM_CLAIM_HINT if claimed else t.CONFIRM_RELEASE_HINT
     return templates.TemplateResponse(
@@ -176,49 +187,55 @@ async def release_form(request: Request, db: Db, printer_id: int) -> Response:
         {
             "title": title,
             "hint": hint,
-            "subject": printer.name,
-            "action": f"/release/{printer.id}",
+            "subject": machine.name,
+            "action": f"/release/{machine.id}",
             "submit": t.CONFIRM_RELEASE_SUBMIT,
         },
     )
 
 
-@router.post("/release/{printer_id}")
+@router.post("/release/{machine_id}")
 async def release_action(
-    request: Request, db: Db, printer_id: int, pin: str = Form("")
+    request: Request, db: Db, machine_id: int, pin: str = Form("")
 ) -> Response:
     user = await resolve_actor(request, db, pin)
-    result = await printers_svc.release(db, user, printer_id)
+    result = await machines_svc.release(db, user, machine_id)
     await db.commit()
 
     # Правило 9: снять чужую деталь можно, но владелец должен об этом узнать.
     if result.owner_user_id is not None and result.owner_user_id != user.id:
         await notify.send_to_user(
-            db, result.owner_user_id, texts.released_by_other(result.printer_name, user.name)
+            db, result.owner_user_id, texts.released_by_other(result.machine_name, user.name)
         )
     await notify.announce_offers(db, result.offers)
     return _done("released")
 
 
-@router.get("/queue/join", response_class=HTMLResponse)
-async def queue_join_form(request: Request, db: Db) -> Response:
+@router.get("/queue/join/{kind}", response_class=HTMLResponse)
+async def queue_join_form(request: Request, db: Db, kind: str) -> Response:
+    """Очередь у каждого типа своя, поэтому тип — часть адреса кнопки."""
+    _valid_kind(kind)
     return templates.TemplateResponse(
         request,
         "confirm.html",
         {
             "title": t.CONFIRM_QUEUE_JOIN_TITLE,
             "hint": t.CONFIRM_QUEUE_JOIN_HINT,
-            "subject": t.CONFIRM_QUEUE_JOIN_SUBJECT,
-            "action": "/queue/join",
+            "subject": t.CONFIRM_QUEUE_JOIN_SUBJECT.format(
+                title=t.MACHINE_KIND_TITLE.get(kind, kind)
+            ),
+            "action": f"/queue/join/{kind}",
             "submit": t.CONFIRM_QUEUE_JOIN_SUBMIT,
         },
     )
 
 
-@router.post("/queue/join")
-async def queue_join_action(request: Request, db: Db, pin: str = Form("")) -> Response:
+@router.post("/queue/join/{kind}")
+async def queue_join_action(
+    request: Request, db: Db, kind: str, pin: str = Form("")
+) -> Response:
     user = await resolve_actor(request, db, pin)
-    result = await queue_svc.join(db, user.id)
+    result = await queue_svc.join(db, user.id, kind)
     await db.commit()
     await notify.announce_offers(db, result.offers)
     return _done("queued")

@@ -14,13 +14,14 @@ import logging
 from aiogram import Bot, Dispatcher
 from aiogram.client.default import DefaultBotProperties
 from aiogram.enums import ParseMode
-from aiogram.filters import Command, CommandStart
+from aiogram.filters import Command, CommandObject, CommandStart
 from aiogram.types import BotCommand, Message
 
 from app import texts as t
 from app.bot import commands, notify, texts
 from app.config import settings
 from app.db import SessionLocal
+from app.enums import MachineKind
 
 logger = logging.getLogger(__name__)
 
@@ -30,6 +31,11 @@ BOT_COMMANDS = [
     BotCommand(command=command, description=description)
     for command, description in t.BOT_COMMAND_DESCRIPTIONS.items()
 ]
+
+# Очередь у каждого типа своя, поэтому и команда своя: в меню Telegram человек
+# видит «очередь на принтер» и «очередь на гравировщик» и не гадает, куда его
+# поставит безымянный /queue.
+QUEUE_COMMANDS = {f"queue_{kind.value}": kind.value for kind in MachineKind}
 
 
 @dispatcher.message(CommandStart())
@@ -55,8 +61,16 @@ async def handle_my(message: Message) -> None:
         await message.answer(await commands.my(db, message.chat.id))
 
 
+@dispatcher.message(Command(*QUEUE_COMMANDS))
+async def handle_queue_kind(message: Message, command: CommandObject) -> None:
+    async with SessionLocal() as db:
+        kind = QUEUE_COMMANDS[command.command]
+        await message.answer(await commands.queue_join(db, message.chat.id, kind))
+
+
 @dispatcher.message(Command("queue"))
 async def handle_queue(message: Message) -> None:
+    """Без типа: сработает, только пока парк однороден, иначе спросит какой."""
     async with SessionLocal() as db:
         await message.answer(await commands.queue_join(db, message.chat.id))
 

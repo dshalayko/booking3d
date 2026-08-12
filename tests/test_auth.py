@@ -137,15 +137,15 @@ class TestKioskRoutes:
     async def test_wrong_pin_is_rejected_then_locked_out(self, client, printers, make_user):
         await make_user(pin="4242")
         await client.get(f"/kiosk/enroll?secret={settings.kiosk_enroll_secret}")
-        printer_id = printers[0].id
+        machine_id = printers[0].id
 
         for _ in range(5):
             failed = await client.post(
-                f"/occupy/{printer_id}", data={"pin": "0000", "minutes": "60"}
+                f"/occupy/{machine_id}", data={"pin": "0000", "minutes": "60"}
             )
             assert failed.status_code == 401
 
-        locked = await client.post(f"/occupy/{printer_id}", data={"pin": "4242", "minutes": "60"})
+        locked = await client.post(f"/occupy/{machine_id}", data={"pin": "4242", "minutes": "60"})
         assert locked.status_code == 429
 
 

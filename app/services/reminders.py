@@ -33,9 +33,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app import texts as t
 from app.bot import notify, texts
 from app.config import settings
-from app.enums import PrinterStatus, QueueStatus, SessionStatus
-from app.models import Printer, PrintSession, QueueEntry, User
-from app.services import printers as printers_svc
+from app.enums import MachineStatus, QueueStatus, SessionStatus
+from app.models import Machine, MachineSession, QueueEntry, User
+from app.services import machines as machines_svc
 from app.services import queue as queue_svc
 from app.services.errors import DomainError
 
@@ -107,89 +107,91 @@ async def reconcile(db: AsyncSession, now: datetime | None = None) -> Report:
 async def _warn_before_finish(
     db: AsyncSession, now: datetime, report: Report, pending: _Pending
 ) -> None:
-    """За 15 минут до расчётного конца — владельцу печати."""
+    """За 15 минут до расчётного конца — владельцу работы."""
     threshold = now + timedelta(minutes=settings.warn_before_minutes)
 
     sessions = (
         await db.scalars(
-            select(PrintSession).where(
-                PrintSession.status == SessionStatus.PRINTING,
-                PrintSession.warned_at.is_(None),
-                PrintSession.eta_at <= threshold,
+            select(MachineSession).where(
+                MachineSession.status == SessionStatus.PRINTING,
+                MachineSession.warned_at.is_(None),
+                MachineSession.eta_at <= threshold,
                 # Если срок уже прошёл, предупреждать поздно: человеку уйдёт
-                # сообщение о том, что печать закончилась.
-                PrintSession.eta_at > now,
+                # сообщение о том, что работа закончилась.
+                MachineSession.eta_at > now,
             )
         )
     ).all()
 
     for session in sessions:
-        printer = await db.get(Printer, session.printer_id)
+        machine = await db.get(Machine, session.machine_id)
         minutes = max(1, round((session.eta_at - now).total_seconds() / 60))
         session.warned_at = now
-        pending.add(session.user_id, texts.almost_done(printer.name, minutes))
+        pending.add(session.user_id, texts.almost_done(machine.name, minutes))
         report.warned += 1
 
 
 async def _finish_overdue(
     db: AsyncSession, now: datetime, report: Report, pending: _Pending
 ) -> None:
-    """Правило 8: срок вышел — принтер уходит в «готово», но не в «свободен»."""
+    """Правило 8: срок вышел — машина уходит в «готово», но не в «свободна»."""
     sessions = (
         await db.scalars(
-            select(PrintSession).where(
-                PrintSession.status == SessionStatus.PRINTING,
-                PrintSession.eta_at <= now,
+            select(MachineSession).where(
+                MachineSession.status == SessionStatus.PRINTING,
+                MachineSession.eta_at <= now,
             )
         )
     ).all()
 
     for session in sessions:
         try:
-            result = await printers_svc.mark_done_wait(db, session.printer_id, now=now)
+            result = await machines_svc.mark_done_wait(db, session.machine_id, now=now)
         except DomainError as error:
-            # Принтер успели освободить или сломать между выборкой и переходом.
+            # Машину успели освободить или сломать между выборкой и переходом.
             logger.info("пропускаю завершение сессии %s: %s", session.id, error)
             continue
 
         session.finished_notified_at = now
-        pending.add(result.owner_user_id, texts.finished(result.printer_name))
+        pending.add(result.owner_user_id, texts.finished(result.machine_name))
 
         owner_name = await db.scalar(select(User.name).where(User.id == result.owner_user_id))
-        first = await _first_in_queue(db)
+        # Подсказка «сходи проверь» уходит первому в очереди этого типа: тому,
+        # кто ждёт гравировщик, освободившийся принтер не нужен.
+        first = await _first_in_queue(db, result.machine_kind)
         if first is not None:
-            pending.add(first.user_id, texts.check_printer(result.printer_name, owner_name or ""))
+            pending.add(first.user_id, texts.check_machine(result.machine_name, owner_name or ""))
         report.finished += 1
 
 
 async def _ping_unclaimed(
     db: AsyncSession, now: datetime, report: Report, pending: _Pending
 ) -> None:
-    """Незабранная деталь — главная причина простоя парка из двух машин."""
+    """Незабранная деталь — главная причина простоя небольшого парка."""
     deadline = now - timedelta(minutes=settings.unclaimed_ping_minutes)
 
     sessions = (
         await db.scalars(
-            select(PrintSession).where(
-                PrintSession.status == SessionStatus.DONE_WAIT,
-                PrintSession.unclaimed_notified_at.is_(None),
-                PrintSession.eta_at <= deadline,
+            select(MachineSession).where(
+                MachineSession.status == SessionStatus.DONE_WAIT,
+                MachineSession.unclaimed_notified_at.is_(None),
+                MachineSession.eta_at <= deadline,
             )
         )
     ).all()
 
     for session in sessions:
-        printer = await db.get(Printer, session.printer_id)
+        machine = await db.get(Machine, session.machine_id)
         minutes = round((now - session.eta_at).total_seconds() / 60)
         session.unclaimed_notified_at = now
-        pending.add(session.user_id, texts.unclaimed_owner(printer.name, minutes))
+        pending.add(session.user_id, texts.unclaimed_owner(machine.name, minutes))
 
         owner_name = await db.scalar(select(User.name).where(User.id == session.user_id))
-        first = await _first_in_queue(db)
+        first = await _first_in_queue(db, machine.kind)
         if first is not None:
             pending.add(
                 first.user_id,
-                texts.unclaimed_queue(printer.name, owner_name or "", minutes),
+                texts.unclaimed_queue(machine.name, owner_name or "", minutes),
             )
         report.unclaimed += 1
 
@@ -216,8 +218,8 @@ async def _expire_offers(
     ).all()
 
     for entry in entries:
-        printer_name = await db.scalar(
-            select(Printer.name).where(Printer.id == entry.offered_printer_id)
+        machine_name = await db.scalar(
+            select(Machine.name).where(Machine.id == entry.offered_machine_id)
         )
         try:
             result = await queue_svc.expire_offer(db, entry.id, now=now)
@@ -225,19 +227,19 @@ async def _expire_offers(
             logger.info("пропускаю истечение предложения %s: %s", entry.id, error)
             continue
 
-        pending.add(result.user_id, texts.offer_expired(printer_name or t.BOT_PRINTER_FALLBACK))
+        pending.add(result.user_id, texts.offer_expired(machine_name or t.BOT_MACHINE_FALLBACK))
         offers.extend(result.offers)
         report.expired_offers += 1
 
 
-async def _first_in_queue(db: AsyncSession) -> QueueEntry | None:
-    entries = await queue_svc.active_entries(db)
+async def _first_in_queue(db: AsyncSession, kind: str) -> QueueEntry | None:
+    entries = await queue_svc.active_entries(db, kind=kind)
     return entries[0] if entries else None
 
 
-async def has_printing_now(db: AsyncSession) -> bool:
-    """Есть ли вообще активные печати — для диагностики."""
+async def has_running_now(db: AsyncSession) -> bool:
+    """Есть ли вообще активные работы — для диагностики."""
     found = await db.scalar(
-        select(Printer.id).where(Printer.status == PrinterStatus.PRINTING).limit(1)
+        select(Machine.id).where(Machine.status == MachineStatus.PRINTING).limit(1)
     )
     return found is not None

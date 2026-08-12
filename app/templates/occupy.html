@@ -1,27 +1,29 @@
 {% extends "base.html" %}
 {% set auto_return = true %}
-{% block title %}{{ t.occupy_title.format(printer=printer.name) }}{% endblock %}
+{% block title %}{{ t.occupy_title.format(machine=machine.name) }}{% endblock %}
 
 {% block content %}
 <main class="sheet">
   <header class="sheet-head">
     <a class="btn btn-small btn-ghost" href="/">{{ t.cancel }}</a>
-    <h1>{{ t.occupy_heading.format(printer=printer.name) }}</h1>
+    <h1>{{ t.occupy_heading.format(machine=machine.name) }}</h1>
   </header>
 
-  <form class="sheet-body" method="post" action="/occupy/{{ printer.id }}" data-guard>
+  <form class="sheet-body" method="post" action="/occupy/{{ machine.id }}" data-guard>
     {% include "_keypad.html" %}
 
     <div class="durations">
       <p class="durations-label">{{ t.occupy_duration_label }}</p>
       <div class="durations-grid">
         {% for option in durations %}
-          <button class="btn btn-duration" type="submit" name="minutes" value="{{ option.minutes }}">
-            {{ option.label }}
-          </button>
+          <label class="duration-choice">
+            <input class="duration-radio" type="radio" name="minutes" value="{{ option.minutes }}" required>
+            <span class="btn btn-duration">{{ option.label }}</span>
+          </label>
         {% endfor %}
       </div>
       <p class="durations-hint">{{ t.occupy_hint }}</p>
+      <button class="btn btn-primary btn-book-now" type="submit">{{ t.occupy_submit }}</button>
     </div>
   </form>
 </main>

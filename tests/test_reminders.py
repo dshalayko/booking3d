@@ -3,9 +3,9 @@ from datetime import UTC, datetime, timedelta
 import pytest
 
 from app.bot import notify
-from app.enums import PrinterStatus, QueueStatus, SessionStatus
-from app.models import Printer, PrintSession, QueueEntry
-from app.services import printers as printers_svc
+from app.enums import MachineKind, MachineStatus, QueueStatus, SessionStatus
+from app.models import Machine, MachineSession, QueueEntry
+from app.services import machines as machines_svc
 from app.services import queue as queue_svc
 from app.services import reminders
 
@@ -31,7 +31,7 @@ def texts_of(outbox) -> str:
 class TestWarnBeforeFinish:
     async def test_warns_fifteen_minutes_before(self, db, printers, make_user, outbox):
         user = await make_user()
-        await printers_svc.occupy(db, user, printers[0].id, 60, now=NOON)
+        await machines_svc.occupy(db, user, printers[0].id, 60, now=NOON)
         await db.commit()
 
         report = await reminders.reconcile(db, now=NOON + timedelta(minutes=46))
@@ -42,7 +42,7 @@ class TestWarnBeforeFinish:
         assert "заканчивается" in outbox[0][1]
 
     async def test_does_not_warn_too_early(self, db, printers, make_user, outbox):
-        await printers_svc.occupy(db, await make_user(), printers[0].id, 60, now=NOON)
+        await machines_svc.occupy(db, await make_user(), printers[0].id, 60, now=NOON)
         await db.commit()
 
         report = await reminders.reconcile(db, now=NOON + timedelta(minutes=30))
@@ -51,7 +51,7 @@ class TestWarnBeforeFinish:
         assert outbox == []
 
     async def test_warns_only_once(self, db, printers, make_user, outbox):
-        await printers_svc.occupy(db, await make_user(), printers[0].id, 60, now=NOON)
+        await machines_svc.occupy(db, await make_user(), printers[0].id, 60, now=NOON)
         await db.commit()
         moment = NOON + timedelta(minutes=50)
 
@@ -63,7 +63,7 @@ class TestWarnBeforeFinish:
 
     async def test_no_late_warning_after_deadline(self, db, printers, make_user, outbox):
         """Простой был долгим: предупреждать «скоро закончится» уже поздно."""
-        await printers_svc.occupy(db, await make_user(), printers[0].id, 60, now=NOON)
+        await machines_svc.occupy(db, await make_user(), printers[0].id, 60, now=NOON)
         await db.commit()
 
         report = await reminders.reconcile(db, now=NOON + timedelta(hours=5))
@@ -75,25 +75,25 @@ class TestWarnBeforeFinish:
 
 class TestFinish:
     async def test_moves_printer_to_done_wait(self, db, printers, make_user, outbox):
-        printer_id = printers[0].id
+        machine_id = printers[0].id
         user = await make_user()
-        await printers_svc.occupy(db, user, printer_id, 60, now=NOON)
+        await machines_svc.occupy(db, user, machine_id, 60, now=NOON)
         await db.commit()
 
         report = await reminders.reconcile(db, now=NOON + timedelta(minutes=61))
 
         assert report.finished == 1
         db.expire_all()
-        assert (await db.get(Printer, printer_id)).status == PrinterStatus.DONE_WAIT
+        assert (await db.get(Machine, machine_id)).status == MachineStatus.DONE_WAIT
         assert "заберите деталь" in texts_of(outbox).lower()
 
     async def test_tells_first_in_queue_to_check(self, db, printers, make_user, outbox):
         owner = await make_user(name="Иван")
         other = await make_user()
         waiting = await make_user()
-        await printers_svc.occupy(db, owner, printers[0].id, 60, now=NOON)
-        await printers_svc.occupy(db, other, printers[1].id, 600, now=NOON)
-        await queue_svc.join(db, waiting.id, now=NOON)
+        await machines_svc.occupy(db, owner, printers[0].id, 60, now=NOON)
+        await machines_svc.occupy(db, other, printers[1].id, 600, now=NOON)
+        await queue_svc.join(db, waiting.id, MachineKind.PRINTER, now=NOON)
         await db.commit()
         outbox.clear()
 
@@ -105,7 +105,7 @@ class TestFinish:
         assert "Иван" in addressed[0]
 
     async def test_does_not_finish_twice(self, db, printers, make_user, outbox):
-        await printers_svc.occupy(db, await make_user(), printers[0].id, 60, now=NOON)
+        await machines_svc.occupy(db, await make_user(), printers[0].id, 60, now=NOON)
         await db.commit()
         moment = NOON + timedelta(minutes=61)
 
@@ -118,8 +118,8 @@ class TestFinish:
         self, db, printers, make_user, outbox
     ):
         user = await make_user()
-        await printers_svc.occupy(db, user, printers[0].id, 60, now=NOON)
-        await printers_svc.release(db, user, printers[0].id, now=NOON + timedelta(minutes=10))
+        await machines_svc.occupy(db, user, printers[0].id, 60, now=NOON)
+        await machines_svc.release(db, user, printers[0].id, now=NOON + timedelta(minutes=10))
         await db.commit()
 
         report = await reminders.reconcile(db, now=NOON + timedelta(minutes=61))
@@ -132,9 +132,9 @@ class TestUnclaimed:
         owner = await make_user(name="Анна")
         other = await make_user()
         waiting = await make_user()
-        await printers_svc.occupy(db, owner, printers[0].id, 60, now=NOON)
-        await printers_svc.occupy(db, other, printers[1].id, 600, now=NOON)
-        await queue_svc.join(db, waiting.id, now=NOON)
+        await machines_svc.occupy(db, owner, printers[0].id, 60, now=NOON)
+        await machines_svc.occupy(db, other, printers[1].id, 600, now=NOON)
+        await queue_svc.join(db, waiting.id, MachineKind.PRINTER, now=NOON)
         await reminders.reconcile(db, now=NOON + timedelta(minutes=61))
         outbox.clear()
 
@@ -147,7 +147,7 @@ class TestUnclaimed:
         assert "не забрали" in queue_messages[0]
 
     async def test_pings_only_once(self, db, printers, make_user, outbox):
-        await printers_svc.occupy(db, await make_user(), printers[0].id, 60, now=NOON)
+        await machines_svc.occupy(db, await make_user(), printers[0].id, 60, now=NOON)
         await reminders.reconcile(db, now=NOON + timedelta(minutes=61))
 
         first = await reminders.reconcile(db, now=NOON + timedelta(minutes=125))
@@ -156,7 +156,7 @@ class TestUnclaimed:
         assert (first.unclaimed, second.unclaimed) == (1, 0)
 
     async def test_no_ping_before_an_hour(self, db, printers, make_user, outbox):
-        await printers_svc.occupy(db, await make_user(), printers[0].id, 60, now=NOON)
+        await machines_svc.occupy(db, await make_user(), printers[0].id, 60, now=NOON)
         await reminders.reconcile(db, now=NOON + timedelta(minutes=61))
 
         report = await reminders.reconcile(db, now=NOON + timedelta(minutes=100))
@@ -170,11 +170,11 @@ class TestOfferExpiry:
         other = await make_user()
         first = await make_user()
         second = await make_user()
-        await printers_svc.occupy(db, owner, printers[0].id, 60, now=NOON)
-        await printers_svc.occupy(db, other, printers[1].id, 600, now=NOON)
-        await queue_svc.join(db, first.id, now=NOON)
-        await queue_svc.join(db, second.id, now=NOON + timedelta(seconds=1))
-        await printers_svc.release(db, owner, printers[0].id, now=NOON)
+        await machines_svc.occupy(db, owner, printers[0].id, 60, now=NOON)
+        await machines_svc.occupy(db, other, printers[1].id, 600, now=NOON)
+        await queue_svc.join(db, first.id, MachineKind.PRINTER, now=NOON)
+        await queue_svc.join(db, second.id, MachineKind.PRINTER, now=NOON + timedelta(seconds=1))
+        await machines_svc.release(db, owner, printers[0].id, now=NOON)
         await db.commit()
         outbox.clear()
 
@@ -188,10 +188,10 @@ class TestOfferExpiry:
         owner = await make_user()
         other = await make_user()
         waiting = await make_user()
-        await printers_svc.occupy(db, owner, printers[0].id, 60, now=NOON)
-        await printers_svc.occupy(db, other, printers[1].id, 600, now=NOON)
-        await queue_svc.join(db, waiting.id, now=NOON)
-        await printers_svc.release(db, owner, printers[0].id, now=NOON)
+        await machines_svc.occupy(db, owner, printers[0].id, 60, now=NOON)
+        await machines_svc.occupy(db, other, printers[1].id, 600, now=NOON)
+        await queue_svc.join(db, waiting.id, MachineKind.PRINTER, now=NOON)
+        await machines_svc.release(db, owner, printers[0].id, now=NOON)
         await db.commit()
 
         report = await reminders.reconcile(db, now=NOON + timedelta(minutes=20))
@@ -204,10 +204,10 @@ class TestOfferExpiry:
         owner = await make_user()
         other = await make_user()
         waiting = await make_user()
-        await printers_svc.occupy(db, owner, printers[0].id, 60, now=night)
-        await printers_svc.occupy(db, other, printers[1].id, 600, now=night)
-        await queue_svc.join(db, waiting.id, now=night)
-        await printers_svc.release(db, owner, printers[0].id, now=night)
+        await machines_svc.occupy(db, owner, printers[0].id, 60, now=night)
+        await machines_svc.occupy(db, other, printers[1].id, 600, now=night)
+        await queue_svc.join(db, waiting.id, MachineKind.PRINTER, now=night)
+        await machines_svc.release(db, owner, printers[0].id, now=night)
         await db.commit()
 
         at_four = await reminders.reconcile(db, now=night + timedelta(hours=1))
@@ -226,12 +226,12 @@ class TestIdempotence:
 
     async def test_catches_up_after_long_downtime(self, db, printers, make_user, outbox):
         """Приложение лежало сутки: первая же сверка доводит всё до правды."""
-        printer_id = printers[0].id
+        machine_id = printers[0].id
         owner = await make_user()
         waiting = await make_user()
-        await printers_svc.occupy(db, owner, printer_id, 60, now=NOON)
-        await printers_svc.occupy(db, await make_user(), printers[1].id, 60, now=NOON)
-        await queue_svc.join(db, waiting.id, now=NOON)
+        await machines_svc.occupy(db, owner, machine_id, 60, now=NOON)
+        await machines_svc.occupy(db, await make_user(), printers[1].id, 60, now=NOON)
+        await queue_svc.join(db, waiting.id, MachineKind.PRINTER, now=NOON)
         await db.commit()
 
         report = await reminders.reconcile(db, now=NOON + timedelta(days=1))
@@ -239,21 +239,21 @@ class TestIdempotence:
         assert report.finished == 2
         assert report.unclaimed == 2
         db.expire_all()
-        assert (await db.get(Printer, printer_id)).status == PrinterStatus.DONE_WAIT
+        assert (await db.get(Machine, machine_id)).status == MachineStatus.DONE_WAIT
 
         again = await reminders.reconcile(db, now=NOON + timedelta(days=1, minutes=1))
         assert again.touched == 0
 
     async def test_flags_are_recorded(self, db, printers, make_user, outbox):
         user = await make_user()
-        result = await printers_svc.occupy(db, user, printers[0].id, 60, now=NOON)
+        result = await machines_svc.occupy(db, user, printers[0].id, 60, now=NOON)
         await db.commit()
 
         await reminders.reconcile(db, now=NOON + timedelta(minutes=50))
         await reminders.reconcile(db, now=NOON + timedelta(minutes=61))
         await reminders.reconcile(db, now=NOON + timedelta(minutes=125))
 
-        session = await db.get(PrintSession, result.session_id)
+        session = await db.get(MachineSession, result.session_id)
         assert session.warned_at is not None
         assert session.finished_notified_at is not None
         assert session.unclaimed_notified_at is not None
@@ -272,10 +272,10 @@ class TestSchedulerWiring:
         owner = await make_user()
         other = await make_user()
         waiting = await make_user()
-        await printers_svc.occupy(db, owner, printers[0].id, 60, now=NOON)
-        await printers_svc.occupy(db, other, printers[1].id, 600, now=NOON)
-        join = await queue_svc.join(db, waiting.id, now=NOON)
-        await printers_svc.release(db, owner, printers[0].id, now=NOON)
+        await machines_svc.occupy(db, owner, printers[0].id, 60, now=NOON)
+        await machines_svc.occupy(db, other, printers[1].id, 600, now=NOON)
+        join = await queue_svc.join(db, waiting.id, MachineKind.PRINTER, now=NOON)
+        await machines_svc.release(db, owner, printers[0].id, now=NOON)
         await db.commit()
 
         await reminders.reconcile(db, now=NOON + timedelta(minutes=31))

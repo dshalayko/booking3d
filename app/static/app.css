@@ -70,33 +70,146 @@ body {
 
 /* --- главный экран --- */
 
+/* Секции типов стоят рядом по горизонтали: так плитки всех машин оказываются в
+   одном ряду, как когда парк был из одних принтеров, и взгляд не приходится
+   вести сверху вниз.
+
+   Размеры плитки — в переменных: узкая колонка сжимает их сильнее широкой.
+   Порог по ширине, а не по числу секций: с четырьмя принтерами в одной секции
+   плитки не шире, чем с двумя секциями по две. */
 #board {
   flex: 1;
   display: flex;
+  gap: 20px;
+  min-height: 0;
+
+  --tile-pad: 22px 24px;
+  --tile-name: 30px;
+  --tile-status: 40px;
+  --tile-owner: 26px;
+  --tile-time: 24px;
+  --tile-note: 20px;
+  --tile-btn: 72px;
+  --hero-height: 108px;
+  --hero-font: 38px;
+  --queue-pad: 14px 20px;
+  --queue-font: 22px;
+}
+
+@media (max-width: 1100px) {
+  #board {
+    --tile-pad: 16px 18px;
+    --tile-name: 24px;
+    --tile-status: 32px;
+    --tile-owner: 21px;
+    --tile-time: 19px;
+    --tile-note: 17px;
+    --tile-btn: 64px;
+    --hero-height: 88px;
+    --hero-font: 30px;
+    --queue-pad: 12px 16px;
+    --queue-font: 19px;
+  }
+}
+
+.board-empty { margin: auto; font-size: 26px; color: var(--muted); text-align: center; }
+
+/* Секция типа оборудования. Ширину задаёт `--machines` из шаблона: секция с
+   четырьмя машинами шире соседней с одной, и плитки в обеих выходят примерно
+   одного размера. */
+.group {
+  flex: var(--machines, 1) 1 0;
+  display: flex;
   flex-direction: column;
-  gap: 16px;
+  gap: 12px;
+  min-width: 0;
   min-height: 0;
 }
 
-.hero { flex: 0 0 auto; }
+/* Телефон и портретная ориентация. Колонки схлопнулись бы до плиток в ладонь
+   шириной, поэтому секции возвращаются друг под друга — доску смотрят и с
+   телефона, статусы открыты всем.
+
+   Здесь же снимается запрет на скролл: он стоит ради планшета на стене, где
+   всё обязано помещаться в экран. На узком экране содержимое не помещается
+   физически, и «не скроллить» означало бы обрезать имена машин. Идёт после
+   `.group`, чтобы перебить её `flex-grow` без `!important`. */
+@media (max-width: 900px) {
+  body { overflow: auto; }
+  #board { flex-direction: column; gap: 14px; overflow: visible; }
+  .group { flex: 0 0 auto; }
+  .group-body { flex: 0 0 auto; }
+  .tiles { flex: 0 0 auto; grid-auto-rows: minmax(0, auto); }
+  .tile { justify-content: flex-start; overflow: visible; }
+}
+
+.group-head { display: flex; flex-direction: column; gap: 8px; flex: 0 0 auto; }
+.group-title {
+  margin: 0;
+  font-size: 20px;
+  font-weight: 600;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: .04em;
+}
+
+/* По умолчанию плитки и очередь стоят вплотную и читаются как одна карточка.
+   У принтеров ниже есть исключение: на планшете длинная нижняя полоса выглядит
+   лучше отдельным блоком, как в состоянии печати.
+
+   Карточка занимает всю высоту колонки, а лишнюю высоту забирают плитки: у
+   машины ровно четыре строки состояния, и они разъезжаются равномерно, а не
+   собираются сверху, оставив дыру перед кнопкой. */
+.group-body {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+.group-printer .group-body { gap: 12px; }
+.group-printer .tile { justify-content: flex-start; }
 
 .tiles {
   flex: 1;
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
-  gap: 16px;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  /* Строки делят высоту сетки поровну и не растут по содержимому: иначе плитка
+     с длинным именем выталкивала бы очередь за нижний край экрана. */
+  grid-auto-rows: minmax(0, 1fr);
+  gap: 12px;
   min-height: 0;
 }
+.group-body .tile { border-bottom-left-radius: 0; border-bottom-right-radius: 0; }
+.group-body .queue { border-top-left-radius: 0; border-top-right-radius: 0; }
+.group-printer .group-body > .tiles > .tile {
+  border-bottom-left-radius: var(--radius);
+  border-bottom-right-radius: var(--radius);
+}
+.group-printer .group-body > .queue {
+  border-top-left-radius: var(--radius);
+  border-top-right-radius: var(--radius);
+}
+/* У единственной машины полосы очереди снизу нет — срезать ей углы не за что. */
+.group-body .tile-single {
+  border-bottom-left-radius: var(--radius);
+  border-bottom-right-radius: var(--radius);
+}
 
+/* Содержимое стоит цельным блоком по центру, а не прижато к краям: у свободной
+   машины строк две, у занятой четыре, и прижатые к краям строки давали дыру
+   посередине высокой плитки. Центр оставляет строки рядом друг с другом —
+   имя, статус и время читаются как одна карточка. */
 .tile {
   background: var(--card);
   border-radius: var(--radius);
   border-left: 12px solid var(--broken);
-  padding: 22px 24px;
+  padding: var(--tile-pad);
   display: flex;
   flex-direction: column;
+  justify-content: center;
   gap: 6px;
   min-height: 0;
+  overflow: hidden;
 }
 .tile-free { border-left-color: var(--free); }
 .tile-printing { border-left-color: var(--busy); }
@@ -104,16 +217,20 @@ body {
 .tile-broken { border-left-color: var(--broken); opacity: .65; }
 .tile-reserved { border-left-color: var(--accent); }
 
-.tile-name { margin: 0; font-size: 30px; font-weight: 700; }
-.tile-status { margin: 0; font-size: 40px; font-weight: 800; line-height: 1.1; }
+.tile-name { margin: 0; font-size: var(--tile-name); font-weight: 700; }
+.tile-status { margin: 0; font-size: var(--tile-status); font-weight: 800; line-height: 1.1; }
 .tile-free .tile-status { color: var(--free); }
 .tile-printing .tile-status { color: var(--busy); }
 .tile-done_wait .tile-status { color: var(--wait); }
 .tile-reserved .tile-status { color: var(--accent); }
-.tile-owner { margin: 0; font-size: 26px; color: var(--text); }
-.tile-time { margin: 0; font-size: 24px; color: var(--muted); }
-.tile-note { margin: 0; font-size: 20px; color: var(--muted); }
-.tile .btn { margin-top: auto; }
+.tile-owner { margin: 0; font-size: var(--tile-owner); color: var(--text); }
+.tile-time { margin: 0; font-size: var(--tile-time); color: var(--muted); }
+.tile-note { margin: 0; font-size: var(--tile-note); color: var(--muted); }
+.tile .btn { min-height: var(--tile-btn); font-size: var(--tile-owner); margin-top: 10px; }
+
+/* Состояние машины прижато к верху: под ним внутри той же плитки идёт очередь,
+   см. `.queue-column`. */
+.tile-single { justify-content: flex-start; }
 
 /* --- очередь --- */
 
@@ -121,11 +238,12 @@ body {
   flex: 0 0 auto;
   background: var(--card);
   border-radius: var(--radius);
-  padding: 14px 20px;
+  padding: var(--queue-pad);
   display: flex;
   align-items: center;
   gap: 20px;
   flex-wrap: wrap;
+  min-height: 0;
 }
 .queue-list {
   list-style: none;
@@ -135,7 +253,7 @@ body {
   padding: 0;
   flex: 1;
   flex-wrap: wrap;
-  font-size: 22px;
+  font-size: var(--queue-font);
 }
 .queue-list li { display: flex; align-items: center; gap: 8px; }
 .queue-pos {
@@ -149,7 +267,27 @@ body {
 }
 .queue-offered { color: var(--accent); font-weight: 700; }
 .queue-tag { font-size: 16px; text-transform: uppercase; letter-spacing: .04em; }
-.queue-empty { margin: 0; flex: 1; font-size: 22px; color: var(--muted); }
+.queue-empty { margin: 0; flex: 1; font-size: var(--queue-font); color: var(--muted); }
+
+/* Очередь внутри плитки — когда машина в секции одна. Тогда цветная полоса
+   статуса идёт во всю высоту карточки, а не обрывается там, где кончается
+   состояние машины. Люди столбиком, кнопка выхода прижата к низу карточки.
+   Идёт после `.queue`, чтобы перебить её строчную раскладку без `!important`. */
+.queue-column {
+  flex: 1;
+  min-height: 0;
+  margin-top: 12px;
+  padding: 12px 0 0;
+  border-top: 1px solid rgba(255, 255, 255, .08);
+  border-radius: 0;
+  background: none;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 10px;
+}
+.queue-column .queue-list { flex: 0 0 auto; flex-direction: column; gap: 10px; }
+.queue-column .queue-empty { flex: 0 0 auto; }
+.queue-column .btn { margin-top: auto; }
 
 /* --- кнопки --- */
 
@@ -177,12 +315,14 @@ body {
 .btn-ghost { background: rgba(255, 255, 255, .06); color: var(--muted); }
 .btn-small { min-height: 52px; padding: 10px 18px; font-size: 19px; }
 .btn-wide { width: 100%; }
+/* Главная кнопка секции. Стоит в одной строке с заголовком типа: секций может
+   быть несколько, и две полосы во всю ширину съели бы место у плиток. */
 .btn-hero {
   width: 100%;
-  min-height: 108px;
+  min-height: var(--hero-height);
   background: var(--free);
   color: #10231a;
-  font-size: 38px;
+  font-size: var(--hero-font);
 }
 .btn-hero-wait { background: var(--accent); color: #fff; }
 .btn-sub { font-size: 20px; font-weight: 500; opacity: .8; }
@@ -243,8 +383,20 @@ body {
 .durations { display: flex; flex-direction: column; gap: 12px; }
 .durations-label, .confirm-subject { margin: 0; font-size: 24px; color: var(--muted); }
 .durations-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
-.btn-duration { min-height: 88px; font-size: 28px; background: var(--card); }
+.duration-choice { display: block; min-width: 0; }
+.duration-radio {
+  position: absolute;
+  opacity: 0;
+  pointer-events: none;
+}
+.btn-duration { width: 100%; min-height: 88px; font-size: 28px; background: var(--card); }
+.duration-radio:focus-visible + .btn-duration { outline: 3px solid var(--accent); outline-offset: 3px; }
+.duration-radio:checked + .btn-duration {
+  background: var(--accent);
+  box-shadow: inset 0 0 0 3px rgba(255, 255, 255, .26);
+}
 .durations-hint, .confirm-hint { margin: 0; font-size: 19px; color: var(--muted); line-height: 1.4; }
+.btn-book-now { width: 100%; min-height: 86px; margin-top: 8px; font-size: 30px; }
 .confirm { display: flex; flex-direction: column; gap: 16px; justify-content: center; }
 
 .error { text-align: center; max-width: 560px; display: flex; flex-direction: column; gap: 20px; }
@@ -267,6 +419,20 @@ body {
 .admin { flex: 1; overflow: auto; display: flex; flex-direction: column; gap: 20px; }
 .admin-head { display: flex; align-items: center; justify-content: space-between; }
 .admin-head h1 { margin: 0; font-size: 26px; }
+
+.admin-tabs { display: flex; align-items: center; gap: 10px; }
+.admin-tab {
+  padding: 10px 18px;
+  border-radius: var(--radius);
+  font-size: 17px;
+  font-weight: 600;
+  color: var(--muted);
+  text-decoration: none;
+  background: rgba(255, 255, 255, .06);
+}
+.admin-tab-active { background: var(--accent); color: #fff; }
+
+.admin-hint { margin: 12px 0 0; max-width: 70ch; line-height: 1.45; }
 .admin-block { background: var(--card); border-radius: var(--radius); padding: 16px 20px; }
 .admin-block h2 { margin: 0 0 12px; font-size: 18px; color: var(--muted); font-weight: 600; }
 

@@ -11,10 +11,14 @@ from string import Formatter
 
 import pytest
 
+from app.enums import MachineKind
 from app.texts import en, ru
 
 LANGUAGES = {"ru": ru, "en": en}
 PUBLIC = {name for name in vars(ru) if not name.startswith("_") and name.isupper()}
+
+# Словари, где обязан быть ключ на каждый тип оборудования.
+KIND_DICTS = ("MACHINE_KIND_TITLE", "MACHINE_KIND_ONE", "MACHINE_BUSY_WORD")
 
 
 def placeholders(value: str) -> set[str]:
@@ -37,6 +41,19 @@ def strings_of(module) -> dict[str, str]:
 
 def test_languages_have_the_same_names():
     assert {name for name in vars(en) if name.isupper()} >= PUBLIC
+
+
+@pytest.mark.parametrize("lang", list(LANGUAGES))
+@pytest.mark.parametrize("dict_name", KIND_DICTS)
+def test_every_kind_of_machine_has_words(lang, dict_name):
+    """Новый тип в `MachineKind` без надписей — это `engraver` на стене.
+
+    Молча и до тех пор, пока кто-нибудь не заметит: код везде подставляет
+    значение по умолчанию, то есть саму строку enum.
+    """
+    words = getattr(LANGUAGES[lang], dict_name)
+
+    assert set(words) == set(MachineKind), f"{lang}: {dict_name} не покрывает все типы"
 
 
 @pytest.mark.parametrize("lang", ["en"])

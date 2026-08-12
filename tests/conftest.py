@@ -37,25 +37,32 @@ from sqlalchemy.ext.asyncio import (
 
 from app.api.deps import get_db
 from app.config import settings
-from app.enums import PrinterStatus
+from app.enums import MachineKind, MachineStatus
 from app.main import app
-from app.models import Printer, User
+from app.models import Machine, User
 from app.services.security import pin_digest
 
 TEST_DB_NAME = "booking_test"
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
-TABLES = "users, printers, sessions, queue"
+TABLES = "users, machines, sessions, queue"
 
 TEST_ZONE = ZoneInfo("Europe/Nicosia")
 
 
 @pytest.fixture(autouse=True)
 def fixed_settings(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Пины временных параметров.
+    """Пины параметров, которые иначе прилетают из чужого `.env`.
 
     Без них результат зависел бы от `.env` того, кто запускает тесты: сменил
     человек `TZ` — и проверки ночной паузы начинают падать на ровном месте.
+
+    `kiosk_open_access` здесь по той же причине, но цена ошибки выше: с ним
+    включённым правило 11 не проверяется вовсе, и тесты о том, что PIN нельзя
+    ввести с чужого устройства, зеленели бы, ничего не проверяя. Кто включил
+    флаг у себя для прогона цикла — не должен об этом узнавать через два
+    падения в наборе.
     """
+    monkeypatch.setattr(settings, "kiosk_open_access", False)
     monkeypatch.setattr(settings, "tz", "Europe/Nicosia")
     monkeypatch.setattr(settings, "zone", TEST_ZONE)
     monkeypatch.setattr(settings, "night_start", time(23, 0))
@@ -110,17 +117,30 @@ async def db(sessions: async_sessionmaker[AsyncSession]) -> AsyncIterator[AsyncS
 
 
 @pytest_asyncio.fixture
-async def printers(db: AsyncSession) -> list[Printer]:
+async def printers(db: AsyncSession) -> list[Machine]:
     """Два одинаковых принтера, как в коворкинге.
 
     Имена заданы здесь, а не из `PRINTER_NAMES`: тесты сверяют их дословно и не
     должны зависеть от чужого .env — по той же причине, что и `UI_LANG` выше.
-    Разбор самой переменной проверяет test_printers.py.
+    Разбор самой переменной проверяет test_machines.py.
     """
     items = [
-        Printer(name="P2S #1", status=PrinterStatus.FREE),
-        Printer(name="P2S #2", status=PrinterStatus.FREE),
+        Machine(name="P2S #1", kind=MachineKind.PRINTER, status=MachineStatus.FREE),
+        Machine(name="P2S #2", kind=MachineKind.PRINTER, status=MachineStatus.FREE),
     ]
+    db.add_all(items)
+    await db.commit()
+    return items
+
+
+@pytest_asyncio.fixture
+async def engravers(db: AsyncSession) -> list[Machine]:
+    """Гравировщик рядом с принтерами — парк из машин разного типа.
+
+    Отдельной фикстурой, а не внутри `printers`: большинство проверок про
+    принтеры, и лишняя машина в них только мешала бы считать свободные.
+    """
+    items = [Machine(name="Гравёр #1", kind=MachineKind.ENGRAVER, status=MachineStatus.FREE)]
     db.add_all(items)
     await db.commit()
     return items

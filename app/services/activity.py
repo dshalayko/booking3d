@@ -6,8 +6,12 @@
 поддерживать в каждом месте, где меняется состояние, и он бы неизбежно отстал.
 
 Цена: событий ровно столько, сколько оставляют следов таблицы. Например
-«админ вывел принтер в обслуживание» видно как снятую печать с причиной и
+«админ вывел машину в обслуживание» видно как снятую работу с причиной и
 заметку на плитке, а не отдельной строкой.
+
+По той же причине здесь не видно добавления и удаления машин: `machines` хранит
+текущий состав парка, а не его историю. Заведение машины — редкое действие с
+глазу на глаз, и отдельная таблица ради него не окупается.
 """
 
 from dataclasses import dataclass
@@ -20,7 +24,7 @@ from sqlalchemy.orm import aliased
 from app import texts as t
 from app.config import settings
 from app.enums import QueueStatus, SessionStatus
-from app.models import Printer, PrintSession, QueueEntry, User
+from app.models import Machine, MachineSession, QueueEntry, User
 
 DEFAULT_LIMIT = 100
 
@@ -46,19 +50,19 @@ async def _session_events(db: AsyncSession, limit: int) -> list[Event]:
     freed_by = aliased(User)
     rows = (
         await db.execute(
-            select(PrintSession, User.name, Printer.name, freed_by.name)
-            .join(User, User.id == PrintSession.user_id)
-            .join(Printer, Printer.id == PrintSession.printer_id)
-            .outerjoin(freed_by, freed_by.id == PrintSession.freed_by_user_id)
-            .order_by(PrintSession.id.desc())
+            select(MachineSession, User.name, Machine.name, freed_by.name)
+            .join(User, User.id == MachineSession.user_id)
+            .join(Machine, Machine.id == MachineSession.machine_id)
+            .outerjoin(freed_by, freed_by.id == MachineSession.freed_by_user_id)
+            .order_by(MachineSession.id.desc())
             .limit(limit)
         )
     ).all()
 
     events: list[Event] = []
-    for session, owner, printer, freed_by_name in rows:
+    for session, owner, machine, freed_by_name in rows:
         events.append(
-            Event(session.started_at, t.LOG_SESSION_STARTED.format(printer=printer, name=owner))
+            Event(session.started_at, t.LOG_SESSION_STARTED.format(machine=machine, name=owner))
         )
 
         if session.ended_at is None:
@@ -66,11 +70,11 @@ async def _session_events(db: AsyncSession, limit: int) -> list[Event]:
 
         by_other = freed_by_name and freed_by_name != owner
         if session.status == SessionStatus.COMPLETED:
-            text = t.LOG_SESSION_COMPLETED.format(printer=printer)
+            text = t.LOG_SESSION_COMPLETED.format(machine=machine)
             if by_other:
                 text += t.LOG_SESSION_COMPLETED_BY.format(name=freed_by_name)
         else:
-            text = t.LOG_SESSION_CANCELLED.format(printer=printer)
+            text = t.LOG_SESSION_CANCELLED.format(machine=machine)
             if by_other:
                 text += t.LOG_SESSION_CANCELLED_BY.format(name=freed_by_name)
             if session.cancel_reason:
@@ -83,9 +87,9 @@ async def _session_events(db: AsyncSession, limit: int) -> list[Event]:
 async def _queue_events(db: AsyncSession, limit: int) -> list[Event]:
     rows = (
         await db.execute(
-            select(QueueEntry, User.name, Printer.name)
+            select(QueueEntry, User.name, Machine.name)
             .join(User, User.id == QueueEntry.user_id)
-            .outerjoin(Printer, Printer.id == QueueEntry.offered_printer_id)
+            .outerjoin(Machine, Machine.id == QueueEntry.offered_machine_id)
             .order_by(QueueEntry.id.desc())
             .limit(limit)
         )
@@ -98,12 +102,19 @@ async def _queue_events(db: AsyncSession, limit: int) -> list[Event]:
     }
 
     events: list[Event] = []
-    for entry, name, printer in rows:
-        events.append(Event(entry.created_at, t.LOG_QUEUE_JOINED.format(name=name)))
+    for entry, name, machine in rows:
+        events.append(
+            Event(
+                entry.created_at,
+                t.LOG_QUEUE_JOINED.format(
+                    name=name, kind=t.MACHINE_KIND_ONE.get(entry.kind, entry.kind)
+                ),
+            )
+        )
 
         if entry.offered_at is not None:
             events.append(
-                Event(entry.offered_at, t.LOG_QUEUE_OFFERED.format(printer=printer, name=name))
+                Event(entry.offered_at, t.LOG_QUEUE_OFFERED.format(machine=machine, name=name))
             )
 
         if entry.resolved_at is not None:

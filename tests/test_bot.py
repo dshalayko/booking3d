@@ -4,10 +4,10 @@ import pytest
 from sqlalchemy import select
 
 from app.bot import commands, notify, texts
-from app.enums import PrinterStatus
-from app.models import Printer, User
+from app.enums import MachineKind, MachineStatus
+from app.models import Machine, User
 from app.services import auth
-from app.services import printers as printers_svc
+from app.services import machines as machines_svc
 from app.services import queue as queue_svc
 from app.services.errors import AuthFailed
 
@@ -122,7 +122,7 @@ class TestStatus:
 
     async def test_status_shows_who_prints_and_how_long(self, db, printers, make_user):
         user = await make_user(name="Иван П.")
-        await printers_svc.occupy(db, user, printers[0].id, 120)
+        await machines_svc.occupy(db, user, printers[0].id, 120)
 
         answer = await commands.status(db)
 
@@ -134,10 +134,10 @@ class TestStatus:
         owner = await make_user()
         other = await make_user()
         waiting = await make_user(name="Анна")
-        await printers_svc.occupy(db, owner, printers[0].id, 60)
-        await printers_svc.occupy(db, other, printers[1].id, 60)
-        await queue_svc.join(db, waiting.id)
-        await printers_svc.release(db, owner, printers[0].id)
+        await machines_svc.occupy(db, owner, printers[0].id, 60)
+        await machines_svc.occupy(db, other, printers[1].id, 60)
+        await queue_svc.join(db, waiting.id, MachineKind.PRINTER)
+        await machines_svc.release(db, owner, printers[0].id)
 
         answer = await commands.status(db)
 
@@ -146,7 +146,7 @@ class TestStatus:
 
     async def test_status_shows_broken_printer_with_note(self, db, printers, make_user):
         admin = await make_user(is_admin=True)
-        await printers_svc.set_broken(db, admin, printers[0].id, note="полетел хотэнд")
+        await machines_svc.set_broken(db, admin, printers[0].id, note="полетел хотэнд")
 
         answer = await commands.status(db)
 
@@ -163,7 +163,7 @@ class TestMy:
     async def test_shows_active_print(self, db, printers):
         await register(db)
         user = await user_of(db, CHAT)
-        await printers_svc.occupy(db, user, printers[0].id, 240)
+        await machines_svc.occupy(db, user, printers[0].id, 240)
 
         answer = await commands.my(db, CHAT)
 
@@ -173,7 +173,7 @@ class TestMy:
     async def test_shows_queue_position(self, db, printers, make_user):
         await register(db)
         for printer in printers:
-            await printers_svc.occupy(db, await make_user(), printer.id, 60)
+            await machines_svc.occupy(db, await make_user(), printer.id, 60)
         await commands.queue_join(db, CHAT)
 
         assert "номер 1" in await commands.my(db, CHAT)
@@ -182,10 +182,10 @@ class TestMy:
         await register(db)
         owner = await make_user()
         other = await make_user()
-        await printers_svc.occupy(db, owner, printers[0].id, 60)
-        await printers_svc.occupy(db, other, printers[1].id, 60)
+        await machines_svc.occupy(db, owner, printers[0].id, 60)
+        await machines_svc.occupy(db, other, printers[1].id, 60)
         await commands.queue_join(db, CHAT)
-        await printers_svc.release(db, owner, printers[0].id)
+        await machines_svc.release(db, owner, printers[0].id)
         await db.commit()
 
         answer = await commands.my(db, CHAT)
@@ -198,7 +198,7 @@ class TestQueueCommands:
     async def test_join_and_leave(self, db, printers, make_user, outbox):
         await register(db)
         for printer in printers:
-            await printers_svc.occupy(db, await make_user(), printer.id, 60)
+            await machines_svc.occupy(db, await make_user(), printer.id, 60)
         await db.commit()
 
         joined = await commands.queue_join(db, CHAT)
@@ -218,7 +218,7 @@ class TestQueueCommands:
     async def test_user_with_active_print_cannot_queue(self, db, printers):
         await register(db)
         user = await user_of(db, CHAT)
-        await printers_svc.occupy(db, user, printers[0].id, 60)
+        await machines_svc.occupy(db, user, printers[0].id, 60)
         await db.commit()
 
         answer = await commands.queue_join(db, CHAT)
@@ -237,17 +237,17 @@ class TestQueueCommands:
 
 class TestFree:
     async def test_free_releases_my_printer(self, db, printers, outbox):
-        printer_id = printers[0].id
+        machine_id = printers[0].id
         await register(db)
         user = await user_of(db, CHAT)
-        await printers_svc.occupy(db, user, printer_id, 60)
+        await machines_svc.occupy(db, user, machine_id, 60)
         await db.commit()
 
         answer = await commands.free(db, CHAT)
 
         assert "освобождён" in answer
         db.expire_all()
-        assert (await db.get(Printer, printer_id)).status == PrinterStatus.FREE
+        assert (await db.get(Machine, machine_id)).status == MachineStatus.FREE
 
     async def test_free_without_a_printer(self, db):
         await register(db)
@@ -261,10 +261,10 @@ class TestFree:
         second_owner = await make_user()
         first = await make_user()
         second = await make_user()
-        await printers_svc.occupy(db, owner, printers[0].id, 60)
-        await printers_svc.occupy(db, second_owner, printers[1].id, 60)
-        await queue_svc.join(db, first.id)
-        await queue_svc.join(db, second.id)
+        await machines_svc.occupy(db, owner, printers[0].id, 60)
+        await machines_svc.occupy(db, second_owner, printers[1].id, 60)
+        await queue_svc.join(db, first.id, MachineKind.PRINTER)
+        await queue_svc.join(db, second.id, MachineKind.PRINTER)
         await db.commit()
         outbox.clear()
 
@@ -307,6 +307,69 @@ class TestTexts:
     )
     def test_humanize(self, minutes, expected):
         assert texts.humanize(minutes) == expected
+
+
+class TestKindsInBot:
+    """Очередей несколько, и команда обязана быть однозначной."""
+
+    async def test_status_is_split_into_sections(self, db, printers, engravers, make_user):
+        user = await make_user(name="Иван П.")
+        await machines_svc.occupy(db, user, engravers[0].id, 60)
+
+        answer = await commands.status(db)
+
+        assert "Принтеры" in answer and "Гравировщики" in answer
+        # гравировщик не печатает — слово статуса зависит от типа
+        assert "гравирует" in answer
+        assert "печатает" not in answer
+
+    async def test_queue_without_kind_works_while_the_park_is_uniform(
+        self, db, printers, make_user
+    ):
+        await register(db)
+        user = await user_of(db, CHAT)
+        for printer in printers:
+            await machines_svc.occupy(db, await make_user(), printer.id, 60)
+
+        answer = await commands.queue_join(db, user.tg_chat_id)
+
+        assert "в очереди на принтер" in answer
+        assert await queue_svc.position_of(db, user.id) == 1
+
+    async def test_queue_without_kind_asks_which_one(self, db, printers, engravers, make_user):
+        """Угаданное место в чужой очереди человек заметит через часы молчания."""
+        await register(db)
+        user = await user_of(db, CHAT)
+
+        answer = await commands.queue_join(db, user.tg_chat_id)
+
+        assert "/queue_printer" in answer and "/queue_engraver" in answer
+        assert await queue_svc.position_of(db, user.id) is None
+
+    async def test_queue_with_kind_joins_that_line(self, db, printers, engravers, make_user):
+        await register(db)
+        user = await user_of(db, CHAT)
+        await machines_svc.occupy(db, await make_user(), engravers[0].id, 60)
+
+        answer = await commands.queue_join(db, user.tg_chat_id, MachineKind.ENGRAVER)
+
+        assert "в очереди на гравировщик" in answer
+
+    async def test_queue_on_an_empty_park_says_so(self, db):
+        await register(db)
+        user = await user_of(db, CHAT)
+
+        answer = await commands.queue_join(db, user.tg_chat_id)
+
+        assert "нет ни одной машины" in answer
+
+    async def test_my_state_names_the_line(self, db, printers, engravers, make_user):
+        await register(db)
+        user = await user_of(db, CHAT)
+        await machines_svc.occupy(db, await make_user(), engravers[0].id, 60)
+        await queue_svc.join(db, user.id, MachineKind.ENGRAVER)
+
+        assert "в очереди на гравировщик" in await commands.my(db, user.tg_chat_id)
 
 
 async def register(db, chat_id: int = CHAT, login: str = "i_petrov") -> str:

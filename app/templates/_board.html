@@ -1,72 +1,109 @@
-{# Живая часть главного экрана: сама перезапрашивается каждые 10 секунд. #}
-{% set free = printers | selectattr("is_free") | list %}
+{# Живая часть главного экрана: сама перезапрашивается каждые 10 секунд.
 
-<div class="hero">
-  {% if free %}
-    <a class="btn btn-hero" href="/occupy/{{ free[0].id }}">
-      {{ t.board_occupy_cta }}
-      <span class="btn-sub">{{ t.board_free_of.format(free=free | length, total=printers | length) }}</span>
-    </a>
-  {% else %}
-    <a class="btn btn-hero btn-hero-wait" href="/queue/join">
-      {{ t.board_queue_cta }}
-      <span class="btn-sub">{{ t.board_all_busy }}</span>
-    </a>
-  {% endif %}
-</div>
+   Секция на каждый тип оборудования — у принтеров и гравировщиков свои очереди
+   (services/queue.py), и одна общая полоса внизу врала бы про место в очереди. #}
 
-<div class="tiles">
-  {% for printer in printers %}
-    <section class="tile tile-{{ printer.status }}{% if printer.reserved_for %} tile-reserved{% endif %}">
-      <h2 class="tile-name">{{ printer.name }}</h2>
-
-      {% if printer.status == "broken" %}
-        <p class="tile-status">{{ t.tile_broken }}</p>
-        {% if printer.note %}<p class="tile-note">{{ printer.note }}</p>{% endif %}
-
-      {% elif printer.status == "printing" %}
-        <p class="tile-status">{{ t.tile_printing }}</p>
-        <p class="tile-owner">{{ printer.owner_name }}</p>
-        <p class="tile-time" data-eta="{{ printer.eta_at | iso }}">
-          {{ t.tile_until.format(time=printer.eta_at | hhmm) }}
-        </p>
-        <a class="btn btn-ghost" href="/release/{{ printer.id }}">{{ t.tile_release }}</a>
-
-      {% elif printer.status == "done_wait" %}
-        <p class="tile-status">{{ t.tile_done_wait }}</p>
-        <p class="tile-owner">{{ printer.owner_name }}</p>
-        <p class="tile-time" data-since="{{ printer.done_since | iso }}">
-          {{ t.tile_done_at.format(time=printer.done_since | hhmm) }}
-        </p>
-        <a class="btn btn-primary" href="/release/{{ printer.id }}">{{ t.tile_claimed }}</a>
-
-      {% elif printer.reserved_for %}
-        <p class="tile-status">{{ t.tile_reserved }}</p>
-        <p class="tile-owner">{{ printer.reserved_for }}</p>
-        <p class="tile-time">{{ t.tile_until.format(time=printer.reserved_until | hhmm) }}</p>
-        <a class="btn btn-ghost" href="/occupy/{{ printer.id }}">{{ t.tile_its_me }}</a>
-
-      {% else %}
-        <p class="tile-status">{{ t.tile_free }}</p>
-        <a class="btn btn-primary" href="/occupy/{{ printer.id }}">{{ t.tile_occupy }}</a>
+{# Очередь секции. Рисуется в двух местах, поэтому макросом: в секции из
+   нескольких машин — полосой под плитками, в секции из одной — столбиком внутри
+   самой плитки (см. ниже). #}
+{% macro queue_block(group, free, column=false) %}
+  <footer class="queue{% if column %} queue-column{% endif %}">
+    {% if group.queue %}
+      <ol class="queue-list">
+        {% for person in group.queue %}
+          <li class="{% if person.offered %}queue-offered{% endif %}">
+            <span class="queue-pos">{{ person.position }}</span>{{ person.name }}
+            {%- if person.offered %} <span class="queue-tag">{{ t.queue_offered }}</span>{% endif %}
+          </li>
+        {% endfor %}
+      </ol>
+      <a class="btn btn-small" href="/queue/leave">{{ t.queue_leave }}</a>
+    {% elif group.machines %}
+      <p class="queue-empty">{{ t.queue_empty }}</p>
+      {# Когда всё занято, «встать в очередь» уже написано на большой кнопке
+         сверху — вторая такая же рядом только добавляет, во что тыкать. #}
+      {% if free %}
+        <a class="btn btn-small" href="/queue/join/{{ group.kind }}">{{ t.queue_join }}</a>
       {% endif %}
-    </section>
-  {% endfor %}
-</div>
+    {% endif %}
+  </footer>
+{% endmacro %}
 
-<footer class="queue">
-  {% if queue %}
-    <ol class="queue-list">
-      {% for person in queue %}
-        <li class="{% if person.offered %}queue-offered{% endif %}">
-          <span class="queue-pos">{{ person.position }}</span>{{ person.name }}
-          {%- if person.offered %} <span class="queue-tag">{{ t.queue_offered }}</span>{% endif %}
-        </li>
-      {% endfor %}
-    </ol>
-    <a class="btn btn-small" href="/queue/leave">{{ t.queue_leave }}</a>
-  {% else %}
-    <p class="queue-empty">{{ t.queue_empty }}</p>
-    <a class="btn btn-small" href="/queue/join">{{ t.queue_join }}</a>
-  {% endif %}
-</footer>
+{% if not groups %}
+  <p class="board-empty">{{ t.board_park_empty }}</p>
+{% endif %}
+
+{# Ширина секции — по числу машин в ней: у типа с четырьмя машинами плитки не
+   должны стать вчетверо уже, чем у соседа с одной. Считает Jinja, а не CSS:
+   `flex-grow` не умеет смотреть на количество детей. #}
+{% for group in groups %}
+  {% set free = group.first_free %}
+  {# Машина в секции одна — очередь уезжает внутрь её плитки, и цветная полоса
+     статуса идёт во всю высоту карточки. Разделять их незачем: очередь тут
+     ровно к этой машине, а не к нескольким. #}
+  {% set single = group.machines | length == 1 %}
+  <section class="group group-{{ group.kind }}" style="--machines: {{ group.machines | length or 1 }}">
+    <header class="group-head">
+      <h2 class="group-title">{{ MACHINE_KIND_TITLE.get(group.kind, group.kind) }}</h2>
+      {% if free %}
+        <a class="btn btn-hero" href="/occupy/{{ free.id }}">
+          {{ t.board_occupy_cta.format(kind=MACHINE_KIND_ONE.get(group.kind, group.kind)) }}
+          <span class="btn-sub">
+            {{ t.board_free_of.format(free=group.free_count, total=group.machines | length) }}
+          </span>
+        </a>
+      {% elif group.machines %}
+        <a class="btn btn-hero btn-hero-wait" href="/queue/join/{{ group.kind }}">
+          {{ t.board_queue_cta }}
+          <span class="btn-sub">{{ t.board_all_busy }}</span>
+        </a>
+      {% endif %}
+    </header>
+
+    {# Плитки и очередь — один блок без зазора: очередь относится к этим самым
+       машинам, а отдельной карточкой снизу она читалась как ещё одна машина. #}
+    <div class="group-body">
+      <div class="tiles">
+        {% for machine in group.machines %}
+          <section class="tile tile-{{ machine.status }}{% if machine.reserved_for %} tile-reserved{% endif %}{% if single %} tile-single{% endif %}">
+            <h3 class="tile-name">{{ machine.name }}</h3>
+
+            {% if machine.status == "broken" %}
+              <p class="tile-status">{{ t.tile_broken }}</p>
+              {% if machine.note %}<p class="tile-note">{{ machine.note }}</p>{% endif %}
+
+            {% elif machine.status == "printing" %}
+              <p class="tile-status">{{ t.tile_busy }}</p>
+              <p class="tile-owner">{{ machine.owner_name }}</p>
+              <p class="tile-time" data-eta="{{ machine.eta_at | iso }}">
+                {{ t.tile_until.format(time=machine.eta_at | hhmm) }}
+              </p>
+              <a class="btn btn-ghost" href="/release/{{ machine.id }}">{{ t.tile_release }}</a>
+
+            {% elif machine.status == "done_wait" %}
+              <p class="tile-status">{{ t.tile_done_wait }}</p>
+              <p class="tile-owner">{{ machine.owner_name }}</p>
+              <p class="tile-time" data-since="{{ machine.done_since | iso }}">
+                {{ t.tile_done_at.format(time=machine.done_since | hhmm) }}
+              </p>
+              <a class="btn btn-primary" href="/release/{{ machine.id }}">{{ t.tile_claimed }}</a>
+
+            {% elif machine.reserved_for %}
+              <p class="tile-status">{{ t.tile_reserved }}</p>
+              <p class="tile-owner">{{ machine.reserved_for }}</p>
+              <p class="tile-time">{{ t.tile_until.format(time=machine.reserved_until | hhmm) }}</p>
+              <a class="btn btn-ghost" href="/occupy/{{ machine.id }}">{{ t.tile_its_me }}</a>
+
+            {% else %}
+              <p class="tile-status">{{ t.tile_free }}</p>
+            {% endif %}
+
+            {% if single %}{{ queue_block(group, free, column=true) }}{% endif %}
+          </section>
+        {% endfor %}
+      </div>
+
+      {% if not single %}{{ queue_block(group, free) }}{% endif %}
+    </div>
+  </section>
+{% endfor %}

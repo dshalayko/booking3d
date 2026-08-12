@@ -12,10 +12,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.bot import notify, texts
 from app.enums import ACTIVE_QUEUE_STATUSES, ACTIVE_SESSION_STATUSES
-from app.models import Printer, PrintSession, QueueEntry, User
+from app.models import Machine, MachineSession, QueueEntry, User
 from app.services import auth
 from app.services import board as board_svc
-from app.services import printers as printers_svc
+from app.services import machines as machines_svc
 from app.services import queue as queue_svc
 from app.services.errors import AlreadyInQueue, DomainError, NotInQueue
 from app.services.users import normalize_login
@@ -26,7 +26,7 @@ async def start(db: AsyncSession, chat_id: int) -> str:
 
     Имя из Telegram не берём — оно произвольное и меняется, а на доске и в
     журнале нужен тот же логин, что и в почте, иначе непонятно, кто занял
-    принтер. PIN выдаётся только на втором шаге, вместе с логином.
+    машину. PIN выдаётся только на втором шаге, вместе с логином.
     """
     user = await _user(db, chat_id)
     if user is not None:
@@ -87,15 +87,15 @@ async def my(db: AsyncSession, chat_id: int) -> str:
         return texts.not_registered()
 
     session = await db.scalar(
-        select(PrintSession).where(
-            PrintSession.user_id == user.id,
-            PrintSession.status.in_(ACTIVE_SESSION_STATUSES),
+        select(MachineSession).where(
+            MachineSession.user_id == user.id,
+            MachineSession.status.in_(ACTIVE_SESSION_STATUSES),
         )
     )
-    printer_name = None
+    machine_name = None
     if session is not None:
-        printer = await db.get(Printer, session.printer_id)
-        printer_name = printer.name if printer else None
+        machine = await db.get(Machine, session.machine_id)
+        machine_name = machine.name if machine else None
 
     entry = await db.scalar(
         select(QueueEntry).where(
@@ -103,28 +103,44 @@ async def my(db: AsyncSession, chat_id: int) -> str:
             QueueEntry.status.in_(ACTIVE_QUEUE_STATUSES),
         )
     )
-    offered_printer = None
-    if entry is not None and entry.offered_printer_id is not None:
-        printer = await db.get(Printer, entry.offered_printer_id)
-        offered_printer = printer.name if printer else None
+    offered_machine = None
+    if entry is not None and entry.offered_machine_id is not None:
+        machine = await db.get(Machine, entry.offered_machine_id)
+        offered_machine = machine.name if machine else None
 
     return texts.my_state(
-        printer_name=printer_name,
+        machine_name=machine_name,
         eta_at=session.eta_at if session else None,
         now=datetime.now(UTC),
         position=await queue_svc.position_of(db, user.id),
-        offered_printer=offered_printer,
+        queue_kind=entry.kind if entry else None,
+        offered_machine=offered_machine,
         offer_until=entry.offer_expires_at if entry else None,
     )
 
 
-async def queue_join(db: AsyncSession, chat_id: int) -> str:
+async def queue_join(db: AsyncSession, chat_id: int, kind: str | None = None) -> str:
+    """Встать в очередь на тип оборудования.
+
+    Без типа команда однозначна только пока парк однороден: если в мастерской
+    стоят и принтеры, и гравировщики, `/queue` не знает, чего человек ждёт, и
+    отвечает списком команд по типам. Угадывать нельзя — угаданное место в
+    чужой очереди человек заметит только через несколько часов молчания.
+    """
     user = await _user(db, chat_id)
     if user is None:
         return texts.not_registered()
 
+    if kind is None:
+        kinds = await _kinds_in_park(db)
+        if not kinds:
+            return texts.park_empty()
+        if len(kinds) > 1:
+            return texts.queue_pick_kind(kinds)
+        kind = kinds[0]
+
     try:
-        result = await queue_svc.join(db, user.id)
+        result = await queue_svc.join(db, user.id, kind)
     except AlreadyInQueue:
         position = await queue_svc.position_of(db, user.id) or 1
         return texts.queue_already(position)
@@ -132,9 +148,9 @@ async def queue_join(db: AsyncSession, chat_id: int) -> str:
         return str(error)
 
     await db.commit()
-    # Свободный принтер мог найтись прямо сейчас — тогда предложение уже создано.
+    # Свободная машина могла найтись прямо сейчас — тогда предложение уже создано.
     await notify.announce_offers(db, result.offers)
-    return texts.queue_joined(result.position)
+    return texts.queue_joined(result.position, result.kind)
 
 
 async def queue_leave(db: AsyncSession, chat_id: int) -> str:
@@ -158,22 +174,36 @@ async def free(db: AsyncSession, chat_id: int) -> str:
         return texts.not_registered()
 
     session = await db.scalar(
-        select(PrintSession).where(
-            PrintSession.user_id == user.id,
-            PrintSession.status.in_(ACTIVE_SESSION_STATUSES),
+        select(MachineSession).where(
+            MachineSession.user_id == user.id,
+            MachineSession.status.in_(ACTIVE_SESSION_STATUSES),
         )
     )
     if session is None:
         return texts.nothing_to_free()
 
     try:
-        result = await printers_svc.release(db, user, session.printer_id)
+        result = await machines_svc.release(db, user, session.machine_id)
     except DomainError as error:
         return str(error)
 
     await db.commit()
     await notify.announce_offers(db, result.offers)
-    return texts.released(result.printer_name)
+    return texts.released(result.machine_name)
+
+
+async def _kinds_in_park(db: AsyncSession) -> list[str]:
+    """Типы, машины которых реально стоят в мастерской.
+
+    Спрашиваем базу, а не `MachineKind`: предлагать очередь на гравировщик там,
+    где его нет, — значит поставить человека ждать машину, которая не появится.
+    """
+    park = await machines_svc.list_machines(db)
+    kinds: list[str] = []
+    for machine in park:
+        if machine.kind not in kinds:
+            kinds.append(machine.kind)
+    return kinds
 
 
 async def _user(db: AsyncSession, chat_id: int) -> User | None:

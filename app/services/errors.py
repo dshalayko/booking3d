@@ -10,15 +10,35 @@ class DomainError(Exception):
 
 
 class InvalidDuration(DomainError):
-    """Длительность печати вне допустимых границ."""
+    """Длительность работы вне допустимых границ."""
 
 
-class PrinterNotAvailable(DomainError):
-    """Принтер занят, сломан или иначе недоступен."""
+class MachineNotAvailable(DomainError):
+    """Машина занята, сломана или иначе недоступна."""
 
 
-class PrinterReserved(DomainError):
-    """Правило 7: принтер зарезервирован за первым в очереди."""
+class MachineReserved(DomainError):
+    """Правило 7: машина зарезервирована за первым в очереди своего типа."""
+
+
+class MachineReleaseForbidden(DomainError):
+    """Активную работу может снять только её владелец или админ."""
+
+
+class MachineNameTaken(DomainError):
+    """Имя уже носит другая машина парка."""
+
+
+class MachineNameInvalid(DomainError):
+    """Имя пустое или длиннее, чем влезает в строку таблицы."""
+
+
+class MachineKindUnknown(DomainError):
+    """Тип оборудования не из `MachineKind`."""
+
+
+class MachineHasHistory(DomainError):
+    """Машину с работами и приглашениями в журнале удалять нельзя."""
 
 
 class UserBusy(DomainError):

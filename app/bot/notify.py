@@ -5,7 +5,7 @@
 `Sender`, чтобы в тестах подменяться списком, а в бою — вызовом aiogram.
 
 Ошибка отправки никогда не роняет запрос: человек заблокировал бота — это его
-право, а занятие принтера должно сработать (сценарий приёмки 10).
+право, а занятие машины должно сработать (сценарий приёмки 10).
 """
 
 import logging
@@ -57,4 +57,4 @@ async def send_to_user(db: AsyncSession, user_id: int, text: str) -> bool:
 async def announce_offers(db: AsyncSession, offers: list[Offer]) -> None:
     """Правило 4: сообщение уходит только тому, кому сделано предложение."""
     for item in offers:
-        await send_to_user(db, item.user_id, texts.offer(item.printer_name, item.expires_at))
+        await send_to_user(db, item.user_id, texts.offer(item.machine_name, item.expires_at))

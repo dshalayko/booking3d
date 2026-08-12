@@ -26,12 +26,17 @@ from app.services.errors import (
     InvalidDuration,
     LoginInvalid,
     LoginTaken,
+    MachineHasHistory,
+    MachineKindUnknown,
+    MachineNameInvalid,
+    MachineNameTaken,
+    MachineNotAvailable,
+    MachineReleaseForbidden,
+    MachineReserved,
     NotAdmin,
     NotInQueue,
     OfferNotActive,
     PinTaken,
-    PrinterNotAvailable,
-    PrinterReserved,
     TooManyAttempts,
     UserBusy,
 )
@@ -53,21 +58,26 @@ STATUS_BY_ERROR: dict[type[DomainError], int] = {
     NotAdmin: 403,
     TooManyAttempts: 429,
     NotInQueue: 404,
-    PrinterNotAvailable: 409,
-    PrinterReserved: 409,
+    MachineNotAvailable: 409,
+    MachineReleaseForbidden: 403,
+    MachineReserved: 409,
     UserBusy: 409,
     AlreadyInQueue: 409,
     OfferNotActive: 409,
     PinTaken: 409,
     LoginTaken: 409,
+    MachineNameTaken: 409,
+    MachineHasHistory: 409,
     InvalidDuration: 400,
     LoginInvalid: 400,
+    MachineNameInvalid: 400,
+    MachineKindUnknown: 400,
 }
 
 
 @asynccontextmanager
 async def lifespan(_: FastAPI) -> AsyncIterator[None]:
-    """Бот живёт в том же процессе: при двух принтерах отдельный воркер дал бы
+    """Бот живёт в том же процессе: при небольшом парке отдельный воркер дал бы
     только лишний контейнер и лишний способ рассинхронизироваться."""
     bot = None
     polling: asyncio.Task | None = None
