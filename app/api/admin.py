@@ -23,7 +23,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app import texts as t
 from app.api.deps import Db, require_admin
-from app.api.kiosk import templates
+from app.api.render import templates
 from app.bot import notify, texts
 from app.enums import MachineKind, MachineStatus
 from app.models import User
@@ -32,6 +32,7 @@ from app.services import auth
 from app.services import board as board_svc
 from app.services import machines as machines_svc
 from app.services import queue as queue_svc
+from app.services import reservations as reservations_svc
 from app.services import users as users_svc
 
 router = APIRouter(prefix="/admin")
@@ -67,6 +68,7 @@ async def dashboard(request: Request, db: Db, flash: str = "") -> Response:
         {
             "board": board,
             "users": users,
+            "bookings": await reservations_svc.booked_ahead(db),
             "events": await activity_svc.recent(db),
             "flash": FLASH_MESSAGES.get(flash),
             "MachineStatus": MachineStatus,
@@ -131,6 +133,28 @@ async def remove_from_queue(request: Request, db: Db, user_id: int) -> Response:
     await notify.send_to_user(db, user_id, texts.removed_from_queue())
     await notify.announce_offers(db, result.offers)
     return _back("removed")
+
+
+@router.post("/bookings/{reservation_id}/cancel", dependencies=[Depends(require_admin)])
+async def cancel_booking(
+    request: Request, db: Db, reservation_id: int, reason: str = Form("")
+) -> Response:
+    """Снять чужую бронь. Человек узнаёт об этом сообщением — своё окно он
+    считал занятым и мог планировать вокруг него."""
+    admin = await acting_admin(db)
+    result = await reservations_svc.cancel(
+        db, admin, reservation_id, reason=reason.strip() or None
+    )
+    await db.commit()
+
+    if result.user_id != admin.id:
+        await notify.send_to_user(
+            db,
+            result.user_id,
+            texts.booking_cancelled_by_admin(result.machine_name, result.starts_at),
+        )
+    await notify.announce_offers(db, result.offers)
+    return _back("booking_cancelled")
 
 
 # --- состав парка ------------------------------------------------------------

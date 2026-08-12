@@ -1,14 +1,24 @@
+from datetime import UTC, datetime, timedelta
+
 import pytest
 from sqlalchemy import select
 
 from app.bot import notify
 from app.config import settings
-from app.enums import MachineKind, MachineStatus, QueueStatus, SessionStatus
-from app.models import Machine, MachineSession, QueueEntry, User
+from app.enums import (
+    MachineKind,
+    MachineStatus,
+    QueueStatus,
+    ReservationStatus,
+    SessionStatus,
+)
+from app.models import Machine, MachineSession, QueueEntry, Reservation, User
 from app.services import activity as activity_svc
 from app.services import auth
 from app.services import machines as machines_svc
 from app.services import queue as queue_svc
+from app.services import reservations as reservations_svc
+from app.services import schedule as schedule_svc
 
 
 @pytest.fixture
@@ -479,3 +489,67 @@ class TestMachinesTab:
 
         assert f"/admin/machines/{printers[1].id}/delete" in response.text
         assert f"/admin/machines/{printers[0].id}/delete" not in response.text
+
+
+class TestBookings:
+    """Брони на будущее: их не видно ни на плитках, ни в очереди."""
+
+    def _start(self):
+        return schedule_svc.align(datetime.now(UTC)) + timedelta(days=1)
+
+    async def test_dashboard_lists_bookings(self, client, db, printers, make_user):
+        await make_user(is_admin=True)
+        person = await make_user(name="Анна")
+        await reservations_svc.book(db, person, printers[0].id, self._start(), 120)
+        await db.commit()
+        await login(client)
+
+        response = await client.get("/admin")
+
+        assert "Анна" in response.text
+        assert "P2S #1" in response.text
+
+    async def test_admin_cancels_a_booking(self, client, db, printers, make_user, outbox):
+        await make_user(is_admin=True)
+        person = await make_user(name="Анна")
+        chat_id = person.tg_chat_id
+        booking = await reservations_svc.book(db, person, printers[0].id, self._start(), 60)
+        await db.commit()
+        await login(client)
+
+        response = await client.post(
+            f"/admin/bookings/{booking.reservation_id}/cancel",
+            data={"reason": "машина уехала"},
+        )
+
+        assert response.status_code == 303
+        db.expire_all()
+        stored = await db.get(Reservation, booking.reservation_id)
+        assert stored.status == ReservationStatus.CANCELLED
+        assert stored.cancel_reason == "машина уехала"
+        # Человек считал своё окно занятым и планировал вокруг него.
+        assert any(sent_to == chat_id for sent_to, _ in outbox)
+
+    async def test_cancelling_requires_login(self, client, db, printers, make_user):
+        await make_user(is_admin=True)
+        person = await make_user()
+        booking = await reservations_svc.book(db, person, printers[0].id, self._start(), 60)
+        await db.commit()
+
+        response = await client.post(f"/admin/bookings/{booking.reservation_id}/cancel")
+
+        assert response.status_code == 403
+        db.expire_all()
+        stored = await db.get(Reservation, booking.reservation_id)
+        assert stored.status == ReservationStatus.BOOKED
+
+    async def test_log_shows_booking_life(self, db, printers, make_user):
+        person = await make_user(name="Пётр")
+        booking = await reservations_svc.book(db, person, printers[0].id, self._start(), 60)
+        await reservations_svc.cancel(db, person, booking.reservation_id)
+        await db.commit()
+
+        text = "\n".join(event.text for event in await activity_svc.recent(db))
+
+        assert "Бронь P2S #1" in text
+        assert "бронь на" in text and "отменена" in text

@@ -8,7 +8,9 @@
   8. таймер не освобождает машину автоматически — по истечении `eta_at`
      она уходит в `done_wait`, а не в `free`;
   9. активную работу снимает только владелец или админ; готовую деталь из
-     `done_wait` может отметить любой авторизованный.
+     `done_wait` может отметить любой авторизованный;
+ 12. в своё окно машину занимает только тот, кто её забронировал, — и это право
+     сильнее очереди (правило 7). Сами брони живут в services/reservations.py.
 
 Состав парка (`create`, `rename`, `remove`) живёт здесь же, а не в админке:
 командная строка и HTTP-обработчик должны одинаково отвечать на вопрос «можно
@@ -33,10 +35,11 @@ from app.enums import (
     QueueStatus,
     SessionStatus,
 )
-from app.models import Machine, MachineSession, QueueEntry, User
-from app.services import queue
+from app.models import Machine, MachineSession, QueueEntry, Reservation, User
+from app.services import queue, reservations, schedule
 from app.services.errors import (
     InvalidDuration,
+    MachineBooked,
     MachineHasHistory,
     MachineKindUnknown,
     MachineNameInvalid,
@@ -48,8 +51,10 @@ from app.services.errors import (
     UserBusy,
 )
 
-MIN_DURATION_MINUTES = 15
-MAX_DURATION_MINUTES = 48 * 60
+# Границы длительности лежат в services/schedule.py: они одни и те же у «занять
+# сейчас» и у брони. Здесь оставлены имена, на которые ссылаются киоск и тесты.
+MIN_DURATION_MINUTES = schedule.MIN_DURATION_MINUTES
+MAX_DURATION_MINUTES = schedule.MAX_DURATION_MINUTES
 
 MAX_NAME_LENGTH = 64
 
@@ -61,6 +66,7 @@ class OccupyResult:
     machine_name: str
     eta_at: datetime
     from_offer: bool
+    from_reservation: bool = False
 
 
 @dataclass(frozen=True)
@@ -129,7 +135,13 @@ async def occupy(
     if machine.status != MachineStatus.FREE:
         raise MachineNotAvailable(t.ERR_MACHINE_BUSY.format(machine=machine.name))
 
-    offer = await _check_queue_allows(db, user, machine)
+    reservation = await _check_booking_allows(db, user, machine, duration_minutes, now)
+    # Правило 12 сильнее правила 7: пришедший в своё окно занимает машину, даже
+    # если очередь непуста и приглашение сейчас у кого-то другого. Иначе бронь
+    # не гарантирует ничего — а именно за гарантию её и берут.
+    offer = None
+    if reservation is None:
+        offer = await _check_queue_allows(db, user, machine)
 
     if await _active_session_of_user(db, user.id) is not None:
         raise UserBusy(t.ERR_USER_BUSY)
@@ -142,6 +154,7 @@ async def occupy(
         started_at=now,
         eta_at=now + timedelta(minutes=duration_minutes),
         status=SessionStatus.PRINTING,
+        reservation_id=reservation.id if reservation is not None else None,
     )
 
     try:
@@ -156,6 +169,8 @@ async def occupy(
     if offer is not None:
         offer.status = QueueStatus.TAKEN
         offer.resolved_at = now
+    if reservation is not None:
+        reservations.mark_taken(reservation, now)
 
     await db.flush()
     return OccupyResult(
@@ -164,6 +179,7 @@ async def occupy(
         machine_name=machine.name,
         eta_at=session.eta_at,
         from_offer=offer is not None,
+        from_reservation=reservation is not None,
     )
 
 
@@ -470,6 +486,52 @@ async def _check_queue_allows(db: AsyncSession, user: User, machine: Machine):
         raise MachineReserved(t.ERR_QUEUE_WAIT_YOUR_TURN)
 
     return None
+
+
+async def _check_booking_allows(
+    db: AsyncSession,
+    user: User,
+    machine: Machine,
+    duration_minutes: int,
+    now: datetime,
+) -> Reservation | None:
+    """Правило 12: бронь — это право на машину в конкретные часы.
+
+    Три случая. Идёт чужое окно — занять нельзя вовсе, даже админу мимо чужой
+    брони: он снимает бронь отдельным действием, чтобы это осталось в журнале.
+    Идёт своё окно — можно, и возвращённая бронь пометится сыгравшей. Окна нет —
+    можно, но не дольше, чем до начала ближайшей брони: иначе восьмичасовая
+    печать сожрёт чужой забронированный час, и правило 8 (таймер не освобождает
+    машину сам) не даст его вернуть.
+    """
+    current = await reservations.current_for_machine(db, machine.id, now)
+    if current is not None:
+        if current.user_id == user.id:
+            return current
+        raise MachineBooked(
+            t.ERR_MACHINE_BOOKED_NOW.format(
+                machine=machine.name, time=_hhmm(current.ends_at)
+            )
+        )
+
+    upcoming = await reservations.next_for_machine(db, machine.id, now)
+    if upcoming is None:
+        return None
+
+    available = int((upcoming.starts_at - now).total_seconds() // 60)
+    if duration_minutes > available:
+        raise MachineBooked(
+            t.ERR_MACHINE_BOOKED_LATER.format(
+                machine=machine.name,
+                time=_hhmm(upcoming.starts_at),
+                minutes=max(0, available),
+            )
+        )
+    return None
+
+
+def _hhmm(value: datetime) -> str:
+    return schedule.local(value).strftime(t.TIME_FORMAT)
 
 
 async def _get_machine(db: AsyncSession, machine_id: int) -> Machine:

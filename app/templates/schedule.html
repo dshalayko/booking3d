@@ -1,0 +1,79 @@
+{# Расписание парка на сутки.
+
+   Часы — строками, машины — столбцами. Наоборот было бы компактнее на iPad, но
+   24 столбца не читаются на телефоне, а экран один и тот же: и на стене, и в
+   Mini App (см. api/render.py).
+
+   Адреса действий идут через `base`: пусто у киоска, `/app` у Mini App. #}
+{% extends "base.html" %}
+{% set auto_return = true %}
+{% set title_word = MACHINE_KIND_TITLE.get(grid.kind, grid.kind) %}
+{% block title %}{{ t.schedule_title.format(title=title_word) }}{% endblock %}
+
+{% block content %}
+<main class="sheet sheet-wide">
+  <header class="sheet-head">
+    <a class="btn btn-small btn-ghost" href="{{ base }}/">{{ t.back }}</a>
+    <h1>{{ t.schedule_heading.format(title=title_word) }}</h1>
+    {% if base %}
+      <a class="btn btn-small" href="{{ base }}/my">{{ t.schedule_my_bookings }}</a>
+    {% endif %}
+  </header>
+
+  <nav class="days" aria-label="{{ t.schedule_day_label }}">
+    {% for option in grid.days %}
+      <a class="day{% if option.day == grid.day %} day-on{% endif %}"
+         href="{{ base }}/schedule/{{ grid.kind }}?date={{ option.iso }}">
+        <span class="day-weekday">{{ option.weekday }}</span>
+        <span class="day-number">{{ option.label }}</span>
+      </a>
+    {% endfor %}
+  </nav>
+
+  {% if not grid.columns %}
+    <p class="board-empty">{{ t.schedule_empty }}</p>
+  {% else %}
+    <p class="grid-hint">{{ t.schedule_hint }}</p>
+
+    <div class="grid" style="--cols: {{ grid.columns | length }}">
+      <div class="grid-row grid-head">
+        <span class="grid-hour"></span>
+        {% for column in grid.columns %}
+          <span class="grid-machine">{{ column.name }}</span>
+        {% endfor %}
+      </div>
+
+      {% for hour in grid.hours %}
+        {% set row = loop.index0 %}
+        <div class="grid-row">
+          <span class="grid-hour">{{ hour }}</span>
+          {% for column in grid.columns %}
+            {% set cell = column.cells[row] %}
+            {% if cell.bookable %}
+              <a class="cell cell-free"
+                 href="{{ base }}/book/{{ column.machine_id }}?start={{ cell.starts_at | iso | urlencode }}">
+                {{ t.schedule_free }}
+              </a>
+            {% elif cell.reservation_id %}
+              {# И свою, и чужую бронь ведём на один экран: кто перед экраном,
+                 решает PIN (или подпись Telegram), а не то, что мы нарисовали. #}
+              <a class="cell cell-{{ cell.state }}"
+                 href="{{ base }}/booking/{{ cell.reservation_id }}/cancel">
+                {%- if not cell.continues %}{{ cell.who }}{% endif -%}
+              </a>
+            {% else %}
+              <span class="cell cell-{{ cell.state }}">
+                {%- if not cell.continues -%}
+                  {%- if cell.state == "busy" %}{{ cell.who }}
+                  {%- elif cell.state == "broken" %}{{ t.schedule_broken }}
+                  {%- endif -%}
+                {%- endif -%}
+              </span>
+            {% endif %}
+          {% endfor %}
+        </div>
+      {% endfor %}
+    </div>
+  {% endif %}
+</main>
+{% endblock %}

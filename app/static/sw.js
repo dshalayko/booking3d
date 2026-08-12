@@ -5,7 +5,7 @@
 // Версию обязательно поднимать при правках app.js и app.css: /static/ отдаётся
 // из кэша без перепроверки, и на уже открытом планшете старая копия иначе
 // останется навсегда.
-var CACHE = "booking-v8";
+var CACHE = "booking-v10";
 var SHELL = ["/offline", "/static/app.css", "/static/app.js"];
 
 self.addEventListener("install", function (event) {

@@ -1,0 +1,16 @@
+{# Telegram подпись подтвердил, но такого человека в базе нет.
+
+   Регистрация остаётся у бота: логин он спрашивает сам и сам выдаёт PIN. Второй
+   путь регистрации означал бы вторые правила проверки логина. #}
+{% extends "base.html" %}
+{% block title %}{{ t.app_not_registered_title }}{% endblock %}
+
+{% block content %}
+<main class="sheet sheet-center">
+  <div class="error">
+    <h1>{{ t.app_not_registered_title }}</h1>
+    <p class="error-text">{{ t.app_not_registered_hint }}</p>
+    <a class="btn btn-primary" href="/">{{ t.app_nav_board }}</a>
+  </div>
+</main>
+{% endblock %}

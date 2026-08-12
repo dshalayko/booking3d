@@ -1,14 +1,18 @@
 import re
+from datetime import UTC, datetime, timedelta
 
 import pytest
 from sqlalchemy import select
 
 from app.bot import commands, notify, texts
+from app.config import settings
 from app.enums import MachineKind, MachineStatus
 from app.models import Machine, User
 from app.services import auth
 from app.services import machines as machines_svc
 from app.services import queue as queue_svc
+from app.services import reservations as reservations_svc
+from app.services import schedule as schedule_svc
 from app.services.errors import AuthFailed
 
 CHAT = 5001
@@ -192,6 +196,46 @@ class TestMy:
 
         assert "предложен" in answer
         assert "P2S #1" in answer
+
+
+    async def test_shows_booking(self, db, printers):
+        await register(db)
+        user = await user_of(db, CHAT)
+        start = schedule_svc.align(datetime.now(UTC)) + timedelta(days=1)
+        await reservations_svc.book(db, user, printers[0].id, start, 120)
+
+        answer = await commands.my(db, CHAT)
+
+        assert "Бронь" in answer
+        assert "P2S #1" in answer
+
+
+class TestBookCommand:
+    async def test_invites_to_the_app(self, db, monkeypatch):
+        await register(db)
+        monkeypatch.setattr(settings, "public_base_url", "https://booking.example")
+
+        invite = await commands.book(db, CHAT)
+
+        assert invite.url == "https://booking.example/app"
+
+    async def test_without_https_says_so_instead_of_a_dead_button(self, db, monkeypatch):
+        """Telegram не откроет мини-приложение по http, и кнопка молча не сработает."""
+        await register(db)
+        monkeypatch.setattr(settings, "public_base_url", "http://localhost:8000")
+
+        invite = await commands.book(db, CHAT)
+
+        assert invite.url is None
+        assert "планшета" in invite.text
+
+    async def test_unregistered_is_sent_to_start(self, db, monkeypatch):
+        monkeypatch.setattr(settings, "public_base_url", "https://booking.example")
+
+        invite = await commands.book(db, CHAT)
+
+        assert invite.url is None
+        assert "/start" in invite.text
 
 
 class TestQueueCommands:

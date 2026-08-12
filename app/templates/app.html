@@ -1,0 +1,54 @@
+{# Бутстрап Mini App: отдаёт подпись Telegram серверу и уходит дальше.
+
+   Своего <script> здесь нет — в проекте их нет ни на одной странице, иначе
+   отражённый XSS перестаёт быть заметен и глазами, и тестом. Форму заполняет и
+   отправляет app.js, найдя её по `data-tg-bootstrap`. #}
+{% extends "base.html" %}
+{% block title %}{{ t.app_loading }}{% endblock %}
+
+{% block content %}
+<main class="sheet sheet-center">
+  <form method="post" action="/app/session" data-tg-bootstrap hidden>
+    <input type="hidden" name="init_data" data-tg-init-data value="">
+    <input type="hidden" name="next" value="{{ next }}">
+  </form>
+
+  <p class="app-loading" data-tg-loading>{{ t.app_loading }}</p>
+
+  {# Открыли не из Telegram (или без JS): объясняем, где взять приложение, и
+     оставляем ссылку на доску — смотреть статусы можно откуда угодно.
+
+     В тестовом режиме (MINIAPP_OPEN_ACCESS) вместо объяснения — список людей:
+     подпись Telegram не проверяется, войти можно любым. #}
+  <div class="error" data-tg-outside hidden>
+    {% if open_access %}
+      <h1>{{ t.app_test_title }}</h1>
+      <p class="error-text banner-warn">{{ t.app_test_hint }}</p>
+      {% if people %}
+        <form class="app-people" method="post" action="/app/session">
+          <input type="hidden" name="next" value="{{ next }}">
+          {% for person in people %}
+            <button class="btn" type="submit" name="as_user_id" value="{{ person.id }}">
+              {{ person.name }}
+            </button>
+          {% endfor %}
+        </form>
+      {% else %}
+        <p class="error-text">{{ t.app_test_no_people }}</p>
+      {% endif %}
+      <a class="btn btn-ghost" href="/">{{ t.app_nav_board }}</a>
+    {% else %}
+      <h1>{{ t.app_outside_telegram_title }}</h1>
+      <p class="error-text">{{ t.app_outside_telegram_hint }}</p>
+      <a class="btn btn-primary" href="/">{{ t.app_nav_board }}</a>
+    {% endif %}
+  </div>
+  <noscript>
+    <div class="error">
+      <h1>{{ t.app_outside_telegram_title }}</h1>
+      <p class="error-text">{{ t.app_outside_telegram_hint }}</p>
+      <a class="btn btn-primary" href="/">{{ t.app_nav_board }}</a>
+    </div>
+  </noscript>
+</main>
+{% endblock %}

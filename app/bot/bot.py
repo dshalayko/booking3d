@@ -15,7 +15,14 @@ from aiogram import Bot, Dispatcher
 from aiogram.client.default import DefaultBotProperties
 from aiogram.enums import ParseMode
 from aiogram.filters import Command, CommandObject, CommandStart
-from aiogram.types import BotCommand, Message
+from aiogram.types import (
+    BotCommand,
+    InlineKeyboardButton,
+    InlineKeyboardMarkup,
+    MenuButtonWebApp,
+    Message,
+    WebAppInfo,
+)
 
 from app import texts as t
 from app.bot import commands, notify, texts
@@ -47,6 +54,30 @@ async def handle_start(message: Message) -> None:
 @dispatcher.message(Command("help"))
 async def handle_help(message: Message) -> None:
     await message.answer(texts.HELP)
+
+
+@dispatcher.message(Command("book"))
+async def handle_book(message: Message) -> None:
+    """Расписание и брони — кнопкой, открывающей Mini App.
+
+    Кнопка, а не ссылка: по ссылке Telegram открыл бы обычный браузер, а там нет
+    подписи открытия, и приложение не узнает, кто пришёл.
+    """
+    async with SessionLocal() as db:
+        invite = await commands.book(db, message.chat.id)
+
+    markup = None
+    if invite.url:
+        markup = InlineKeyboardMarkup(
+            inline_keyboard=[
+                [
+                    InlineKeyboardButton(
+                        text=t.BOT_BOOK_BUTTON, web_app=WebAppInfo(url=invite.url)
+                    )
+                ]
+            ]
+        )
+    await message.answer(invite.text, reply_markup=markup)
 
 
 @dispatcher.message(Command("status"))
@@ -120,5 +151,30 @@ def attach_notifier(bot: Bot) -> None:
 
 async def start_polling(bot: Bot) -> None:
     await bot.set_my_commands(BOT_COMMANDS)
+    await _set_menu_button(bot)
     logger.info("бот запущен")
     await dispatcher.start_polling(bot, handle_signals=False)
+
+
+async def _set_menu_button(bot: Bot) -> None:
+    """Кнопка рядом с полем ввода, открывающая расписание.
+
+    Ставится на старте, а не руками в BotFather: адрес приложения берётся из
+    `PUBLIC_BASE_URL`, и при переезде на другой домен настройка в чужой панели
+    осталась бы прежней — с молчаливо неработающей кнопкой.
+    """
+    url = commands.app_url()
+    if url is None:
+        logger.warning(
+            "PUBLIC_BASE_URL не на https: Telegram не откроет мини-приложение, "
+            "кнопка расписания в меню бота не появится"
+        )
+        return
+    try:
+        await bot.set_chat_menu_button(
+            menu_button=MenuButtonWebApp(
+                text=t.BOT_BOOK_BUTTON, web_app=WebAppInfo(url=url)
+            )
+        )
+    except Exception:  # кнопка — украшение, из-за неё бот падать не должен
+        logger.exception("не удалось поставить кнопку меню на мини-приложение")

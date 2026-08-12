@@ -22,6 +22,11 @@
    поэтому увеличить текст, если понадобилось, по-прежнему можно. */
 * { box-sizing: border-box; touch-action: manipulation; }
 
+/* Атрибут `hidden` проигрывает любому явному `display` в стилях, а он у нас есть
+   почти везде (`.error`, `.banner`): без этой строки скрытый блок остаётся на
+   экране, и первым это заметит человек, а не тест. */
+[hidden] { display: none !important; }
+
 html, body {
   margin: 0;
   height: 100%;
@@ -399,6 +404,118 @@ body {
 .btn-book-now { width: 100%; min-height: 86px; margin-top: 8px; font-size: 30px; }
 .confirm { display: flex; flex-direction: column; gap: 16px; justify-content: center; }
 
+/* --- расписание ---
+   Единственный экран, которому разрешено скроллиться на планшете: суток 24
+   часа, и уместить их в высоту стены, оставив кнопки нажимаемыми, нельзя.
+   Строка часа — 52px вместо обычных 72px: до неё дотягиваются пальцем через всю
+   ширину столбца, а не целятся в кнопку. */
+
+.sheet-wide { overflow: auto; }
+.sheet-head { flex-wrap: wrap; }
+
+.days {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 8px;
+  flex: 0 0 auto;
+}
+.day {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  min-height: 62px;
+  padding: 8px 4px;
+  border-radius: 12px;
+  background: var(--card);
+  color: var(--text);
+  text-decoration: none;
+}
+.day-on { background: var(--accent); }
+.day-weekday { font-size: 15px; color: var(--muted); text-transform: uppercase; }
+.day-on .day-weekday { color: rgba(255, 255, 255, .8); }
+.day-number { font-size: 20px; font-weight: 700; }
+
+.grid-hint { margin: 0; font-size: 18px; color: var(--muted); }
+
+.grid { display: flex; flex-direction: column; gap: 4px; }
+/* Первая колонка — часы, дальше по колонке на машину. Число приезжает из
+   шаблона: CSS не умеет считать детей. */
+.grid-row {
+  display: grid;
+  grid-template-columns: 72px repeat(var(--cols, 1), 1fr);
+  gap: 4px;
+  align-items: stretch;
+}
+.grid-head { position: sticky; top: 0; z-index: 1; background: var(--bg); padding-bottom: 4px; }
+.grid-machine {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 19px;
+  font-weight: 700;
+  text-align: center;
+}
+.grid-hour {
+  display: flex;
+  align-items: center;
+  font-size: 17px;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.cell {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 52px;
+  padding: 4px 8px;
+  border-radius: 10px;
+  font-size: 17px;
+  font-weight: 600;
+  text-align: center;
+  text-decoration: none;
+  color: var(--text);
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+/* Цвет плюс слово, а не только цвет: экран смотрят с трёх метров и не всегда
+   различая оттенки. */
+.cell-free { background: rgba(46, 204, 113, .16); color: var(--free); }
+.cell-free:active { background: rgba(46, 204, 113, .3); }
+.cell-past { background: rgba(255, 255, 255, .04); }
+.cell-busy { background: rgba(231, 76, 60, .18); color: var(--busy); }
+.cell-booked { background: rgba(241, 196, 15, .18); color: var(--wait); }
+.cell-mine { background: rgba(59, 130, 246, .28); color: var(--text); }
+.cell-broken { background: rgba(127, 140, 141, .18); color: var(--broken); }
+
+.durations-when { margin: 0; font-size: 26px; font-weight: 700; }
+
+/* --- мои брони (Mini App) --- */
+
+.app-loading { margin: auto; font-size: 22px; color: var(--muted); }
+/* Тестовый вход: список людей вместо подписи Telegram. Жёлтым, чтобы включённый
+   MINIAPP_OPEN_ACCESS нельзя было принять за обычный экран входа. */
+.banner-warn { color: var(--wait); }
+.app-people { display: flex; flex-direction: column; gap: 10px; }
+.bookings { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 12px; }
+.booking {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 16px 18px;
+  border-radius: var(--radius);
+  background: var(--card);
+}
+.booking-machine { font-size: 24px; font-weight: 700; }
+.booking-when { font-size: 19px; color: var(--muted); }
+.booking .btn { align-self: flex-start; }
+.my-links { display: flex; flex-wrap: wrap; gap: 10px; margin-top: auto; }
+.tile-booked-from { color: var(--wait); }
+.btn-schedule { width: 100%; min-height: 56px; font-size: 20px; }
+
 .error { text-align: center; max-width: 560px; display: flex; flex-direction: column; gap: 20px; }
 .error-mark {
   margin: 0 auto;
@@ -492,4 +609,18 @@ body {
   .tile-status { font-size: 32px; }
   .btn-hero { min-height: 88px; font-size: 30px; }
   .sheet-body { grid-template-columns: 1fr; }
+  /* Полоса дней в ладонь шириной. Семью колонками дни превращаются в нечитаемые
+     столбики, а четырьмя — занимают четыре строки и уносят сетку часов за край
+     экрана. Поэтому на телефоне это одна строка с горизонтальным скроллом:
+     ближайшие дни видны сразу, за остальными достаточно мотнуть пальцем. */
+  .days {
+    display: flex;
+    overflow-x: auto;
+    scroll-snap-type: x proximity;
+    -webkit-overflow-scrolling: touch;
+  }
+  .day { flex: 0 0 76px; scroll-snap-align: start; }
+  .grid-row { grid-template-columns: 56px repeat(var(--cols, 1), 1fr); }
+  .cell { min-height: 46px; font-size: 15px; }
+  .grid-hour { font-size: 15px; }
 }

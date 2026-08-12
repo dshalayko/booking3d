@@ -121,7 +121,7 @@ from app.db import SessionLocal, engine
 from app.models import User
 from app.services.security import pin_digest
 
-PEOPLE = [(900011, "i_petrov", "1111"), (900012, "a_kuznetsova", "2222")]
+PEOPLE = [(900016, "i_petrov1", "6666"), (900017, "a_kuznetsova1", "7777"), (900013, "t_testov1", "3333"), (900014, "t_testov2", "4444"), (900015, "t_testov3", "5555")]
 
 
 async def main() -> None:

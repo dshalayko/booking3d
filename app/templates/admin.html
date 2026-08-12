@@ -88,6 +88,34 @@
     </section>
   {% endfor %}
 
+  {# Брони на будущее: их не видно ни на плитках, ни в очереди, а снимать
+     зависшую бронь иначе пришлось бы в psql. #}
+  <section class="admin-block">
+    <h2>{{ t.admin_bookings }}</h2>
+    {% for booking, machine_name, person_name in bookings %}
+      <article class="admin-row">
+        <div class="admin-row-main">
+          <strong>{{ person_name }}</strong>
+          <span class="admin-dim">
+            {{ t.admin_booking_row.format(machine=machine_name,
+                                          start=booking.starts_at | when,
+                                          end=booking.ends_at | hhmm) }}
+          </span>
+        </div>
+        <div class="admin-actions">
+          <form class="admin-form" method="post"
+                action="/admin/bookings/{{ booking.id }}/cancel">
+            <input class="text-input" type="text" name="reason"
+                   placeholder="{{ t.admin_reason_placeholder }}">
+            <button class="btn btn-small" type="submit">{{ t.admin_booking_cancel }}</button>
+          </form>
+        </div>
+      </article>
+    {% else %}
+      <p class="admin-dim">{{ t.admin_bookings_none }}</p>
+    {% endfor %}
+  </section>
+
   <section class="admin-block">
     <h2>{{ t.admin_people.format(count=users | length) }}</h2>
     {% for user in users %}

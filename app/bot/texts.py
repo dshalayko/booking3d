@@ -26,6 +26,11 @@ def hhmm(value: datetime | None) -> str:
     return value.astimezone(settings.zone).strftime(t.TIME_FORMAT) if value else ""
 
 
+def when(value: datetime | None) -> str:
+    """Дата и время: у брони на будущее одного часа мало — «в 14:00» какого дня?"""
+    return value.astimezone(settings.zone).strftime(t.DATETIME_FORMAT) if value else ""
+
+
 def humanize(minutes: int) -> str:
     minutes = abs(int(minutes))
     hours, rest = divmod(minutes, 60)
@@ -154,11 +159,21 @@ def _queue_line(group) -> str:
 
 def my_state(machine_name: str | None, eta_at: datetime | None, now: datetime,
              position: int | None, queue_kind: str | None, offered_machine: str | None,
-             offer_until: datetime | None) -> str:
+             offer_until: datetime | None, booking_machine: str | None = None,
+             booking_starts_at: datetime | None = None,
+             booking_ends_at: datetime | None = None) -> str:
     parts = []
     if machine_name and eta_at:
         parts.append(
             t.BOT_MY_BUSY.format(machine=machine_name, left=left_until(eta_at, now))
+        )
+    if booking_machine:
+        parts.append(
+            t.BOT_MY_BOOKING.format(
+                machine=booking_machine,
+                start=when(booking_starts_at),
+                end=hhmm(booking_ends_at),
+            )
         )
     if offered_machine:
         parts.append(
@@ -214,6 +229,55 @@ def offer_expired(machine_name: str) -> str:
 
 def offer_night_hint() -> str:
     return t.BOT_OFFER_NIGHT_HINT
+
+
+# --- брони -------------------------------------------------------------------
+
+
+def booked(machine_name: str, starts_at: datetime, ends_at: datetime) -> str:
+    return t.BOT_BOOKED.format(
+        machine=machine_name, start=when(starts_at), end=hhmm(ends_at)
+    )
+
+
+def booking_soon(machine_name: str, starts_at: datetime, minutes: int) -> str:
+    return t.BOT_BOOKING_SOON.format(
+        machine=machine_name, time=hhmm(starts_at), left=humanize(minutes)
+    )
+
+
+def booking_after_you(machine_name: str, starts_at: datetime) -> str:
+    return t.BOT_BOOKING_AFTER_YOU.format(machine=machine_name, time=hhmm(starts_at))
+
+
+def booking_started(machine_name: str, deadline: datetime) -> str:
+    return t.BOT_BOOKING_STARTED.format(machine=machine_name, time=hhmm(deadline))
+
+
+def booking_started_busy(machine_name: str) -> str:
+    return t.BOT_BOOKING_STARTED_BUSY.format(machine=machine_name)
+
+
+def booking_missed(machine_name: str, minutes: int) -> str:
+    return t.BOT_BOOKING_MISSED.format(machine=machine_name, minutes=minutes)
+
+
+def booking_cancelled(machine_name: str, starts_at: datetime) -> str:
+    return t.BOT_BOOKING_CANCELLED.format(machine=machine_name, start=when(starts_at))
+
+
+def booking_cancelled_by_admin(machine_name: str, starts_at: datetime) -> str:
+    return t.BOT_BOOKING_CANCELLED_BY_ADMIN.format(
+        machine=machine_name, start=when(starts_at)
+    )
+
+
+def book_invite() -> str:
+    return t.BOT_BOOK_INVITE
+
+
+def book_no_app() -> str:
+    return t.BOT_BOOK_NO_APP
 
 
 # --- машины ------------------------------------------------------------------

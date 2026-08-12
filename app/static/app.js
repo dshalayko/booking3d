@@ -187,4 +187,47 @@
   if ("serviceWorker" in navigator && location.protocol === "https:") {
     navigator.serviceWorker.register("/sw.js").catch(function () {});
   }
+
+  // --- Telegram Mini App ---------------------------------------------------
+  // На страницах /app рядом лежит telegram-web-app.js (base.html), и через него
+  // Telegram отдаёт подпись открытия. Весь код — под проверкой объекта: на
+  // киоске скрипта нет, и ничего из этого не выполняется.
+
+  var tg = window.Telegram && window.Telegram.WebApp;
+  if (tg) {
+    // В try целиком: вне настоящего клиента Telegram (страницу открыли в обычном
+    // браузере, а скрипт всё равно загрузился) эти методы бросают
+    // WebAppMethodUnsupported. Без try исключение уносит с собой весь остальной
+    // файл — вместе с бутстрапом ниже, который как раз и объясняет человеку,
+    // что приложение нужно открыть из бота.
+    try {
+      tg.ready();
+      tg.expand();
+
+      // Системная кнопка «назад» вместо своей: в Telegram она на привычном
+      // месте, и лишняя кнопка в шапке только спорила бы с ней.
+      if (tg.BackButton && history.length > 1) {
+        tg.BackButton.show();
+        tg.BackButton.onClick(function () { history.back(); });
+      }
+    } catch (error) {
+      /* не в Telegram — просто веб-страница */
+    }
+  }
+
+  // Бутстрап: подпись живёт в JS-объекте, серверу её нужно передать явно.
+  // Открыли не из Telegram — подписи нет, и вместо формы показываем объяснение.
+  var bootstrap = document.querySelector("[data-tg-bootstrap]");
+  if (bootstrap) {
+    var initData = tg && tg.initData;
+    if (initData) {
+      bootstrap.querySelector("[data-tg-init-data]").value = initData;
+      bootstrap.submit();
+    } else {
+      var loading = document.querySelector("[data-tg-loading]");
+      var outside = document.querySelector("[data-tg-outside]");
+      if (loading) loading.hidden = true;
+      if (outside) outside.hidden = false;
+    }
+  }
 })();

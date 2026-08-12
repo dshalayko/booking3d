@@ -23,7 +23,7 @@
 """
 
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -32,12 +32,13 @@ from app import texts as t
 from app.config import settings
 from app.enums import (
     ACTIVE_QUEUE_STATUSES,
+    ACTIVE_RESERVATION_STATUSES,
     ACTIVE_SESSION_STATUSES,
     MachineKind,
     MachineStatus,
     QueueStatus,
 )
-from app.models import Machine, MachineSession, QueueEntry
+from app.models import Machine, MachineSession, QueueEntry, Reservation
 from app.services.errors import (
     AlreadyInQueue,
     MachineKindUnknown,
@@ -45,6 +46,7 @@ from app.services.errors import (
     OfferNotActive,
     UserBusy,
 )
+from app.services.schedule import MIN_DURATION_MINUTES
 from app.services.timeutil import add_active_minutes
 
 
@@ -152,6 +154,11 @@ async def offer_free_machines(db: AsyncSession, now: datetime | None = None) -> 
     ожидающему этот тип. Машина при этом остаётся в статусе `free` — она
     физически свободна, но занять её может только адресат предложения
     (правило 7).
+
+    Забронированные машины не раздаются (правило 12): в чужое окно занять их всё
+    равно нельзя, и предложение сгорело бы впустую, придержав машину на все 30
+    минут. Так же пропускаются машины, у которых до брони осталось меньше
+    минимальной работы, — предложение на десять минут не предложение.
     """
     now = now or _utcnow()
 
@@ -159,10 +166,21 @@ async def offer_free_machines(db: AsyncSession, now: datetime | None = None) -> 
         QueueEntry.status == QueueStatus.OFFERED,
         QueueEntry.offered_machine_id.is_not(None),
     )
+    # Запрос по `Reservation` напрямую, а не через services/reservations.py: тот
+    # импортирует эту функцию, и обратный импорт замкнул бы кольцо.
+    booked = select(Reservation.machine_id).where(
+        Reservation.status.in_(ACTIVE_RESERVATION_STATUSES),
+        Reservation.starts_at <= now + timedelta(minutes=MIN_DURATION_MINUTES),
+        Reservation.ends_at > now,
+    )
     free_machines = (
         await db.scalars(
             select(Machine)
-            .where(Machine.status == MachineStatus.FREE, Machine.id.not_in(reserved))
+            .where(
+                Machine.status == MachineStatus.FREE,
+                Machine.id.not_in(reserved),
+                Machine.id.not_in(booked),
+            )
             .order_by(Machine.id)
             .with_for_update()
         )

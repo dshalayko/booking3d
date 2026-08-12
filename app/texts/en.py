@@ -49,6 +49,11 @@ UNIT_MINUTES = "{minutes} min"
 UNIT_HOURS = "{hours} h"
 UNIT_HOURS_MINUTES = "{hours} h {minutes} min"
 
+# Weekdays for the calendar strip, Monday first: `date.weekday()` indexes
+# straight into this tuple.
+WEEKDAY_SHORT = ("Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun")
+SCHEDULE_TODAY = "today"
+
 
 # --- kinds of machine --------------------------------------------------------
 #
@@ -79,19 +84,22 @@ MACHINE_BUSY_WORD = {
 
 BOT_HELP = (
     "Here's what I can do:\n"
+    "/book — schedule and bookings ahead\n"
     "/status — how the machines are doing right now\n"
-    "/my — my job and my place in line\n"
+    "/my — my job, my booking and my place in line\n"
     "/queue — join the line\n"
     "/leave — leave the line\n"
     "/free — free up the machine I booked\n"
     "/pin — a new PIN for the tablet in the workshop\n\n"
-    "You book machines and join the line from the tablet in the workshop, using your PIN."
+    "You take a machine from the tablet in the workshop with your PIN, "
+    "or right here in the bot's app (/book)."
 )
 
 # Command captions in the Telegram menu.
 BOT_COMMAND_DESCRIPTIONS = {
+    "book": "schedule and bookings",
     "status": "how the machines are doing",
-    "my": "my job and my place in line",
+    "my": "my job, booking and place in line",
     "queue": "join the line",
     "queue_printer": "line for a printer",
     "queue_engraver": "line for an engraver",
@@ -264,6 +272,53 @@ BOT_CANCELLED_TAIL = "\nIf you still need the part, it's waiting at the machine.
 BOT_NOTHING_TO_FREE = "You haven't got a machine booked. See the machines — /status"
 
 
+# --- bot: bookings ahead -----------------------------------------------------
+
+BOT_BOOKED = (
+    "Booked: <b>{machine}</b>\n{start} — {end}\n"
+    "I'll remind you an hour before. Cancel it — /my"
+)
+
+BOT_BOOKING_SOON = (
+    "Your booking starts in {left}: <b>{machine}</b> at {time}.\n"
+    "Come to the machine and take it from the tablet or in the app."
+)
+
+BOT_BOOKING_AFTER_YOU = (
+    "Someone has <b>{machine}</b> booked at {time}, right after you.\n"
+    "Please collect your part before then so they don't arrive to a busy table."
+)
+
+BOT_BOOKING_STARTED = (
+    "Your slot on <b>{machine}</b> has started and the machine is free.\n"
+    "Take it before {time} or the booking is dropped."
+)
+
+BOT_BOOKING_STARTED_BUSY = (
+    "Your slot on <b>{machine}</b> has started, but someone's part is still on the table.\n"
+    "You can clear it yourself — tap \"Got my part\" and take the machine. "
+    "While the table is busy your booking is not dropped."
+)
+
+BOT_BOOKING_MISSED = (
+    "Your booking on <b>{machine}</b> is dropped: the machine sat free and you "
+    "didn't take it within {minutes} min. Book again — /book"
+)
+
+BOT_BOOKING_CANCELLED = "The booking on <b>{machine}</b> ({start}) is cancelled."
+
+BOT_BOOKING_CANCELLED_BY_ADMIN = "Your booking on <b>{machine}</b> ({start}) was cancelled."
+
+BOT_MY_BOOKING = "Booking: <b>{machine}</b>, {start} — {end}"
+
+BOT_BOOK_INVITE = "The schedule and your bookings live in the app:"
+BOT_BOOK_BUTTON = "Open the schedule"
+BOT_BOOK_NO_APP = (
+    "The app isn't set up: the server has no https address, so Telegram won't "
+    "open a mini app. Book from the tablet in the workshop instead."
+)
+
+
 # --- refusals: machines and the line -----------------------------------------
 
 ERR_MACHINE_NOT_FOUND = "No such machine"
@@ -280,6 +335,27 @@ ERR_MACHINE_RELEASE_FORBIDDEN = (
 ERR_QUEUE_WAIT_YOUR_TURN = "There's a line — wait for your turn"
 
 ERR_DURATION = "Pick between {min_minutes} minutes and {max_hours} hours"
+
+ERR_MACHINE_BOOKED_NOW = "{machine} is booked until {time}"
+ERR_MACHINE_BOOKED_LATER = (
+    "{machine} is booked from {time} — right now you can take it for {minutes} min at most"
+)
+
+
+# --- refusals: bookings ahead ------------------------------------------------
+
+ERR_RESERVATION_DURATION = "Book between {min_minutes} minutes and {max_hours} hours"
+ERR_RESERVATION_NOT_ALIGNED = "A booking starts on a {step}-minute mark"
+ERR_RESERVATION_PAST = "That time has already passed"
+ERR_RESERVATION_HORIZON = "You can book up to {days} days ahead"
+ERR_RESERVATION_OVERLAP = "{machine} is already booked for that time (from {time})"
+ERR_RESERVATION_JUST_BOOKED = "{machine} has just been booked for that time"
+ERR_RESERVATION_BUSY = "{machine} is working until {time} — pick a later time"
+ERR_ALREADY_BOOKED = "You already have a booking. Cancel it to book another slot"
+ERR_RESERVATION_NOT_FOUND = "No such booking, or it is already closed"
+ERR_RESERVATION_FORBIDDEN = "Only an admin can cancel someone else's booking"
+ERR_RESERVATION_WINDOW_OPEN = "The booking slot hasn't run out yet"
+ERR_RESERVATION_MACHINE_BUSY = "{machine} is busy — the booking waits for the table"
 
 ERR_USER_BUSY = "You've already got a machine booked"
 ERR_USER_BUSY_FREE_FIRST = "You've already got a machine booked — free it up first"
@@ -307,7 +383,12 @@ ERR_MACHINE_HAS_HISTORY = (
 
 # --- refusals: access --------------------------------------------------------
 
-ERR_KIOSK_ONLY = "Machines can only be booked from the tablet in the workshop"
+ERR_KIOSK_ONLY = (
+    "Machines can be taken from the tablet in the workshop or in the bot's app (/book)"
+)
+ERR_APP_BAD_INIT_DATA = "Couldn't confirm the app was opened from Telegram"
+ERR_APP_SESSION_REQUIRED = "Open the schedule again with /book in the chat with the bot"
+ERR_APP_NOT_REGISTERED = "Send /start to the bot — it asks for your login and hands you a PIN"
 ERR_ADMIN_ONLY = "Admins only"
 ERR_ADMIN_LOGIN_REQUIRED = "Please log in as an admin"
 ERR_BAD_ENROLL_SECRET = "Wrong setup secret"
@@ -335,6 +416,8 @@ FLASH_KIOSK = {
     "released": "Machine freed up",
     "queued": "You're in line — watch for a message on Telegram",
     "left": "You've left the line",
+    "booked": "Booked — we'll remind you an hour before",
+    "booking_cancelled": "Booking cancelled",
 }
 
 FLASH_ADMIN = {
@@ -347,6 +430,7 @@ FLASH_ADMIN = {
     "machine_added": "Machine added",
     "machine_renamed": "Machine renamed",
     "machine_removed": "Machine deleted",
+    "booking_cancelled": "Booking cancelled",
 }
 
 
@@ -398,6 +482,11 @@ LOG_SESSION_CANCELLED = "{machine}: job cancelled"
 LOG_SESSION_CANCELLED_BY = " by {name}"
 LOG_SESSION_CANCEL_REASON = " — {reason}"
 
+LOG_RESERVATION_BOOKED = "{machine} booked for {start}: {name}"
+LOG_RESERVATION_TAKEN = "{machine}: arrived for the booking — {name}"
+LOG_RESERVATION_EXPIRED = "{machine}: booking dropped, no-show — {name}"
+LOG_RESERVATION_CANCELLED = "{machine}: booking for {start} cancelled — {name}"
+
 LOG_QUEUE_JOINED = "Joined the line for {kind}: {name}"
 LOG_QUEUE_OFFERED = "{machine} offered to {name}"
 LOG_QUEUE_RESOLVED = "{word}: {name}"
@@ -413,7 +502,7 @@ API_TITLE = "Workshop machine booking"
 
 # --- HTML templates ----------------------------------------------------------
 #
-# Available in Jinja as `t.<key>`, registered in app/api/kiosk.py.
+# Available in Jinja as `t.<key>`, registered in app/api/render.py.
 
 UI = {
     # base.html
@@ -438,16 +527,21 @@ UI = {
     "tile_its_me": "That's me",
     "tile_free": "Free",
     "tile_occupy": "Book",
+    "tile_booked": "Booked",
+    "tile_booked_from": "booked from {time}",
     "queue_offered": "up next",
     "queue_empty": "Nobody's in line",
     "queue_join": "Join the line",
     "queue_leave": "Leave the line",
+    "board_schedule_cta": "Schedule",
     # _keypad.html
     "keypad_label": "PIN",
     "keypad_clear": "Clear",
     "keypad_hint": "Send /start to the bot to get a PIN",
     # confirm.html / occupy.html
     "cancel": "Cancel",
+    # On a screen where nothing has started, "Cancel" lies — there's nothing to cancel.
+    "back": "Back",
     "occupy_title": "Book {machine}",
     "occupy_heading": "{machine} — book it now",
     "occupy_duration_label": "How long?",
@@ -456,6 +550,44 @@ UI = {
         "it'll just ask you to check how it came out."
     ),
     "occupy_submit": "Book now",
+    # schedule.html
+    "schedule_title": "Schedule: {title}",
+    "schedule_heading": "Schedule: {title}",
+    "schedule_day_label": "Day",
+    "schedule_free": "free",
+    "schedule_past": "past",
+    "schedule_busy": "working",
+    "schedule_booked": "booked",
+    "schedule_mine": "my booking",
+    "schedule_broken": "out of service",
+    "schedule_empty": "No machines of this kind yet",
+    "schedule_hint": "Tap a free hour — that's when your booking starts",
+    "schedule_my_bookings": "My bookings",
+    # book.html
+    "book_title": "Book {machine}",
+    "book_heading": "{machine} — book ahead",
+    "book_when": "{day}, {time}",
+    "book_duration_label": "For how long",
+    "book_submit": "Book it",
+    "book_hint": (
+        "Take the machine within {grace} min of the start — otherwise the booking "
+        "is dropped and goes to the line. We'll remind you an hour before."
+    ),
+    "book_no_slots": "Too little time before the next booking — pick another hour",
+    "book_cancel_hint": (
+        "The hour frees up and goes to the line. "
+        "You can only cancel your own booking — your PIN is needed."
+    ),
+    "book_booked_until": "Booked until {time}",
+    # my.html
+    "my_title": "My bookings",
+    "my_heading": "My bookings",
+    "my_empty": "No bookings yet. Open the schedule and pick a free hour.",
+    "my_when": "{start} — {end}",
+    "my_cancel": "Cancel booking",
+    "my_schedule": "To the schedule",
+    "my_state_busy": "You've got {machine} until {time}",
+    "my_state_queue": "In line for {kind}, number {position}",
     # error.html / offline.html
     "error_title": "That didn't work",
     "error_ok": "Got it",
@@ -474,6 +606,10 @@ UI = {
     "admin_to_board": "Back to the workshop",
     "admin_tab_summary": "Summary",
     "admin_tab_machines": "Machines",
+    "admin_bookings": "Bookings",
+    "admin_bookings_none": "No bookings",
+    "admin_booking_row": "{machine}: {start} — {end}",
+    "admin_booking_cancel": "Cancel",
     "admin_machines": "Machines",
     "admin_owner_until": "{name}, until {time}",
     "admin_reserved": "held for {name} until {time}",
@@ -493,6 +629,26 @@ UI = {
     "admin_new_pin": "New PIN",
     "admin_events": "Recent activity",
     "admin_no_events": "Nothing has happened yet",
+    # miniapp
+    "app_loading": "Opening…",
+    "app_outside_telegram_title": "Open it from Telegram",
+    "app_outside_telegram_hint": (
+        "This is the bot's mini app: the schedule and bookings open with /book "
+        "in the chat with the bot. You can still watch the statuses here."
+    ),
+    "app_test_title": "Test sign-in",
+    "app_test_hint": (
+        "MINIAPP_OPEN_ACCESS is on: the Telegram signature isn't checked and "
+        "anyone can sign in as anyone. Turn the flag off when you're done."
+    ),
+    "app_test_no_people": "Nobody in the database yet — send /start to the bot",
+    "app_not_registered_title": "You're not signed up yet",
+    "app_not_registered_hint": (
+        "Send /start to the bot — it asks for your work login and hands you a PIN. "
+        "The schedule opens after that."
+    ),
+    "app_nav_board": "Workshop",
+    "app_nav_my": "My bookings",
     # admin_machines.html
     "admin_machines_title": "Machines",
     "admin_machines_add": "Add a machine",

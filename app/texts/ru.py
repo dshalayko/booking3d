@@ -46,6 +46,12 @@ UNIT_MINUTES = "{minutes} мин"
 UNIT_HOURS = "{hours} ч"
 UNIT_HOURS_MINUTES = "{hours} ч {minutes} мин"
 
+# Дни недели в полосе календаря, начиная с понедельника: `date.weekday()` даёт
+# индекс прямо в этот список. Названия месяцев не нужны — горизонт две недели,
+# и плитка подписана числом.
+WEEKDAY_SHORT = ("пн", "вт", "ср", "чт", "пт", "сб", "вс")
+SCHEDULE_TODAY = "сегодня"
+
 
 # --- типы оборудования -------------------------------------------------------
 #
@@ -74,19 +80,22 @@ MACHINE_BUSY_WORD = {
 
 BOT_HELP = (
     "Что я умею:\n"
+    "/book — расписание и брони на будущее\n"
     "/status — что с оборудованием прямо сейчас\n"
-    "/my — моя работа и место в очереди\n"
+    "/my — моя работа, бронь и место в очереди\n"
     "/queue — встать в очередь\n"
     "/leave — выйти из очереди\n"
     "/free — освободить машину, которая занята мной\n"
     "/pin — новый PIN для планшета в мастерской\n\n"
-    "Занимать машины и вставать в очередь можно с планшета в мастерской, по PIN."
+    "Занять машину можно с планшета в мастерской по PIN или здесь, "
+    "в приложении бота (/book)."
 )
 
 # Подписи команд в меню Telegram.
 BOT_COMMAND_DESCRIPTIONS = {
+    "book": "расписание и брони",
     "status": "что с оборудованием",
-    "my": "моя работа и очередь",
+    "my": "моя работа, бронь и очередь",
     "queue": "встать в очередь",
     "queue_printer": "очередь на принтер",
     "queue_engraver": "очередь на гравировщик",
@@ -258,6 +267,53 @@ BOT_CANCELLED_TAIL = "\nЕсли деталь ещё нужна, заберит�
 BOT_NOTHING_TO_FREE = "За вами не числится занятая машина. Что с оборудованием — /status"
 
 
+# --- бот: брони --------------------------------------------------------------
+
+BOT_BOOKED = (
+    "Забронировано: <b>{machine}</b>\n{start} — {end}\n"
+    "Напомню за час до начала. Отменить — /my"
+)
+
+BOT_BOOKING_SOON = (
+    "Через {left} ваша бронь: <b>{machine}</b> в {time}.\n"
+    "Приходите к машине и занимайте её с планшета или в приложении."
+)
+
+BOT_BOOKING_AFTER_YOU = (
+    "После вас на <b>{machine}</b> бронь в {time}.\n"
+    "Заберите деталь до этого времени, чтобы человек не ждал у занятого стола."
+)
+
+BOT_BOOKING_STARTED = (
+    "Ваше время на <b>{machine}</b> началось, машина свободна.\n"
+    "Займите её до {time}, иначе бронь снимется."
+)
+
+BOT_BOOKING_STARTED_BUSY = (
+    "Ваше время на <b>{machine}</b> началось, но на столе чужая деталь.\n"
+    "Её можно снять самому — нажмите «Я забрал деталь» и занимайте машину. "
+    "Пока стол занят, бронь не сгорает."
+)
+
+BOT_BOOKING_MISSED = (
+    "Бронь на <b>{machine}</b> снята: машина стояла свободной, "
+    "а вы не заняли её за {minutes} мин. Забронировать заново — /book"
+)
+
+BOT_BOOKING_CANCELLED = "Бронь на <b>{machine}</b> ({start}) отменена."
+
+BOT_BOOKING_CANCELLED_BY_ADMIN = "Вашу бронь на <b>{machine}</b> ({start}) отменили."
+
+BOT_MY_BOOKING = "Бронь: <b>{machine}</b>, {start} — {end}"
+
+BOT_BOOK_INVITE = "Расписание и брони — в приложении:"
+BOT_BOOK_BUTTON = "Открыть расписание"
+BOT_BOOK_NO_APP = (
+    "Приложение не настроено: у сервера нет адреса на https, "
+    "и Telegram не откроет мини-приложение. Бронируйте с планшета в мастерской."
+)
+
+
 # --- отказы: машины и очередь -------------------------------------------------
 
 ERR_MACHINE_NOT_FOUND = "Машина не найдена"
@@ -272,6 +328,27 @@ ERR_MACHINE_RELEASE_FORBIDDEN = "Снять активную работу мож
 ERR_QUEUE_WAIT_YOUR_TURN = "Есть очередь — дождитесь своего предложения"
 
 ERR_DURATION = "Длительность должна быть от {min_minutes} минут до {max_hours} часов"
+
+ERR_MACHINE_BOOKED_NOW = "{machine} забронирован до {time}"
+ERR_MACHINE_BOOKED_LATER = (
+    "{machine} забронирован с {time} — сейчас его можно занять максимум на {minutes} мин"
+)
+
+
+# --- отказы: брони -----------------------------------------------------------
+
+ERR_RESERVATION_DURATION = "Бронировать можно от {min_minutes} минут до {max_hours} часов"
+ERR_RESERVATION_NOT_ALIGNED = "Начало брони кратно {step} минутам"
+ERR_RESERVATION_PAST = "Это время уже прошло"
+ERR_RESERVATION_HORIZON = "Бронировать можно не дальше чем на {days} дней вперёд"
+ERR_RESERVATION_OVERLAP = "{machine} уже забронирован на это время (с {time})"
+ERR_RESERVATION_JUST_BOOKED = "{machine} только что забронировали на это время"
+ERR_RESERVATION_BUSY = "{machine} занят работой до {time} — выберите время позже"
+ERR_ALREADY_BOOKED = "У вас уже есть бронь. Отмените её, чтобы забронировать другое время"
+ERR_RESERVATION_NOT_FOUND = "Бронь не найдена или уже закрыта"
+ERR_RESERVATION_FORBIDDEN = "Отменить чужую бронь может только админ"
+ERR_RESERVATION_WINDOW_OPEN = "Время брони ещё не истекло"
+ERR_RESERVATION_MACHINE_BUSY = "{machine} занят — бронь ждёт, пока стол освободится"
 
 ERR_USER_BUSY = "У вас уже занята машина"
 ERR_USER_BUSY_FREE_FIRST = "У вас уже занята машина — сначала освободите её"
@@ -299,7 +376,12 @@ ERR_MACHINE_HAS_HISTORY = (
 
 # --- отказы: доступ ----------------------------------------------------------
 
-ERR_KIOSK_ONLY = "Занимать машины можно только с планшета в мастерской"
+ERR_KIOSK_ONLY = (
+    "Занимать машины можно с планшета в мастерской или из приложения бота (/book)"
+)
+ERR_APP_BAD_INIT_DATA = "Не удалось подтвердить, что приложение открыто из Telegram"
+ERR_APP_SESSION_REQUIRED = "Откройте расписание заново командой /book в чате с ботом"
+ERR_APP_NOT_REGISTERED = "Напишите боту /start — он спросит логин и выдаст PIN"
 ERR_ADMIN_ONLY = "Действие доступно только админу"
 ERR_ADMIN_LOGIN_REQUIRED = "Нужен вход администратора"
 ERR_BAD_ENROLL_SECRET = "Неверный секрет регистрации"
@@ -325,6 +407,8 @@ FLASH_KIOSK = {
     "released": "Машина освобождена",
     "queued": "Вы в очереди — уведомление придёт в Telegram",
     "left": "Вы вышли из очереди",
+    "booked": "Забронировано — напомним за час до начала",
+    "booking_cancelled": "Бронь отменена",
 }
 
 FLASH_ADMIN = {
@@ -337,6 +421,7 @@ FLASH_ADMIN = {
     "machine_added": "Машина добавлена в парк",
     "machine_renamed": "Машина переименована",
     "machine_removed": "Машина удалена из парка",
+    "booking_cancelled": "Бронь отменена",
 }
 
 
@@ -388,6 +473,11 @@ LOG_SESSION_CANCELLED = "{machine}: работа снята"
 LOG_SESSION_CANCELLED_BY = ", {name}"
 LOG_SESSION_CANCEL_REASON = " — {reason}"
 
+LOG_RESERVATION_BOOKED = "Бронь {machine} на {start}: {name}"
+LOG_RESERVATION_TAKEN = "{machine}: пришли по брони — {name}"
+LOG_RESERVATION_EXPIRED = "{machine}: бронь снята, не пришли — {name}"
+LOG_RESERVATION_CANCELLED = "{machine}: бронь на {start} отменена — {name}"
+
 LOG_QUEUE_JOINED = "В очередь на {kind}: {name}"
 LOG_QUEUE_OFFERED = "Приглашение на {machine}: {name}"
 LOG_QUEUE_RESOLVED = "{word}: {name}"
@@ -403,7 +493,7 @@ API_TITLE = "Бронирование оборудования мастерск�
 
 # --- HTML-шаблоны ------------------------------------------------------------
 #
-# Доступны в Jinja как `t.<ключ>`, регистрация — в app/api/kiosk.py.
+# Доступны в Jinja как `t.<ключ>`, регистрация — в app/api/render.py.
 
 UI = {
     # base.html
@@ -428,16 +518,21 @@ UI = {
     "tile_its_me": "Это я",
     "tile_free": "Свободен",
     "tile_occupy": "Занять",
+    "tile_booked": "Забронирован",
+    "tile_booked_from": "бронь с {time}",
     "queue_offered": "приглашён",
     "queue_empty": "Очередь пуста",
     "queue_join": "Встать в очередь",
     "queue_leave": "Выйти из очереди",
+    "board_schedule_cta": "Расписание",
     # _keypad.html
     "keypad_label": "PIN",
     "keypad_clear": "Сброс",
     "keypad_hint": "PIN выдаёт бот по команде /start",
     # confirm.html / occupy.html
     "cancel": "Отмена",
+    # На экране, где ничего не начато, «Отмена» врёт: отменять нечего.
+    "back": "Назад",
     "occupy_title": "Занять {machine}",
     "occupy_heading": "{machine} — занять сейчас",
     "occupy_duration_label": "Сколько работать",
@@ -446,6 +541,44 @@ UI = {
         "а попросит проверить результат."
     ),
     "occupy_submit": "Занять сейчас",
+    # schedule.html
+    "schedule_title": "Расписание: {title}",
+    "schedule_heading": "Расписание: {title}",
+    "schedule_day_label": "День",
+    "schedule_free": "свободно",
+    "schedule_past": "прошло",
+    "schedule_busy": "работа",
+    "schedule_booked": "бронь",
+    "schedule_mine": "моя бронь",
+    "schedule_broken": "не работает",
+    "schedule_empty": "Машин этого типа в парке нет",
+    "schedule_hint": "Нажмите на свободный час — это начало брони",
+    "schedule_my_bookings": "Мои брони",
+    # book.html
+    "book_title": "Бронь {machine}",
+    "book_heading": "{machine} — забронировать",
+    "book_when": "{day}, {time}",
+    "book_duration_label": "На сколько",
+    "book_submit": "Забронировать",
+    "book_hint": (
+        "Машину придётся занять в первые {grace} мин после начала — "
+        "иначе бронь снимется и уйдёт очереди. Напомним за час."
+    ),
+    "book_no_slots": "До следующей брони слишком мало времени — выберите другой час",
+    "book_cancel_hint": (
+        "Час освободится и достанется очереди. "
+        "Отменить можно только свою бронь — нужен ваш PIN."
+    ),
+    "book_booked_until": "Забронирован до {time}",
+    # my.html
+    "my_title": "Мои брони",
+    "my_heading": "Мои брони",
+    "my_empty": "Брон пока нет. Откройте расписание и выберите свободный час.",
+    "my_when": "{start} — {end}",
+    "my_cancel": "Отменить бронь",
+    "my_schedule": "К расписанию",
+    "my_state_busy": "Сейчас за вами {machine}, до {time}",
+    "my_state_queue": "Очередь на {kind}, номер {position}",
     # error.html / offline.html
     "error_title": "Не получилось",
     "error_ok": "Понятно",
@@ -465,6 +598,10 @@ UI = {
     "admin_to_board": "На экран мастерской",
     "admin_tab_summary": "Сводка",
     "admin_tab_machines": "Оборудование",
+    "admin_bookings": "Брони",
+    "admin_bookings_none": "Брон нет",
+    "admin_booking_row": "{machine}: {start} — {end}",
+    "admin_booking_cancel": "Отменить",
     "admin_machines": "Оборудование",
     "admin_owner_until": "{name}, до {time}",
     "admin_reserved": "придержан за {name} до {time}",
@@ -484,6 +621,26 @@ UI = {
     "admin_new_pin": "Новый PIN",
     "admin_events": "Последние события",
     "admin_no_events": "Пока ничего не происходило",
+    # miniapp
+    "app_loading": "Открываем…",
+    "app_outside_telegram_title": "Откройте из Telegram",
+    "app_outside_telegram_hint": (
+        "Это мини-приложение бота: расписание и брони открываются командой "
+        "/book в чате с ботом. Смотреть статусы можно и здесь."
+    ),
+    "app_test_title": "Тестовый вход",
+    "app_test_hint": (
+        "MINIAPP_OPEN_ACCESS включён: подпись Telegram не проверяется, "
+        "войти можно кем угодно. Выключите флаг, когда закончите проверять."
+    ),
+    "app_test_no_people": "В базе нет ни одного человека — напишите боту /start",
+    "app_not_registered_title": "Вы ещё не зарегистрированы",
+    "app_not_registered_hint": (
+        "Напишите боту /start — он спросит корпоративный логин и выдаст PIN. "
+        "После этого расписание откроется."
+    ),
+    "app_nav_board": "Мастерская",
+    "app_nav_my": "Мои брони",
     # admin_machines.html
     "admin_machines_title": "Оборудование",
     "admin_machines_add": "Добавить машину",

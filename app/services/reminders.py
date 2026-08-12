@@ -33,10 +33,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app import texts as t
 from app.bot import notify, texts
 from app.config import settings
-from app.enums import MachineStatus, QueueStatus, SessionStatus
+from app.enums import ACTIVE_SESSION_STATUSES, MachineStatus, QueueStatus, SessionStatus
 from app.models import Machine, MachineSession, QueueEntry, User
 from app.services import machines as machines_svc
 from app.services import queue as queue_svc
+from app.services import reservations as reservations_svc
 from app.services.errors import DomainError
 
 logger = logging.getLogger(__name__)
@@ -50,10 +51,21 @@ class Report:
     finished: int = 0
     unclaimed: int = 0
     expired_offers: int = 0
+    bookings_reminded: int = 0
+    bookings_started: int = 0
+    bookings_expired: int = 0
 
     @property
     def touched(self) -> int:
-        return self.warned + self.finished + self.unclaimed + self.expired_offers
+        return (
+            self.warned
+            + self.finished
+            + self.unclaimed
+            + self.expired_offers
+            + self.bookings_reminded
+            + self.bookings_started
+            + self.bookings_expired
+        )
 
 
 @dataclass
@@ -84,6 +96,11 @@ async def reconcile(db: AsyncSession, now: datetime | None = None) -> Report:
     await _finish_overdue(db, now, report, pending)
     await _ping_unclaimed(db, now, report, pending)
     await _expire_offers(db, now, report, pending, offers)
+    # Брони идут после сессий: работа, только что перешедшая в «готово», должна
+    # успеть освободить машину до того, как мы решим, ждёт ли бронь занятый стол.
+    await _remind_bookings(db, now, report, pending)
+    await _start_bookings(db, now, report, pending)
+    await _expire_bookings(db, now, report, pending, offers)
 
     if report.touched:
         await db.commit()
@@ -95,11 +112,14 @@ async def reconcile(db: AsyncSession, now: datetime | None = None) -> Report:
     if report.touched:
         logger.info(
             "сверка: предупреждено %s, завершено %s, напоминаний о детали %s, "
-            "просроченных предложений %s",
+            "просроченных предложений %s, брони: напомнили %s, начались %s, сняты %s",
             report.warned,
             report.finished,
             report.unclaimed,
             report.expired_offers,
+            report.bookings_reminded,
+            report.bookings_started,
+            report.bookings_expired,
         )
     return report
 
@@ -230,6 +250,96 @@ async def _expire_offers(
         pending.add(result.user_id, texts.offer_expired(machine_name or t.BOT_MACHINE_FALLBACK))
         offers.extend(result.offers)
         report.expired_offers += 1
+
+
+async def _remind_bookings(
+    db: AsyncSession, now: datetime, report: Report, pending: _Pending
+) -> None:
+    """За час до брони — тому, кто её взял, и тому, кто сейчас на машине.
+
+    Второе сообщение важнее первого: человек с активной работой не обязан
+    помнить чужое расписание, а деталь, оставленная на столе, — главная причина,
+    по которой бронь начинается с пустого ожидания.
+    """
+    for reservation in await reservations_svc.due_to_remind(db, now):
+        machine = await db.get(Machine, reservation.machine_id)
+        if machine is None:
+            continue
+
+        reservation.reminded_at = now
+        minutes = max(1, round((reservation.starts_at - now).total_seconds() / 60))
+        pending.add(
+            reservation.user_id,
+            texts.booking_soon(machine.name, reservation.starts_at, minutes),
+        )
+
+        session = await _active_session(db, machine.id)
+        if session is not None and session.user_id != reservation.user_id:
+            pending.add(
+                session.user_id,
+                texts.booking_after_you(machine.name, reservation.starts_at),
+            )
+        report.bookings_reminded += 1
+
+
+async def _start_bookings(
+    db: AsyncSession, now: datetime, report: Report, pending: _Pending
+) -> None:
+    """Окно началось: сказать, свободна машина или на столе чужая деталь."""
+    for reservation in await reservations_svc.due_to_start(db, now):
+        machine = await db.get(Machine, reservation.machine_id)
+        if machine is None:
+            continue
+
+        reservation.started_notified_at = now
+        if machine.status == MachineStatus.FREE:
+            deadline = reservation.starts_at + timedelta(
+                minutes=settings.reservation_grace_minutes
+            )
+            pending.add(reservation.user_id, texts.booking_started(machine.name, deadline))
+        else:
+            # Правило 14: пока стол занят, бронь не сгорает, поэтому и срока в
+            # сообщении нет — есть только то, что человек может сделать.
+            pending.add(reservation.user_id, texts.booking_started_busy(machine.name))
+        report.bookings_started += 1
+
+
+async def _expire_bookings(
+    db: AsyncSession,
+    now: datetime,
+    report: Report,
+    pending: _Pending,
+    offers: list[queue_svc.Offer],
+) -> None:
+    """Не пришёл за отведённые минуты — бронь снимается, машина уходит очереди.
+
+    Занятую машину `expire_no_show` не тронет (правило 14) и ответит отказом;
+    такая бронь просто дождётся следующей сверки.
+    """
+    for reservation in await reservations_svc.due_to_expire(db, now):
+        try:
+            result = await reservations_svc.expire_no_show(db, reservation.id, now=now)
+        except DomainError as error:
+            logger.info("бронь %s пока не снимаю: %s", reservation.id, error)
+            continue
+
+        pending.add(
+            result.user_id,
+            texts.booking_missed(
+                result.machine_name, settings.reservation_grace_minutes
+            ),
+        )
+        offers.extend(result.offers)
+        report.bookings_expired += 1
+
+
+async def _active_session(db: AsyncSession, machine_id: int) -> MachineSession | None:
+    return await db.scalar(
+        select(MachineSession).where(
+            MachineSession.machine_id == machine_id,
+            MachineSession.status.in_(ACTIVE_SESSION_STATUSES),
+        )
+    )
 
 
 async def _first_in_queue(db: AsyncSession, kind: str) -> QueueEntry | None:

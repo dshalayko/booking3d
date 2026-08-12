@@ -1,7 +1,10 @@
 {# Живая часть главного экрана: сама перезапрашивается каждые 10 секунд.
 
    Секция на каждый тип оборудования — у принтеров и гравировщиков свои очереди
-   (services/queue.py), и одна общая полоса внизу врала бы про место в очереди. #}
+   (services/queue.py), и одна общая полоса внизу врала бы про место в очереди.
+
+   Адреса действий идут через `base`: пусто у киоска, `/app` у Mini App
+   (см. api/render.py). #}
 
 {# Очередь секции. Рисуется в двух местах, поэтому макросом: в секции из
    нескольких машин — полосой под плитками, в секции из одной — столбиком внутри
@@ -17,13 +20,13 @@
           </li>
         {% endfor %}
       </ol>
-      <a class="btn btn-small" href="/queue/leave">{{ t.queue_leave }}</a>
+      <a class="btn btn-small" href="{{ base }}/queue/leave">{{ t.queue_leave }}</a>
     {% elif group.machines %}
       <p class="queue-empty">{{ t.queue_empty }}</p>
       {# Когда всё занято, «встать в очередь» уже написано на большой кнопке
          сверху — вторая такая же рядом только добавляет, во что тыкать. #}
       {% if free %}
-        <a class="btn btn-small" href="/queue/join/{{ group.kind }}">{{ t.queue_join }}</a>
+        <a class="btn btn-small" href="{{ base }}/queue/join/{{ group.kind }}">{{ t.queue_join }}</a>
       {% endif %}
     {% endif %}
   </footer>
@@ -46,16 +49,23 @@
     <header class="group-head">
       <h2 class="group-title">{{ MACHINE_KIND_TITLE.get(group.kind, group.kind) }}</h2>
       {% if free %}
-        <a class="btn btn-hero" href="/occupy/{{ free.id }}">
+        <a class="btn btn-hero" href="{{ base }}/occupy/{{ free.id }}">
           {{ t.board_occupy_cta.format(kind=MACHINE_KIND_ONE.get(group.kind, group.kind)) }}
           <span class="btn-sub">
             {{ t.board_free_of.format(free=group.free_count, total=group.machines | length) }}
           </span>
         </a>
       {% elif group.machines %}
-        <a class="btn btn-hero btn-hero-wait" href="/queue/join/{{ group.kind }}">
+        <a class="btn btn-hero btn-hero-wait" href="{{ base }}/queue/join/{{ group.kind }}">
           {{ t.board_queue_cta }}
           <span class="btn-sub">{{ t.board_all_busy }}</span>
+        </a>
+      {% endif %}
+      {# Брони — второй способ получить машину, и вход в них должен быть виден
+         на главном экране, а не только в боте. #}
+      {% if group.machines %}
+        <a class="btn btn-schedule" href="{{ base }}/schedule/{{ group.kind }}">
+          {{ t.board_schedule_cta }}
         </a>
       {% endif %}
     </header>
@@ -65,7 +75,7 @@
     <div class="group-body">
       <div class="tiles">
         {% for machine in group.machines %}
-          <section class="tile tile-{{ machine.status }}{% if machine.reserved_for %} tile-reserved{% endif %}{% if single %} tile-single{% endif %}">
+          <section class="tile tile-{{ machine.status }}{% if machine.reserved_for or machine.booking_now %} tile-reserved{% endif %}{% if single %} tile-single{% endif %}">
             <h3 class="tile-name">{{ machine.name }}</h3>
 
             {% if machine.status == "broken" %}
@@ -78,7 +88,7 @@
               <p class="tile-time" data-eta="{{ machine.eta_at | iso }}">
                 {{ t.tile_until.format(time=machine.eta_at | hhmm) }}
               </p>
-              <a class="btn btn-ghost" href="/release/{{ machine.id }}">{{ t.tile_release }}</a>
+              <a class="btn btn-ghost" href="{{ base }}/release/{{ machine.id }}">{{ t.tile_release }}</a>
 
             {% elif machine.status == "done_wait" %}
               <p class="tile-status">{{ t.tile_done_wait }}</p>
@@ -86,16 +96,31 @@
               <p class="tile-time" data-since="{{ machine.done_since | iso }}">
                 {{ t.tile_done_at.format(time=machine.done_since | hhmm) }}
               </p>
-              <a class="btn btn-primary" href="/release/{{ machine.id }}">{{ t.tile_claimed }}</a>
+              <a class="btn btn-primary" href="{{ base }}/release/{{ machine.id }}">{{ t.tile_claimed }}</a>
 
             {% elif machine.reserved_for %}
               <p class="tile-status">{{ t.tile_reserved }}</p>
               <p class="tile-owner">{{ machine.reserved_for }}</p>
               <p class="tile-time">{{ t.tile_until.format(time=machine.reserved_until | hhmm) }}</p>
-              <a class="btn btn-ghost" href="/occupy/{{ machine.id }}">{{ t.tile_its_me }}</a>
+              <a class="btn btn-ghost" href="{{ base }}/occupy/{{ machine.id }}">{{ t.tile_its_me }}</a>
+
+            {% elif machine.booking_now %}
+              {# Машина физически свободна, но её час принадлежит человеку с
+                 бронью — «Свободен» здесь читался бы как приглашение занять. #}
+              <p class="tile-status">{{ t.tile_booked }}</p>
+              <p class="tile-owner">{{ machine.booked_by }}</p>
+              <p class="tile-time">{{ t.tile_until.format(time=machine.booked_until | hhmm) }}</p>
+              <a class="btn btn-ghost" href="{{ base }}/occupy/{{ machine.id }}">{{ t.tile_its_me }}</a>
 
             {% else %}
               <p class="tile-status">{{ t.tile_free }}</p>
+              {% if machine.booked_from %}
+                {# Иначе непонятно, почему свободную машину не дают занять на
+                   восемь часов. #}
+                <p class="tile-time tile-booked-from">
+                  {{ t.tile_booked_from.format(time=machine.booked_from | hhmm) }}
+                </p>
+              {% endif %}
             {% endif %}
 
             {% if single %}{{ queue_block(group, free, column=true) }}{% endif %}

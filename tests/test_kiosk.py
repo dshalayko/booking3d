@@ -1,15 +1,17 @@
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 
 import pytest
 from sqlalchemy import select
 
 from app.api.kiosk import duration_options
 from app.config import Settings, settings
-from app.enums import MachineKind, MachineStatus
-from app.models import Machine, QueueEntry
+from app.enums import MachineKind, MachineStatus, ReservationStatus
+from app.models import Machine, QueueEntry, Reservation
 from app.services import auth
 from app.services import machines as machines_svc
 from app.services import queue as queue_svc
+from app.services import reservations as reservations_svc
+from app.services import schedule as schedule_svc
 
 
 @pytest.fixture(autouse=True)
@@ -352,6 +354,171 @@ class TestReleaseAndQueue:
         assert "<script>" not in response.text
 
 
+class TestScheduleScreen:
+    """Расписание и брони с планшета: те же экраны, что и в Mini App."""
+
+    async def test_schedule_shows_days_and_hours(self, client, printers):
+        response = await client.get(f"/schedule/{MachineKind.PRINTER}")
+
+        assert response.status_code == 200
+        assert "сегодня" in response.text
+        assert "P2S #1" in response.text and "P2S #2" in response.text
+        assert "00:00" in response.text and "23:00" in response.text
+
+    async def test_unknown_kind_is_refused(self, client, printers):
+        response = await client.get("/schedule/toaster", headers={"accept": "text/html"})
+
+        assert response.status_code == 400
+
+    async def test_broken_date_falls_back_to_today(self, client, printers):
+        """Расписание — экран для чтения: отказ на опечатке в ссылке никого не
+        защитит, а человека у стены остановит."""
+        response = await client.get(f"/schedule/{MachineKind.PRINTER}?date=не-дата")
+
+        assert response.status_code == 200
+
+    async def test_board_links_to_schedule(self, client, printers):
+        response = await client.get("/")
+
+        assert f"/schedule/{MachineKind.PRINTER}" in response.text
+
+    async def test_booked_hour_is_shown_on_the_board(self, client, db, printers, make_user):
+        user = await make_user(name="Анна")
+        now = datetime.now(UTC)
+        start = schedule_svc.align(now) + timedelta(days=1)
+        await reservations_svc.book(db, user, printers[0].id, start, 120)
+        await db.commit()
+
+        response = await client.get("/")
+
+        assert "бронь с" in response.text
+
+
+class TestBookScreen:
+    def _start(self):
+        return schedule_svc.align(datetime.now(UTC)) + timedelta(days=1)
+
+    async def test_form_asks_pin_and_duration(self, client, printers):
+        await enroll(client)
+
+        response = await client.get(
+            f"/book/{printers[0].id}", params={"start": self._start().isoformat()}
+        )
+
+        assert response.status_code == 200
+        assert "PIN" in response.text
+        assert "Забронировать" in response.text
+
+    async def test_form_refuses_past_hour_before_pin(self, client, printers):
+        await enroll(client)
+        past = schedule_svc.align(datetime.now(UTC)) - timedelta(days=1)
+
+        response = await client.get(
+            f"/book/{printers[0].id}",
+            params={"start": past.isoformat()},
+            headers={"accept": "text/html"},
+        )
+
+        assert response.status_code == 400
+        assert "keypad" not in response.text
+
+    async def test_form_refuses_taken_hour_before_pin(self, client, db, printers, make_user):
+        user = await make_user()
+        start = self._start()
+        await reservations_svc.book(db, user, printers[0].id, start, 60)
+        await db.commit()
+        await enroll(client)
+
+        response = await client.get(
+            f"/book/{printers[0].id}",
+            params={"start": start.isoformat()},
+            headers={"accept": "text/html"},
+        )
+
+        assert response.status_code == 409
+        assert "keypad" not in response.text
+
+    async def test_booking_from_kiosk(self, client, db, printers, make_user):
+        await make_user(name="Пётр", pin="4242")
+        start = self._start()
+        await enroll(client)
+
+        response = await client.post(
+            f"/book/{printers[0].id}",
+            data={"pin": "4242", "start": start.isoformat(), "minutes": "120"},
+        )
+
+        assert response.status_code == 303
+        assert response.headers["location"] == "/?flash=booked"
+        booking = await db.scalar(select(Reservation))
+        assert booking.starts_at == start
+        assert booking.status == ReservationStatus.BOOKED
+
+    async def test_booking_without_pin_is_refused(self, client, db, printers, make_user):
+        await make_user(pin="4242")
+        await enroll(client)
+
+        response = await client.post(
+            f"/book/{printers[0].id}",
+            data={"pin": "", "start": self._start().isoformat(), "minutes": "60"},
+            headers={"accept": "text/html"},
+        )
+
+        assert response.status_code == 401
+        assert await db.scalar(select(Reservation)) is None
+
+    async def test_booking_from_a_laptop_is_refused(self, client, db, printers, make_user):
+        """Правило 11: PIN вводится только на планшете."""
+        await make_user(pin="4242")
+
+        response = await client.post(
+            f"/book/{printers[0].id}",
+            data={"pin": "4242", "start": self._start().isoformat(), "minutes": "60"},
+            headers={"accept": "text/html"},
+        )
+
+        assert response.status_code == 403
+        assert await db.scalar(select(Reservation)) is None
+
+    async def test_owner_cancels_from_kiosk(self, client, db, printers, make_user):
+        user = await make_user(pin="4242")
+        booking = await reservations_svc.book(
+            db, user, printers[0].id, self._start(), 60
+        )
+        await db.commit()
+        await enroll(client)
+
+        response = await client.post(
+            f"/booking/{booking.reservation_id}/cancel", data={"pin": "4242"}
+        )
+
+        assert response.status_code == 303
+        assert response.headers["location"] == "/?flash=booking_cancelled"
+        db.expire_all()
+        stored = await db.get(Reservation, booking.reservation_id)
+        assert stored.status == ReservationStatus.CANCELLED
+
+    async def test_stranger_cannot_cancel_from_kiosk(self, client, db, printers, make_user):
+        owner = await make_user(pin="4242")
+        await make_user(pin="1111")
+        booking = await reservations_svc.book(
+            db, owner, printers[0].id, self._start(), 60
+        )
+        await db.commit()
+        await enroll(client)
+
+        response = await client.post(
+            f"/booking/{booking.reservation_id}/cancel",
+            data={"pin": "1111"},
+            headers={"accept": "text/html"},
+        )
+
+        assert response.status_code == 403
+        db.expire_all()
+        stored = await db.get(Reservation, booking.reservation_id)
+        assert stored.status == ReservationStatus.BOOKED
+
+
 class TestStaticAndOffline:
     async def test_service_worker_is_served_from_root(self, client):
         """Из /static/ он не смог бы контролировать весь сайт."""
@@ -378,15 +545,23 @@ class TestDurations:
 
         options = duration_options(evening)
 
-        night = [option for option in options if option["label"] == "до утра"][0]
-        assert night["minutes"] == 11 * 60  # с 22:00 до 09:00
+        night = [option for option in options if option.label == "до утра"][0]
+        assert night.minutes == 11 * 60  # с 22:00 до 09:00
 
     def test_night_option_hidden_right_before_morning(self):
         early = datetime(2026, 8, 10, 5, 55, tzinfo=UTC)  # 08:55 в Никосии
 
-        labels = [option["label"] for option in duration_options(early)]
+        labels = [option.label for option in duration_options(early)]
 
         assert "до утра" not in labels
+
+    def test_options_stop_at_the_next_booking(self):
+        """Кнопка, ведущая к отказу, хуже отсутствующей: PIN уже введён."""
+        noon = datetime(2026, 8, 10, 9, 0, tzinfo=UTC)
+
+        options = duration_options(noon, limit_minutes=150)
+
+        assert [option.minutes for option in options] == [60, 120]
 
 
 class TestKindsOnTheWall:

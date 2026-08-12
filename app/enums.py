@@ -47,8 +47,25 @@ class QueueStatus(StrEnum):
     LEFT = "left"
 
 
+class ReservationStatus(StrEnum):
+    """Состояние брони на будущее.
+
+    Словарь намеренно повторяет `QueueStatus`: бронь — то же право занять
+    машину, только выданное заранее и на конкретное окно. `TAKEN` — человек
+    пришёл и начал работу, `EXPIRED` — не пришёл за отведённые минуты.
+    """
+
+    BOOKED = "booked"
+    TAKEN = "taken"
+    EXPIRED = "expired"
+    CANCELLED = "cancelled"
+
+
 # Статусы, которые считаются «занимающими» машину и человека.
 # Дублируются в частичных уникальных индексах в migrations/versions/0001_initial.py —
 # при изменении правь оба места.
 ACTIVE_SESSION_STATUSES = (SessionStatus.PRINTING, SessionStatus.DONE_WAIT)
 ACTIVE_QUEUE_STATUSES = (QueueStatus.WAITING, QueueStatus.OFFERED)
+# Ожидающая своего часа бронь — одна на человека и без пересечений на машине.
+# Дублируется в migrations/versions/0006_reservations.py.
+ACTIVE_RESERVATION_STATUSES = (ReservationStatus.BOOKED,)

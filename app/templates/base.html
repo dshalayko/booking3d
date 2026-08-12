@@ -14,13 +14,24 @@
 </head>
 {# Счётчики времени app.js дорисовывает сам, поэтому его строки едут в атрибуте.
    Не инлайновым <script>: страница не должна содержать ни одного, иначе
-   отражённый XSS перестаёт быть заметен и глазами, и тестом. #}
+   отражённый XSS перестаёт быть заметен и глазами, и тестом.
+
+   Авто-возврат на главный экран — свойство планшета на стене, а не страницы: он
+   общий, и брошенный чужой экран должен сам вернуться к доске. В Mini App
+   (`needs_pin` = false) телефон личный, и уводить человека с экрана нельзя. #}
 <body data-texts="{{ t_js | tojson | forceescape }}"
-      {%- if auto_return|default(false) %} data-autoreturn="60"{% endif %}>
+      {%- if auto_return|default(false) and needs_pin %} data-autoreturn="60"{% endif %}>
   <div id="offline-banner" class="banner banner-offline" hidden>
     {{ t.offline_banner }}
   </div>
   {% block content %}{% endblock %}
+  {# Единственный внешний скрипт во всём проекте и единственная страница, где он
+     допустим: Mini App живёт внутри Telegram и без интернета не открывается в
+     принципе. Экраны киоска остаются автономными — они и должны читаться, когда
+     связь пропала. #}
+  {% if telegram_sdk|default(false) %}
+    <script src="https://telegram.org/js/telegram-web-app.js"></script>
+  {% endif %}
   <script src="/static/app.js"></script>
 </body>
 </html>

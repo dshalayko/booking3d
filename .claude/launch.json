@@ -4,8 +4,9 @@
     {
       "name": "booking",
       "runtimeExecutable": ".venv/bin/uvicorn",
-      "runtimeArgs": ["app.main:app", "--port", "8000"],
-      "port": 8000
+      "runtimeArgs": ["app.main:app"],
+      "port": 8000,
+      "autoPort": true
     }
   ]
 }

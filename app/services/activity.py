@@ -1,6 +1,6 @@
 """Журнал событий для админки.
 
-Собирается из `sessions` и `queue`, а не пишется в отдельную таблицу. Так он
+Собирается из `sessions`, `queue` и `reservations`, а не пишется в отдельную таблицу. Так он
 физически не может разойтись с реальностью: если в базе написано, что печать
 идёт, значит в журнале будет ровно это. Отдельный журнал пришлось бы
 поддерживать в каждом месте, где меняется состояние, и он бы неизбежно отстал.
@@ -23,8 +23,8 @@ from sqlalchemy.orm import aliased
 
 from app import texts as t
 from app.config import settings
-from app.enums import QueueStatus, SessionStatus
-from app.models import Machine, MachineSession, QueueEntry, User
+from app.enums import QueueStatus, ReservationStatus, SessionStatus
+from app.models import Machine, MachineSession, QueueEntry, Reservation, User
 
 DEFAULT_LIMIT = 100
 
@@ -42,6 +42,7 @@ class Event:
 async def recent(db: AsyncSession, limit: int = DEFAULT_LIMIT) -> list[Event]:
     events = await _session_events(db, limit)
     events.extend(await _queue_events(db, limit))
+    events.extend(await _reservation_events(db, limit))
     events.sort(key=lambda event: event.at, reverse=True)
     return events[:limit]
 
@@ -80,6 +81,48 @@ async def _session_events(db: AsyncSession, limit: int) -> list[Event]:
             if session.cancel_reason:
                 text += t.LOG_SESSION_CANCEL_REASON.format(reason=session.cancel_reason)
         events.append(Event(session.ended_at, text))
+
+    return events
+
+
+async def _reservation_events(db: AsyncSession, limit: int) -> list[Event]:
+    """Брони: когда завели и чем кончилось.
+
+    Начало окна событием не считается — оно наступает само, следов в таблице не
+    оставляет, и в журнале превратилось бы в шум ровно на половину строк.
+    """
+    rows = (
+        await db.execute(
+            select(Reservation, User.name, Machine.name)
+            .join(User, User.id == Reservation.user_id)
+            .join(Machine, Machine.id == Reservation.machine_id)
+            .order_by(Reservation.id.desc())
+            .limit(limit)
+        )
+    ).all()
+
+    resolved_texts = {
+        ReservationStatus.TAKEN: t.LOG_RESERVATION_TAKEN,
+        ReservationStatus.EXPIRED: t.LOG_RESERVATION_EXPIRED,
+        ReservationStatus.CANCELLED: t.LOG_RESERVATION_CANCELLED,
+    }
+
+    events: list[Event] = []
+    for reservation, name, machine in rows:
+        start = reservation.starts_at.astimezone(settings.zone).strftime(t.DATETIME_FORMAT)
+        events.append(
+            Event(
+                reservation.created_at,
+                t.LOG_RESERVATION_BOOKED.format(machine=machine, start=start, name=name),
+            )
+        )
+
+        template = resolved_texts.get(reservation.status)
+        if reservation.resolved_at is not None and template:
+            text = template.format(machine=machine, start=start, name=name)
+            if reservation.cancel_reason:
+                text += t.LOG_SESSION_CANCEL_REASON.format(reason=reservation.cancel_reason)
+            events.append(Event(reservation.resolved_at, text))
 
     return events
 

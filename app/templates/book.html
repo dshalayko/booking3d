@@ -1,0 +1,44 @@
+{# Бронь: длительность и (на киоске) PIN. Час уже выбран в расписании. #}
+{% extends "base.html" %}
+{% set auto_return = true %}
+{% block title %}{{ t.book_title.format(machine=machine.name) }}{% endblock %}
+
+{% block content %}
+<main class="sheet">
+  <header class="sheet-head">
+    <a class="btn btn-small btn-ghost"
+       href="{{ base }}/schedule/{{ machine.kind }}?date={{ starts_at | day }}">
+      {{ t.cancel }}
+    </a>
+    <h1>{{ t.book_heading.format(machine=machine.name) }}</h1>
+  </header>
+
+  <form class="sheet-body" method="post" action="{{ base }}/book/{{ machine.id }}"
+        {% if needs_pin %}data-guard{% endif %}>
+    <input type="hidden" name="start" value="{{ starts_at | iso }}">
+    {% if needs_pin %}{% include "_keypad.html" %}{% endif %}
+
+    <div class="durations">
+      <p class="durations-when">{{ starts_at | when }}</p>
+      {% if durations %}
+        <p class="durations-label">{{ t.book_duration_label }}</p>
+        <div class="durations-grid">
+          {% for option in durations %}
+            <label class="duration-choice">
+              <input class="duration-radio" type="radio" name="minutes"
+                     value="{{ option.minutes }}" required>
+              <span class="btn btn-duration">{{ option.label }}</span>
+            </label>
+          {% endfor %}
+        </div>
+        <p class="durations-hint">{{ t.book_hint.format(grace=grace) }}</p>
+        <button class="btn btn-primary btn-book-now" type="submit">{{ t.book_submit }}</button>
+      {% else %}
+        {# Кнопки, ведущей к отказу, быть не должно: до следующей брони меньше
+           минимального часа, и выбирать тут нечего. #}
+        <p class="durations-hint">{{ t.book_no_slots }}</p>
+      {% endif %}
+    </div>
+  </form>
+</main>
+{% endblock %}

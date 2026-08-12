@@ -22,6 +22,7 @@ from app.enums import (
 )
 from app.models import MachineSession, QueueEntry, User
 from app.services import machines as machines_svc
+from app.services import reservations as reservations_svc
 
 
 @dataclass
@@ -36,11 +37,22 @@ class MachineView:
     note: str | None
     reserved_for: str | None
     reserved_until: datetime | None
+    # Ближайшая бронь: она либо идёт прямо сейчас (`booking_now`), либо впереди —
+    # и тогда объясняет, почему «свободную» машину нельзя занять на восемь часов.
+    booked_by: str | None = None
+    booked_from: datetime | None = None
+    booked_until: datetime | None = None
+    booking_now: bool = False
 
     @property
     def is_free(self) -> bool:
-        """Свободна и не придержана за первым в очереди (правило 7)."""
-        return self.status == MachineStatus.FREE and self.reserved_for is None
+        """Свободна, не придержана за первым в очереди (правило 7) и не в чужом
+        окне брони (правило 12)."""
+        return (
+            self.status == MachineStatus.FREE
+            and self.reserved_for is None
+            and not self.booking_now
+        )
 
 
 @dataclass
@@ -88,7 +100,14 @@ class Board:
         return sum(group.free_count for group in self.groups)
 
 
-async def build(db: AsyncSession) -> Board:
+async def build(db: AsyncSession, now: datetime | None = None) -> Board:
+    """Состояние парка на момент `now` — по умолчанию на сейчас.
+
+    Момент передаётся, а не берётся из часов внутри: от него зависит, какая
+    бронь считается идущей, а какая ещё впереди, и проверить это можно только
+    задав время явно.
+    """
+    now = now or datetime.now(UTC)
     machines = await machines_svc.list_machines(db)
 
     sessions = {
@@ -113,10 +132,13 @@ async def build(db: AsyncSession) -> Board:
         ).all()
     }
 
+    bookings = await reservations_svc.upcoming_for_machines(db, now)
+
     views: dict[str, list[MachineView]] = {}
     for machine in machines:
         session_row = sessions.get(machine.id)
         offer_row = offers.get(machine.id)
+        booking_row = bookings.get(machine.id)
         views.setdefault(machine.kind, []).append(
             MachineView(
                 id=machine.id,
@@ -133,6 +155,10 @@ async def build(db: AsyncSession) -> Board:
                 note=machine.note,
                 reserved_for=offer_row[1] if offer_row else None,
                 reserved_until=offer_row[0].offer_expires_at if offer_row else None,
+                booked_by=booking_row[1] if booking_row else None,
+                booked_from=booking_row[0].starts_at if booking_row else None,
+                booked_until=booking_row[0].ends_at if booking_row else None,
+                booking_now=bool(booking_row and booking_row[0].starts_at <= now),
             )
         )
 
@@ -149,7 +175,7 @@ async def build(db: AsyncSession) -> Board:
         # и тогда секцию показываем, чтобы человек увидел себя и мог выйти.
         if views.get(kind) or queues.get(kind)
     ]
-    return Board(groups=groups, now=datetime.now(UTC))
+    return Board(groups=groups, now=now)
 
 
 async def _queues_by_kind(db: AsyncSession) -> dict[str, list[QueueView]]:

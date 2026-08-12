@@ -44,7 +44,7 @@ from app.services.security import pin_digest
 
 TEST_DB_NAME = "booking_test"
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
-TABLES = "users, machines, sessions, queue"
+TABLES = "users, machines, sessions, queue, reservations"
 
 TEST_ZONE = ZoneInfo("Europe/Nicosia")
 
@@ -63,6 +63,10 @@ def fixed_settings(monkeypatch: pytest.MonkeyPatch) -> None:
     падения в наборе.
     """
     monkeypatch.setattr(settings, "kiosk_open_access", False)
+    # По той же причине, что и строка выше, но цена ошибки больше: с включённым
+    # `miniapp_open_access` проверка подписи Telegram не выполняется вовсе, и
+    # весь test_miniapp.py зеленел бы, ничего не проверяя.
+    monkeypatch.setattr(settings, "miniapp_open_access", False)
     monkeypatch.setattr(settings, "tz", "Europe/Nicosia")
     monkeypatch.setattr(settings, "zone", TEST_ZONE)
     monkeypatch.setattr(settings, "night_start", time(23, 0))
@@ -70,6 +74,12 @@ def fixed_settings(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(settings, "offer_window_minutes", 30)
     monkeypatch.setattr(settings, "warn_before_minutes", 15)
     monkeypatch.setattr(settings, "unclaimed_ping_minutes", 60)
+    monkeypatch.setattr(settings, "night_until", time(9, 0))
+    monkeypatch.setattr(settings, "reservation_horizon_days", 14)
+    monkeypatch.setattr(settings, "reservation_slot_minutes", 60)
+    monkeypatch.setattr(settings, "reservation_min_minutes", 60)
+    monkeypatch.setattr(settings, "reservation_grace_minutes", 30)
+    monkeypatch.setattr(settings, "reservation_remind_minutes", 60)
 
 
 def _url_for(database: str) -> URL:

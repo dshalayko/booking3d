@@ -5,14 +5,20 @@
 {% block content %}
 <main class="sheet">
   <header class="sheet-head">
-    <a class="btn btn-small btn-ghost" href="/">{{ t.cancel }}</a>
+    <a class="btn btn-small btn-ghost" href="{{ base }}/">{{ t.cancel }}</a>
     <h1>{{ t.occupy_heading.format(machine=machine.name) }}</h1>
   </header>
 
-  <form class="sheet-body" method="post" action="/occupy/{{ machine.id }}" data-guard>
-    {% include "_keypad.html" %}
+  <form class="sheet-body" method="post" action="{{ base }}/occupy/{{ machine.id }}"
+        {% if needs_pin %}data-guard{% endif %}>
+    {% if needs_pin %}{% include "_keypad.html" %}{% endif %}
 
     <div class="durations">
+      {% if booked_until %}
+        {# Машина в чьём-то окне брони: длительность здесь уже урезана его концом,
+           и человек должен видеть, почему кнопок меньше обычного. #}
+        <p class="durations-when">{{ t.book_booked_until.format(time=booked_until | hhmm) }}</p>
+      {% endif %}
       <p class="durations-label">{{ t.occupy_duration_label }}</p>
       <div class="durations-grid">
         {% for option in durations %}
@@ -22,8 +28,12 @@
           </label>
         {% endfor %}
       </div>
-      <p class="durations-hint">{{ t.occupy_hint }}</p>
-      <button class="btn btn-primary btn-book-now" type="submit">{{ t.occupy_submit }}</button>
+      {% if durations %}
+        <p class="durations-hint">{{ t.occupy_hint }}</p>
+        <button class="btn btn-primary btn-book-now" type="submit">{{ t.occupy_submit }}</button>
+      {% else %}
+        <p class="durations-hint">{{ t.book_no_slots }}</p>
+      {% endif %}
     </div>
   </form>
 </main>

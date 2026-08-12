@@ -13,7 +13,7 @@ from sqlalchemy import (
 )
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
-from app.enums import MachineKind, MachineStatus
+from app.enums import MachineKind, MachineStatus, ReservationStatus
 
 
 class Base(DeclarativeBase):
@@ -84,6 +84,8 @@ class MachineSession(Base):
     status: Mapped[str] = mapped_column(String(16), nullable=False)
     freed_by_user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"))
     cancel_reason: Mapped[str | None] = mapped_column(Text)
+    # Из какой брони выросла работа. Пусто у обычного «занять сейчас».
+    reservation_id: Mapped[int | None] = mapped_column(ForeignKey("reservations.id"))
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )
@@ -154,3 +156,59 @@ class QueueEntry(Base):
 
     def __repr__(self) -> str:
         return f"<QueueEntry {self.id} user={self.user_id} {self.kind} {self.status}>"
+
+
+class Reservation(Base):
+    """Бронь машины на конкретное окно в будущем.
+
+    Очередь отвечает на вопрос «кто следующий, когда освободится», бронь — на
+    вопрос «мне нужно к утру четверга». Поэтому бронь всегда на конкретную
+    машину, а не на тип: человек приходит в назначенный час к назначенному
+    столу, и «какой-нибудь принтер этого типа» здесь ничего не гарантирует.
+
+    Правило 12: в своё окно машину занимает только тот, кто её забронировал —
+    это право сильнее очереди (правило 7).
+    """
+
+    __tablename__ = "reservations"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    machine_id: Mapped[int] = mapped_column(ForeignKey("machines.id"), nullable=False)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), nullable=False)
+    starts_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    ends_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    status: Mapped[str] = mapped_column(String(16), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+    # Когда бронь закрылась: пришёл, не пришёл или отменил.
+    resolved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    cancel_reason: Mapped[str | None] = mapped_column(Text)
+    cancelled_by_user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"))
+
+    # Отметки об отправленных напоминаниях — как у сессии: планировщик сверяет
+    # состояние с часами каждую минуту, и без них сообщение ушло бы повторно.
+    reminded_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    started_notified_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+    __table_args__ = (
+        # Правило 13: одна бронь на человека. Парк маленький, и без ограничения
+        # один человек забивает собой всю неделю вперёд.
+        Index(
+            "one_active_reservation_per_user",
+            "user_id",
+            unique=True,
+            postgresql_where=text(f"status = '{ReservationStatus.BOOKED}'"),
+        ),
+        # Выборка «что забронировано на этой машине после такого-то часа» —
+        # самая частая: она рисует расписание и урезает «занять сейчас».
+        Index("reservations_machine_time", "machine_id", "starts_at"),
+    )
+
+    # Непересечение брон на одной машине несёт EXCLUDE-ограничение
+    # `reservations_no_overlap` (см. migrations/versions/0006_reservations.py):
+    # в SQLAlchemy его не выразить, а проверкой в коде — значит проиграть гонке
+    # двух одновременных бронирований.
+
+    def __repr__(self) -> str:
+        return f"<Reservation {self.id} machine={self.machine_id} {self.status}>"

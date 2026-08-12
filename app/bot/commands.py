@@ -5,18 +5,21 @@
 без Telegram, вебхуков и моков. В `bot.py` остаётся только проводка.
 """
 
+from dataclasses import dataclass
 from datetime import UTC, datetime
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.bot import notify, texts
+from app.config import settings
 from app.enums import ACTIVE_QUEUE_STATUSES, ACTIVE_SESSION_STATUSES
 from app.models import Machine, MachineSession, QueueEntry, User
 from app.services import auth
 from app.services import board as board_svc
 from app.services import machines as machines_svc
 from app.services import queue as queue_svc
+from app.services import reservations as reservations_svc
 from app.services.errors import AlreadyInQueue, DomainError, NotInQueue
 from app.services.users import normalize_login
 
@@ -77,6 +80,40 @@ async def new_pin(db: AsyncSession, chat_id: int) -> str:
     return texts.pin_changed(pin)
 
 
+def app_url() -> str | None:
+    """Адрес Mini App или None, если Telegram его не откроет.
+
+    Telegram грузит мини-приложения только по https и только с настоящим
+    сертификатом: на локальном `http://localhost:8000` кнопка молча не сработает,
+    и лучше сказать об этом словами, чем отправить человека в никуда.
+    """
+    base = settings.public_base_url.rstrip("/")
+    return f"{base}/app" if base.startswith("https://") else None
+
+
+@dataclass(frozen=True)
+class Invite:
+    """Ответ на /book: текст и адрес, на который вешается кнопка Mini App.
+
+    Кнопку собирает bot.py — здесь про aiogram по-прежнему ничего не знают.
+    """
+
+    text: str
+    url: str | None = None
+
+
+async def book(db: AsyncSession, chat_id: int) -> Invite:
+    """Пригласить в расписание: там и брони на будущее, и всё остальное."""
+    user = await _user(db, chat_id)
+    if user is None:
+        return Invite(texts.not_registered())
+
+    url = app_url()
+    if url is None:
+        return Invite(texts.book_no_app())
+    return Invite(texts.book_invite(), url)
+
+
 async def status(db: AsyncSession) -> str:
     return texts.status(await board_svc.build(db))
 
@@ -108,6 +145,12 @@ async def my(db: AsyncSession, chat_id: int) -> str:
         machine = await db.get(Machine, entry.offered_machine_id)
         offered_machine = machine.name if machine else None
 
+    booking = await reservations_svc.active_of_user(db, user.id)
+    booked_machine = None
+    if booking is not None:
+        machine = await db.get(Machine, booking.machine_id)
+        booked_machine = machine.name if machine else None
+
     return texts.my_state(
         machine_name=machine_name,
         eta_at=session.eta_at if session else None,
@@ -116,6 +159,9 @@ async def my(db: AsyncSession, chat_id: int) -> str:
         queue_kind=entry.kind if entry else None,
         offered_machine=offered_machine,
         offer_until=entry.offer_expires_at if entry else None,
+        booking_machine=booked_machine,
+        booking_starts_at=booking.starts_at if booking else None,
+        booking_ends_at=booking.ends_at if booking else None,
     )
 
 

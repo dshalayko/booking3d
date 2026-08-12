@@ -13,19 +13,25 @@ from app import texts as t
 from app.api import admin as admin_routes
 from app.api import auth as auth_routes
 from app.api import kiosk as kiosk_routes
-from app.api.kiosk import templates
+from app.api import miniapp as miniapp_routes
+from app.api.render import templates
 from app.bot import notify
 from app.bot.bot import attach_notifier, build_bot, start_polling
 from app.config import settings
 from app.db import engine
 from app.scheduler import create_scheduler, tick
 from app.services.errors import (
+    AlreadyBooked,
     AlreadyInQueue,
+    AppSessionRequired,
     AuthFailed,
+    BadInitData,
     DomainError,
     InvalidDuration,
+    InvalidReservationTime,
     LoginInvalid,
     LoginTaken,
+    MachineBooked,
     MachineHasHistory,
     MachineKindUnknown,
     MachineNameInvalid,
@@ -37,6 +43,9 @@ from app.services.errors import (
     NotInQueue,
     OfferNotActive,
     PinTaken,
+    ReservationForbidden,
+    ReservationNotFound,
+    ReservationOverlap,
     TooManyAttempts,
     UserBusy,
 )
@@ -55,12 +64,20 @@ logger = logging.getLogger(__name__)
 # сервисы ничего не знали про HTTP.
 STATUS_BY_ERROR: dict[type[DomainError], int] = {
     AuthFailed: 401,
+    AppSessionRequired: 401,
+    BadInitData: 403,
     NotAdmin: 403,
     TooManyAttempts: 429,
     NotInQueue: 404,
     MachineNotAvailable: 409,
     MachineReleaseForbidden: 403,
     MachineReserved: 409,
+    MachineBooked: 409,
+    ReservationOverlap: 409,
+    AlreadyBooked: 409,
+    ReservationNotFound: 404,
+    ReservationForbidden: 403,
+    InvalidReservationTime: 400,
     UserBusy: 409,
     AlreadyInQueue: 409,
     OfferNotActive: 409,
@@ -96,6 +113,13 @@ async def lifespan(_: FastAPI) -> AsyncIterator[None]:
             "выключи его в .env, когда закончишь"
         )
 
+    if settings.miniapp_open_access:
+        logger.warning(
+            "MINIAPP_OPEN_ACCESS включён: /app открывается без Telegram, и войти "
+            "можно любым человеком из базы без подписи и без PIN. Это режим для "
+            "тестов — выключи его в .env, когда закончишь"
+        )
+
     # Догоняем всё, что произошло, пока приложение лежало: истёкшие печати,
     # просроченные предложения. Отдельного восстановления заданий не нужно —
     # состояние лежит в таблицах.
@@ -119,6 +143,7 @@ async def lifespan(_: FastAPI) -> AsyncIterator[None]:
 app = FastAPI(title=t.API_TITLE, lifespan=lifespan)
 app.mount("/static", StaticFiles(directory="app/static"), name="static")
 app.include_router(auth_routes.router)
+app.include_router(miniapp_routes.router)
 app.include_router(kiosk_routes.router)
 app.include_router(admin_routes.router)
 

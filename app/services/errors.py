@@ -41,6 +41,30 @@ class MachineHasHistory(DomainError):
     """Машину с работами и приглашениями в журнале удалять нельзя."""
 
 
+class MachineBooked(DomainError):
+    """Правило 12: машина забронирована — сейчас или раньше, чем закончится работа."""
+
+
+class ReservationNotFound(DomainError):
+    """Брони нет или она уже закрыта."""
+
+
+class ReservationForbidden(DomainError):
+    """Чужую бронь отменяет только админ."""
+
+
+class ReservationOverlap(DomainError):
+    """Окно пересекается с другой бронью или с идущей работой."""
+
+
+class AlreadyBooked(DomainError):
+    """Правило 13: у человека уже есть бронь на будущее."""
+
+
+class InvalidReservationTime(DomainError):
+    """Начало не по сетке, в прошлом или дальше горизонта."""
+
+
 class UserBusy(DomainError):
     """Правило 2: у человека уже есть активная сессия."""
 
@@ -67,6 +91,14 @@ class AuthFailed(DomainError):
 
 class TooManyAttempts(DomainError):
     """Слишком часто — включилась пауза."""
+
+
+class BadInitData(DomainError):
+    """Mini App открыт не из Telegram или его подпись не сходится."""
+
+
+class AppSessionRequired(DomainError):
+    """Сессия Mini App истекла — приложение надо открыть заново из бота."""
 
 
 class PinTaken(DomainError):

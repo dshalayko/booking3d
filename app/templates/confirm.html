@@ -5,12 +5,13 @@
 {% block content %}
 <main class="sheet">
   <header class="sheet-head">
-    <a class="btn btn-small btn-ghost" href="/">{{ t.cancel }}</a>
+    <a class="btn btn-small btn-ghost" href="{{ base }}/">{{ t.cancel }}</a>
     <h1>{{ title }}</h1>
   </header>
 
-  <form class="sheet-body" method="post" action="{{ action }}" data-guard>
-    {% include "_keypad.html" %}
+  <form class="sheet-body" method="post" action="{{ action }}"
+        {% if needs_pin %}data-guard{% endif %}>
+    {% if needs_pin %}{% include "_keypad.html" %}{% endif %}
 
     <div class="confirm">
       <p class="confirm-subject">{{ subject }}</p>
