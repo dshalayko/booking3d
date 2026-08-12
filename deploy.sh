@@ -149,7 +149,11 @@ rollback_hint() {
 report() {
     local old="$1" new="$2"
     printf '\n'
-    ok "обновлено: $(git rev-parse --short "$old") → $(git rev-parse --short "$new")"
+    if [ "$old" = "$new" ]; then
+        ok "пересобрано на $(git rev-parse --short "$new")"
+    else
+        ok "обновлено: $(git rev-parse --short "$old") → $(git rev-parse --short "$new")"
+    fi
 
     local version
     version=$($COMPOSE exec -T db psql -U booking -d booking -tAc \
