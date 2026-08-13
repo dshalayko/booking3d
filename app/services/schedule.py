@@ -29,6 +29,28 @@ MAX_DURATION_MINUTES = 48 * 60
 
 
 @dataclass(frozen=True)
+class Hours:
+    """Часы работы мастерской — местное время, без зоны и без даты.
+
+    Живёт здесь, а не рядом с таблицей: всё, что с этой парой делают, — это
+    арифметика, а хранение (`services/workhours.py`) сводится к одной строке в
+    базе. Обратной зависимости нет намеренно: schedule по-прежнему ничего не
+    знает про БД.
+    """
+
+    opens_at: time
+    closes_at: time
+
+    @property
+    def round_the_clock(self) -> bool:
+        """00:00–00:00 — мастерская не закрывается."""
+        return self.opens_at == self.closes_at == time(0, 0)
+
+    def text(self) -> str:
+        return f"{self.opens_at:%H:%M}–{self.closes_at:%H:%M}"
+
+
+@dataclass(frozen=True)
 class DayOption:
     """Плитка в полосе дней над расписанием."""
 
@@ -43,10 +65,6 @@ class DayOption:
 class DurationOption:
     minutes: int
     label: str
-
-
-def slots_per_day() -> int:
-    return 24 * 60 // settings.reservation_slot_minutes
 
 
 def local(moment: datetime) -> datetime:
@@ -76,25 +94,59 @@ def day_of(moment: datetime) -> date:
     return local(moment).date()
 
 
-def day_bounds(day: date) -> tuple[datetime, datetime]:
-    """Начало и конец местных суток в UTC."""
-    start = datetime.combine(day, time(0, 0), tzinfo=settings.zone)
-    return start.astimezone(UTC), (start + timedelta(days=1)).astimezone(UTC)
+def work_bounds(day: date, hours: Hours) -> tuple[datetime, datetime]:
+    """Открытие и закрытие этого дня, в UTC.
 
-
-def slot_starts(day: date) -> list[datetime]:
-    """Все начала слотов этих суток, в UTC.
-
-    Считается прибавлением часов к местной полуночи, поэтому в день перевода
-    стрелок слотов честно окажется 23 или 25 — а не 24 с одним пропущенным.
+    Закрытие в 00:00 — это полночь следующих суток, а не окно нулевой длины:
+    так записываются часы мастерской, которая работает до полуночи или вовсе
+    круглосуточно.
     """
-    start, end = day_bounds(day)
+    opens = datetime.combine(day, hours.opens_at, tzinfo=settings.zone)
+    closes = datetime.combine(day, hours.closes_at, tzinfo=settings.zone)
+    if hours.closes_at <= hours.opens_at:
+        closes += timedelta(days=1)
+    return opens.astimezone(UTC), closes.astimezone(UTC)
+
+
+def slot_starts(day: date, hours: Hours) -> list[datetime]:
+    """Все начала слотов этого рабочего дня, в UTC.
+
+    Слот показывается, если мастерская в этот час ещё открыта. Успевает ли
+    работа закончиться до закрытия — не вопрос сетки: печать идёт сама, и
+    поставленная в 19:00 честно работает всю ночь (см. `is_open_at`).
+
+    Считается прибавлением шага к местному открытию, поэтому в день перевода
+    стрелок слотов честно окажется на один больше или меньше — а не столько же
+    с одним пропущенным.
+    """
+    opens, closes = work_bounds(day, hours)
+    step = timedelta(minutes=settings.reservation_slot_minutes)
+
+    # Открытие может не лежать на сетке: 08:00 при шаге в 90 минут — это
+    # середина слота, начавшегося в 07:30. Начинаем со следующей границы.
+    point = align(opens)
+    if point < opens:
+        point += step
+
     points: list[datetime] = []
-    point = start
-    while point < end:
+    while point < closes:
         points.append(point)
-        point += timedelta(minutes=settings.reservation_slot_minutes)
+        point += step
     return points
+
+
+def is_open_at(moment: datetime, hours: Hours) -> bool:
+    """Открыта ли мастерская в этот момент.
+
+    Рабочие часы ограничивают начало брони, а не её конец: к машине надо
+    подойти и запустить работу, а дальше она идёт сама. Бронь с 19:00 до утра —
+    это обычная ночная печать, а не ключ от мастерской на ночь; забрать деталь
+    человек придёт с открытия.
+    """
+    if hours.round_the_clock:
+        return True
+    opens, closes = work_bounds(day_of(moment), hours)
+    return opens <= moment < closes
 
 
 def horizon_end(now: datetime) -> datetime:

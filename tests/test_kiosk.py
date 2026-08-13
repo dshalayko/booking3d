@@ -357,13 +357,18 @@ class TestReleaseAndQueue:
 class TestScheduleScreen:
     """Расписание и брони с планшета: те же экраны, что и в Mini App."""
 
-    async def test_schedule_shows_days_and_hours(self, client, printers):
+    async def test_schedule_shows_days_and_working_hours(self, client, printers):
+        """В сетке только рабочие часы: ночь никому не нужна, а 24 строки на
+        телефоне — это экран, который надо листать."""
         response = await client.get(f"/schedule/{MachineKind.PRINTER}")
 
         assert response.status_code == 200
         assert "сегодня" in response.text
         assert "P2S #1" in response.text and "P2S #2" in response.text
-        assert "00:00" in response.text and "23:00" in response.text
+        # Последний слот начинается в 19:00 и кончается ровно к закрытию.
+        assert "08:00" in response.text and "19:00" in response.text
+        assert "03:00" not in response.text
+        assert "Мастерская открыта 08:00–20:00" in response.text
 
     async def test_unknown_kind_is_refused(self, client, printers):
         response = await client.get("/schedule/toaster", headers={"accept": "text/html"})
@@ -395,14 +400,11 @@ class TestScheduleScreen:
 
 
 class TestBookScreen:
-    def _start(self):
-        return schedule_svc.align(datetime.now(UTC)) + timedelta(days=1)
-
-    async def test_form_asks_pin_and_duration(self, client, printers):
+    async def test_form_asks_pin_and_duration(self, client, printers, work_slot):
         await enroll(client)
 
         response = await client.get(
-            f"/book/{printers[0].id}", params={"start": self._start().isoformat()}
+            f"/book/{printers[0].id}", params={"start": work_slot().isoformat()}
         )
 
         assert response.status_code == 200
@@ -422,9 +424,11 @@ class TestBookScreen:
         assert response.status_code == 400
         assert "keypad" not in response.text
 
-    async def test_form_refuses_taken_hour_before_pin(self, client, db, printers, make_user):
+    async def test_form_refuses_taken_hour_before_pin(
+        self, client, db, printers, make_user, work_slot
+    ):
         user = await make_user()
-        start = self._start()
+        start = work_slot()
         await reservations_svc.book(db, user, printers[0].id, start, 60)
         await db.commit()
         await enroll(client)
@@ -438,9 +442,9 @@ class TestBookScreen:
         assert response.status_code == 409
         assert "keypad" not in response.text
 
-    async def test_booking_from_kiosk(self, client, db, printers, make_user):
+    async def test_booking_from_kiosk(self, client, db, printers, make_user, work_slot):
         await make_user(name="Пётр", pin="4242")
-        start = self._start()
+        start = work_slot()
         await enroll(client)
 
         response = await client.post(
@@ -454,36 +458,38 @@ class TestBookScreen:
         assert booking.starts_at == start
         assert booking.status == ReservationStatus.BOOKED
 
-    async def test_booking_without_pin_is_refused(self, client, db, printers, make_user):
+    async def test_booking_without_pin_is_refused(self, client, db, printers, make_user, work_slot):
         await make_user(pin="4242")
         await enroll(client)
 
         response = await client.post(
             f"/book/{printers[0].id}",
-            data={"pin": "", "start": self._start().isoformat(), "minutes": "60"},
+            data={"pin": "", "start": work_slot().isoformat(), "minutes": "60"},
             headers={"accept": "text/html"},
         )
 
         assert response.status_code == 401
         assert await db.scalar(select(Reservation)) is None
 
-    async def test_booking_from_a_laptop_is_refused(self, client, db, printers, make_user):
+    async def test_booking_from_a_laptop_is_refused(
+        self, client, db, printers, make_user, work_slot
+    ):
         """Правило 11: PIN вводится только на планшете."""
         await make_user(pin="4242")
 
         response = await client.post(
             f"/book/{printers[0].id}",
-            data={"pin": "4242", "start": self._start().isoformat(), "minutes": "60"},
+            data={"pin": "4242", "start": work_slot().isoformat(), "minutes": "60"},
             headers={"accept": "text/html"},
         )
 
         assert response.status_code == 403
         assert await db.scalar(select(Reservation)) is None
 
-    async def test_owner_cancels_from_kiosk(self, client, db, printers, make_user):
+    async def test_owner_cancels_from_kiosk(self, client, db, printers, make_user, work_slot):
         user = await make_user(pin="4242")
         booking = await reservations_svc.book(
-            db, user, printers[0].id, self._start(), 60
+            db, user, printers[0].id, work_slot(), 60
         )
         await db.commit()
         await enroll(client)
@@ -498,11 +504,13 @@ class TestBookScreen:
         stored = await db.get(Reservation, booking.reservation_id)
         assert stored.status == ReservationStatus.CANCELLED
 
-    async def test_stranger_cannot_cancel_from_kiosk(self, client, db, printers, make_user):
+    async def test_stranger_cannot_cancel_from_kiosk(
+        self, client, db, printers, make_user, work_slot
+    ):
         owner = await make_user(pin="4242")
         await make_user(pin="1111")
         booking = await reservations_svc.book(
-            db, owner, printers[0].id, self._start(), 60
+            db, owner, printers[0].id, work_slot(), 60
         )
         await db.commit()
         await enroll(client)

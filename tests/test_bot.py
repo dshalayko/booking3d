@@ -1,5 +1,5 @@
 import re
-from datetime import UTC, datetime, timedelta
+from datetime import datetime, timedelta
 
 import pytest
 from sqlalchemy import select
@@ -12,7 +12,6 @@ from app.services import auth
 from app.services import machines as machines_svc
 from app.services import queue as queue_svc
 from app.services import reservations as reservations_svc
-from app.services import schedule as schedule_svc
 from app.services.errors import AuthFailed
 
 CHAT = 5001
@@ -201,7 +200,11 @@ class TestMy:
     async def test_shows_booking(self, db, printers):
         await register(db)
         user = await user_of(db, CHAT)
-        start = schedule_svc.align(datetime.now(UTC)) + timedelta(days=1)
+        # Рабочий час, а не «текущий час завтра»: бронировать можно только
+        # часы работы мастерской, и ночной прогон получал бы отказ.
+        start = (datetime.now(settings.zone) + timedelta(days=1)).replace(
+            hour=10, minute=0, second=0, microsecond=0
+        )
         await reservations_svc.book(db, user, printers[0].id, start, 120)
 
         answer = await commands.my(db, CHAT)

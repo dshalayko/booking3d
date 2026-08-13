@@ -34,6 +34,7 @@ from app.services import machines as machines_svc
 from app.services import queue as queue_svc
 from app.services import reservations as reservations_svc
 from app.services import users as users_svc
+from app.services import workhours as workhours_svc
 
 router = APIRouter(prefix="/admin")
 
@@ -212,6 +213,39 @@ async def delete_machine(request: Request, db: Db, machine_id: int) -> Response:
     await machines_svc.remove(db, admin, machine_id)
     await db.commit()
     return _back("machine_removed", page="/admin/machines")
+
+
+# --- часы работы -------------------------------------------------------------
+
+
+@router.get("/hours", response_class=HTMLResponse, dependencies=[Depends(require_admin)])
+async def hours_page(request: Request, db: Db, flash: str = "") -> Response:
+    """Вкладка «Часы работы»: когда мастерская открыта.
+
+    Своя страница, а не поле среди срочных кнопок «Сводки»: правка редкая, зато
+    меняет и то, что видно на стене, и то, что вообще можно забронировать, — по
+    той же причине, по которой отдельная страница есть у состава парка.
+    """
+    return templates.TemplateResponse(
+        request,
+        "admin_hours.html",
+        {"hours": await workhours_svc.get(db), "flash": FLASH_MESSAGES.get(flash)},
+    )
+
+
+@router.post("/hours", dependencies=[Depends(require_admin)])
+async def save_hours(
+    request: Request, db: Db, opens_at: str = Form(""), closes_at: str = Form("")
+) -> Response:
+    """Записать новые часы.
+
+    Уже сделанные брони не трогаются: снять чужое окно, потому что мастерская
+    стала закрываться на час раньше, — это решение человека, а не побочный
+    эффект правки формы. Такие брони видны в «Сводке», и оттуда же снимаются.
+    """
+    await workhours_svc.save(db, opens_at, closes_at)
+    await db.commit()
+    return _back("hours_saved", page="/admin/hours")
 
 
 # --- люди --------------------------------------------------------------------

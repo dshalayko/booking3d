@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, time
 
 from sqlalchemy import (
     BigInteger,
@@ -8,6 +8,7 @@ from sqlalchemy import (
     Index,
     String,
     Text,
+    Time,
     func,
     text,
 )
@@ -36,6 +37,35 @@ class User(Base):
 
     def __repr__(self) -> str:
         return f"<User {self.id} {self.name}>"
+
+
+class WorkHours(Base):
+    """Часы работы мастерской — одна строка на всю базу.
+
+    В .env их держать нельзя: часы меняет тот, кто отвечает за мастерскую, а не
+    тот, у кого есть ssh на сервер. Поэтому таблица и форма в админке.
+
+    Одна строка, а не строка на день недели: коворкинг открыт по одному
+    расписанию, а «в субботу до шести» — это следующая задача, и решать её
+    заранее значит рисовать семь полей ради одного используемого.
+
+    Время местное и без зоны: 08:00 — это то, что написано на двери, а в какой
+    момент UTC оно случится, считает services/schedule.py по `settings.zone`.
+    """
+
+    __tablename__ = "work_hours"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    opens_at: Mapped[time] = mapped_column(Time, nullable=False)
+    # 00:00 означает «до полуночи», а не «нулевой длины»: иначе круглосуточную
+    # мастерскую нельзя было бы описать вовсе. Разбирает `schedule.work_bounds`.
+    closes_at: Mapped[time] = mapped_column(Time, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=func.now()
+    )
+
+    def __repr__(self) -> str:
+        return f"<WorkHours {self.opens_at}–{self.closes_at}>"
 
 
 class Machine(Base):

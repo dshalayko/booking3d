@@ -62,7 +62,11 @@ class AlreadyBooked(DomainError):
 
 
 class InvalidReservationTime(DomainError):
-    """Начало не по сетке, в прошлом или дальше горизонта."""
+    """Начало не по сетке, в прошлом, дальше горизонта или вне рабочих часов."""
+
+
+class WorkHoursInvalid(DomainError):
+    """Часы работы из формы админки не разобрались или закрытие раньше открытия."""
 
 
 class UserBusy(DomainError):

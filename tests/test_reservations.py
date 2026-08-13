@@ -450,9 +450,11 @@ class TestReconcile:
 
 
 class TestDaySchedule:
-    async def test_grid_has_a_column_per_machine_and_a_row_per_hour(
+    async def test_grid_has_a_column_per_machine_and_a_row_per_working_hour(
         self, db, printers, make_user
     ):
+        """Строк ровно столько, сколько мастерская открыта: 08:00–20:00 — это
+        двенадцать слотов, последний из которых начинается в 19:00."""
         park = await machines_svc.list_machines(db, kind=MachineKind.PRINTER)
 
         grid = await svc.day_schedule(
@@ -460,7 +462,8 @@ class TestDaySchedule:
         )
 
         assert len(grid.columns) == 2
-        assert len(grid.columns[0].cells) == 24
+        assert len(grid.columns[0].cells) == 12
+        assert grid.hours[0] == "08:00" and grid.hours[-1] == "19:00"
         assert len(grid.days) == 14
 
     async def test_booked_hours_are_marked(self, db, printers, make_user):

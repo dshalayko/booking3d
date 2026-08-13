@@ -18,7 +18,7 @@ import itertools
 import subprocess
 import sys
 from collections.abc import AsyncIterator, Awaitable, Callable
-from datetime import time
+from datetime import UTC, datetime, time, timedelta
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
@@ -45,6 +45,7 @@ from app.services.security import pin_digest
 TEST_DB_NAME = "booking_test"
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 TABLES = "users, machines, sessions, queue, reservations"
+WORK_HOURS_RESET = "UPDATE work_hours SET opens_at = '08:00', closes_at = '20:00' WHERE id = 1"
 
 TEST_ZONE = ZoneInfo("Europe/Nicosia")
 
@@ -82,6 +83,26 @@ def fixed_settings(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(settings, "reservation_remind_minutes", 60)
 
 
+@pytest.fixture
+def work_slot() -> Callable[..., datetime]:
+    """Начало брони в рабочий час — по умолчанию завтра в 10:00 местного времени.
+
+    Не `align(now) + сутки`, как было раньше: бронировать можно только рабочие
+    часы (08:00–20:00 по умолчанию), и прогон набора в семь утра или в полночь
+    получал бы отказ вместо формы бронирования. Само правило проверяет
+    tests/test_workhours.py — там часы задаются явно.
+
+    Час всё-таки от настоящих часов, а не от фиксированной даты: экраны зовут
+    `datetime.now`, и подделать его на весь запрос нечем.
+    """
+
+    def _slot(hour: int = 10, days: int = 1) -> datetime:
+        moment = datetime.now(TEST_ZONE) + timedelta(days=days)
+        return moment.replace(hour=hour, minute=0, second=0, microsecond=0).astimezone(UTC)
+
+    return _slot
+
+
 def _url_for(database: str) -> URL:
     return make_url(settings.database_url).set(database=database)
 
@@ -110,6 +131,11 @@ async def engine(test_database_url: str) -> AsyncIterator[AsyncEngine]:
     engine = create_async_engine(test_database_url)
     async with engine.begin() as conn:
         await conn.execute(text(f"TRUNCATE {TABLES} RESTART IDENTITY CASCADE"))
+        # Часы работы не в `TABLES`: строка там одна, и её не создают тесты, а
+        # заводит миграция. Но менять её они могут, а сетка расписания зависит
+        # от неё целиком — поэтому возвращаем к значениям миграции, иначе
+        # проверка часов роняет соседний набор через полчаса после правки.
+        await conn.execute(text(WORK_HOURS_RESET))
     yield engine
     await engine.dispose()
 

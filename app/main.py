@@ -48,6 +48,7 @@ from app.services.errors import (
     ReservationOverlap,
     TooManyAttempts,
     UserBusy,
+    WorkHoursInvalid,
 )
 
 # Без этого сообщения уровня INFO из наших модулей не видны нигде: uvicorn
@@ -86,6 +87,7 @@ STATUS_BY_ERROR: dict[type[DomainError], int] = {
     MachineNameTaken: 409,
     MachineHasHistory: 409,
     InvalidDuration: 400,
+    WorkHoursInvalid: 400,
     LoginInvalid: 400,
     MachineNameInvalid: 400,
     MachineKindUnknown: 400,

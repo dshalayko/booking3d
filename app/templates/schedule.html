@@ -33,7 +33,14 @@
   {% if not grid.columns %}
     <p class="board-empty">{{ t.schedule_empty }}</p>
   {% else %}
-    <p class="grid-hint">{{ t.schedule_hint }}</p>
+    {# Часы работы подписаны рядом с подсказкой: без них короткая сетка
+       выглядит обрезанной, и человек ищет вечер, которого нет. #}
+    <p class="grid-hint">
+      {{ t.schedule_hint }}
+      {%- if not grid.work_hours.round_the_clock %}
+        · {{ t.schedule_work_hours.format(hours=grid.work_hours.text()) }}
+      {%- endif %}
+    </p>
 
     <div class="grid" style="--cols: {{ grid.columns | length }}">
       <div class="grid-row grid-head">

@@ -31,6 +31,7 @@ from app.services import machines as machines_svc
 from app.services import queue as queue_svc
 from app.services import reservations as reservations_svc
 from app.services import schedule as schedule_svc
+from app.services import workhours as workhours_svc
 from app.services.errors import (
     InvalidReservationTime,
     MachineKindUnknown,
@@ -338,12 +339,18 @@ async def book_page(
         raise InvalidReservationTime(
             t.ERR_RESERVATION_HORIZON.format(days=settings.reservation_horizon_days)
         )
+    hours = await workhours_svc.get(db)
+    if not schedule_svc.is_open_at(starts_at, hours):
+        raise InvalidReservationTime(t.ERR_RESERVATION_WORK_HOURS.format(hours=hours.text()))
     # Опять же: форма, которая заведомо кончится отказом, не должна открываться.
     if await reservations_svc.slot_taken(db, machine.id, starts_at):
         raise ReservationOverlap(
             t.ERR_RESERVATION_OVERLAP.format(machine=machine.name, time=hhmm(starts_at))
         )
 
+    # Закрытие мастерской длительность не урезает: работа идёт сама, и у брони
+    # с 19:00 кнопка «до утра» — самая нужная. Потолок ставит только ближайшая
+    # чужая бронь.
     upcoming = await reservations_svc.next_for_machine(db, machine.id, starts_at)
     limit = (
         int((upcoming.starts_at - starts_at).total_seconds() // 60)

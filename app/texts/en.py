@@ -356,6 +356,10 @@ ERR_RESERVATION_NOT_FOUND = "No such booking, or it is already closed"
 ERR_RESERVATION_FORBIDDEN = "Only an admin can cancel someone else's booking"
 ERR_RESERVATION_WINDOW_OPEN = "The booking slot hasn't run out yet"
 ERR_RESERVATION_MACHINE_BUSY = "{machine} is busy — the booking waits for the table"
+ERR_RESERVATION_WORK_HOURS = "A booking can only start during opening hours: {hours}"
+
+ERR_WORK_HOURS_ORDER = "Closing time must be later than opening (00:00 — round the clock)"
+ERR_WORK_HOURS_FORMAT = "“{value}” doesn't look like a time — try something like 08:00"
 
 ERR_USER_BUSY = "You've already got a machine booked"
 ERR_USER_BUSY_FREE_FIRST = "You've already got a machine booked — free it up first"
@@ -431,6 +435,7 @@ FLASH_ADMIN = {
     "machine_renamed": "Machine renamed",
     "machine_removed": "Machine deleted",
     "booking_cancelled": "Booking cancelled",
+    "hours_saved": "Opening hours saved",
 }
 
 
@@ -562,6 +567,7 @@ UI = {
     "schedule_broken": "out of service",
     "schedule_empty": "No machines of this kind yet",
     "schedule_hint": "Tap a free hour — that's when your booking starts",
+    "schedule_work_hours": "Open {hours}",
     "schedule_my_bookings": "My bookings",
     # book.html
     "book_title": "Book {machine}",
@@ -606,6 +612,7 @@ UI = {
     "admin_to_board": "Back to the workshop",
     "admin_tab_summary": "Summary",
     "admin_tab_machines": "Machines",
+    "admin_tab_hours": "Opening hours",
     "admin_bookings": "Bookings",
     "admin_bookings_none": "No bookings",
     "admin_booking_row": "{machine}: {start} — {end}",
@@ -664,6 +671,21 @@ UI = {
         "The kind is fixed once created: the log already points at this machine. "
         "Don't delete a machine that's gone for good — take it out of service on "
         "the Summary tab instead, so it stays in the log but can't be booked."
+    ),
+    # admin_hours.html
+    "admin_hours_title": "Opening hours",
+    "admin_hours_block": "When the workshop is open",
+    "admin_hours_opens": "Opens",
+    "admin_hours_closes": "Closes",
+    "admin_hours_submit": "Save",
+    "admin_hours_current": "Right now: {hours}",
+    "admin_hours_hint": (
+        "A booking can only start during these hours — the schedule shows them "
+        "and nothing else. When it ends is not limited: a print started at "
+        "19:00 runs through the night, the part gets picked up after opening. "
+        "For a round-the-clock workshop set both to 00:00. "
+        "Existing bookings are left alone: if you moved the hours, check the "
+        "list of bookings on the Summary tab."
     ),
 }
 

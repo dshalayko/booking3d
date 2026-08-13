@@ -45,6 +45,7 @@ from app.enums import (
 from app.models import Machine, MachineSession, Reservation, User
 from app.services import queue as queue_svc
 from app.services import schedule
+from app.services import workhours as workhours_svc
 from app.services.errors import (
     AlreadyBooked,
     InvalidDuration,
@@ -125,7 +126,11 @@ class DaySchedule:
     day: date
     days: list[schedule.DayOption]
     columns: list[MachineColumn]
+    # Подписи строк — только рабочие часы, а не все сутки.
     hours: list[str]
+    # Сами часы работы: экран показывает их подписью, чтобы короткая сетка не
+    # выглядела обрезанной.
+    work_hours: schedule.Hours
 
     @property
     def has_free(self) -> bool:
@@ -175,6 +180,15 @@ async def book(
         )
 
     ends_at = starts_at + timedelta(minutes=duration_minutes)
+
+    # Часы работы ограничивают начало окна, а не его конец: ночная печать,
+    # поставленная в 19:00, — обычное дело. Проверка последняя из временных:
+    # она одна обращается к базе, и незачем ходить туда ради брони на прошлый
+    # вторник.
+    hours = await workhours_svc.get(db)
+    if not schedule.is_open_at(starts_at, hours):
+        raise InvalidReservationTime(t.ERR_RESERVATION_WORK_HOURS.format(hours=hours.text()))
+
     machine = await _lock_machine(db, machine_id)
     if machine.status == MachineStatus.BROKEN:
         raise MachineNotAvailable(t.ERR_MACHINE_BROKEN.format(machine=machine.name))
@@ -500,17 +514,22 @@ async def day_schedule(
     now: datetime | None = None,
     viewer_id: int | None = None,
 ) -> DaySchedule:
-    """Расписание суток: столбец на машину, строка на слот.
+    """Расписание рабочего дня: столбец на машину, строка на слот.
 
-    Часы строками, а не столбцами: 24 столбца читаются на iPad и не читаются на
+    Часы строками, а не столбцами: столбец на машину читается и на iPad, и на
     телефоне, а экран один и тот же — и на стене, и в Mini App.
+
+    Строк ровно столько, сколько мастерская открыта: ночные часы никому не
+    нужны, а сетка из 24 строк на телефоне — это экран, который надо листать,
+    чтобы найти рабочий день внутри ночи.
 
     Парк приходит аргументом, а не выбирается здесь: список машин умеет отдавать
     services/machines.py, и импортировать его сюда значило бы замкнуть кольцо
     зависимостей (см. преамбулу модуля).
     """
     now = now or _utcnow()
-    start, end = schedule.day_bounds(day)
+    hours = await workhours_svc.get(db)
+    start, end = schedule.work_bounds(day, hours)
 
     reservations: dict[int, list[tuple[Reservation, str]]] = {}
     for reservation, name in (
@@ -539,7 +558,7 @@ async def day_schedule(
     ).all():
         sessions.setdefault(session.machine_id, []).append((session, name))
 
-    slots = schedule.slot_starts(day)
+    slots = schedule.slot_starts(day, hours)
     step = timedelta(minutes=settings.reservation_slot_minutes)
 
     columns = []
@@ -566,6 +585,7 @@ async def day_schedule(
         days=schedule.day_options(now),
         columns=columns,
         hours=[schedule.local(slot).strftime(t.TIME_FORMAT) for slot in slots],
+        work_hours=hours,
     )
 
 

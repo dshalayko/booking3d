@@ -59,8 +59,15 @@ async def open_app(client, user) -> None:
     assert response.status_code == 303
 
 
-def tomorrow_at(hours: int = 0) -> datetime:
-    return schedule_svc.align(datetime.now(UTC)) + timedelta(days=1, hours=hours)
+def tomorrow_at(hour: int = 10) -> datetime:
+    """Завтрашний рабочий час в UTC — то же, что фикстура `work_slot`.
+
+    Не `align(now) + сутки`: бронировать можно только рабочие часы, и ночной
+    прогон набора получал бы отказ вместо расписания. Своя копия, а не фикстура,
+    потому что зовётся и из параметров теста, где фикстуры ещё нет.
+    """
+    moment = datetime.now(settings.zone) + timedelta(days=1)
+    return moment.replace(hour=hour, minute=0, second=0, microsecond=0).astimezone(UTC)
 
 
 class TestInitData:
