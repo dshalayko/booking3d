@@ -20,7 +20,14 @@
           </li>
         {% endfor %}
       </ol>
-      <a class="btn btn-small" href="{{ base }}/queue/leave">{{ t.queue_leave }}</a>
+      {# «Выйти» — только своё место. На киоске (`viewer_id` не задан) кнопка
+         общая: кто выходит, решает PIN на следующем экране. В Mini App выход
+         действует на смотрящего, и в чужой очереди эта кнопка вела бы в отказ
+         «вы не в очереди». #}
+      {% set viewer = viewer_id|default(none) %}
+      {% if viewer is none or group.queue | selectattr("user_id", "equalto", viewer) | first %}
+        <a class="btn btn-small" href="{{ base }}/queue/leave">{{ t.queue_leave }}</a>
+      {% endif %}
     {% elif group.machines %}
       <p class="queue-empty">{{ t.queue_empty }}</p>
       {# Когда всё занято, «встать в очередь» уже написано на большой кнопке
@@ -48,7 +55,11 @@
   <section class="group group-{{ group.kind }}" style="--machines: {{ group.machines | length or 1 }}">
     <header class="group-head">
       <h2 class="group-title">{{ MACHINE_KIND_TITLE.get(group.kind, group.kind) }}</h2>
-      {% if free %}
+      {# Доска сжата до своей машины (`focused`) — большой кнопки здесь нет: у
+         человека машина уже есть, а «встать в очередь» на своей же секции
+         предлагать нечего. Занять вторую можно из парка целиком, ссылка ниже. #}
+      {% if focused|default(false) %}
+      {% elif free %}
         <a class="btn btn-hero" href="{{ base }}/occupy/{{ free.id }}">
           {{ t.board_occupy_cta.format(kind=MACHINE_KIND_ONE.get(group.kind, group.kind)) }}
           <span class="btn-sub">
@@ -132,3 +143,17 @@
     </div>
   </section>
 {% endfor %}
+
+{# Переключатель сжатой и полной доски — в обе стороны: уйдя на весь парк,
+   человек должен вернуться к своей машине не системной кнопкой «назад».
+   Внутри партиала, а не в kiosk.html: опрос заменяет содержимое #board целиком,
+   и ссылка снаружи осталась бы висеть от предыдущего вида. #}
+{% if focused|default(false) %}
+  <a class="btn btn-small btn-ghost board-all" href="{{ base }}/?all=1">
+    {{ t.board_show_all }}
+  </a>
+{% elif can_focus|default(false) %}
+  <a class="btn btn-small btn-ghost board-all" href="{{ base }}/">
+    {{ t.board_show_mine }}
+  </a>
+{% endif %}

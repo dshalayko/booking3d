@@ -131,23 +131,6 @@ body {
   min-height: 0;
 }
 
-/* Телефон и портретная ориентация. Колонки схлопнулись бы до плиток в ладонь
-   шириной, поэтому секции возвращаются друг под друга — доску смотрят и с
-   телефона, статусы открыты всем.
-
-   Здесь же снимается запрет на скролл: он стоит ради планшета на стене, где
-   всё обязано помещаться в экран. На узком экране содержимое не помещается
-   физически, и «не скроллить» означало бы обрезать имена машин. Идёт после
-   `.group`, чтобы перебить её `flex-grow` без `!important`. */
-@media (max-width: 900px) {
-  body { overflow: auto; }
-  #board { flex-direction: column; gap: 14px; overflow: visible; }
-  .group { flex: 0 0 auto; }
-  .group-body { flex: 0 0 auto; }
-  .tiles { flex: 0 0 auto; grid-auto-rows: minmax(0, auto); }
-  .tile { justify-content: flex-start; overflow: visible; }
-}
-
 .group-head { display: flex; flex-direction: column; gap: 8px; flex: 0 0 auto; }
 .group-title {
   margin: 0;
@@ -515,6 +498,10 @@ body {
 .my-links { display: flex; flex-wrap: wrap; gap: 10px; margin-top: auto; }
 .tile-booked-from { color: var(--wait); }
 .btn-schedule { width: 100%; min-height: 56px; font-size: 20px; }
+/* Выход из сжатой доски (Mini App, у человека занята машина). Не растянут по
+   ширине: это не действие, а «показать остальное», и спорить с кнопкой своей
+   машины ему незачем. `flex` — потому что лежит прямо в #board. */
+.board-all { flex: 0 0 auto; align-self: center; }
 
 .error { text-align: center; max-width: 560px; display: flex; flex-direction: column; gap: 20px; }
 .error-mark {
@@ -596,31 +583,188 @@ body {
 }
 .text-input:focus { outline: 2px solid var(--accent); }
 
-/* Телефоны: те же экраны, одна колонка, скролл разрешён. */
+/* --- узкий экран ---
+   Оба блока ниже стоят в конце файла намеренно: они перебивают правила плиток и
+   секций, а те объявлены выше с той же специфичностью. Стоя раньше, эти
+   переопределения молча проигрывали бы — именно так на телефоне и появлялись
+   плитки во весь экран: `grid-auto-rows: minmax(0, 1fr)` растягивал строки
+   сетки, и «Свободен» занимал столько же места, сколько занятая машина. */
+
+/* Планшет в портрете и всё, что уже. Колонки схлопнулись бы до плиток в ладонь
+   шириной, поэтому секции возвращаются друг под друга — доску смотрят и с
+   телефона, статусы открыты всем.
+
+   Здесь же снимается запрет на скролл: он стоит ради планшета на стене, где
+   всё обязано помещаться в экран. На узком экране содержимое не помещается
+   физически, и «не скроллить» означало бы обрезать имена машин. */
+@media (max-width: 900px) {
+  body { overflow: auto; }
+  #board { flex-direction: column; gap: 14px; overflow: visible; }
+  .group { flex: 0 0 auto; }
+  .group-body { flex: 0 0 auto; }
+  /* Высота строки — по содержимому: свободной машине хватает двух строк, и
+     растягивать её до высоты занятой незачем. */
+  .tiles { flex: 0 0 auto; grid-auto-rows: minmax(0, auto); }
+  .tile { justify-content: flex-start; overflow: visible; }
+}
+
+/* Телефон (в первую очередь Mini App в Telegram: 390×844 у iPhone 14, из
+   которых Telegram забирает свою шапку). Главный экран должен читаться целиком,
+   без скролла — за ним идут в тот момент, когда хочется знать «свободен ли
+   принтер», а не изучать карточки.
+   Отсюда всё, что ниже: мелкий шрифт, узкие отступы, плитка в две строки вместо
+   пяти и второстепенные подписи, сведённые к одной строке. Порог 700px не
+   задевает планшет на стене — тот шире и остаётся крупным. */
 @media (max-width: 700px) {
+  :root { --radius: 14px; }
+
   body {
     overflow: auto;
+    gap: 10px;
     padding:
-      max(14px, env(safe-area-inset-top))
-      max(14px, env(safe-area-inset-right))
-      max(14px, env(safe-area-inset-bottom))
-      max(14px, env(safe-area-inset-left));
+      max(10px, env(safe-area-inset-top))
+      max(12px, env(safe-area-inset-right))
+      max(12px, env(safe-area-inset-bottom))
+      max(12px, env(safe-area-inset-left));
   }
-  .tile-status { font-size: 32px; }
-  .btn-hero { min-height: 88px; font-size: 30px; }
-  .sheet-body { grid-template-columns: 1fr; }
+
+  .banner { padding: 8px 12px; font-size: 14px; }
+
+  /* Кнопки уровня экрана: 44px — минимум, который ещё уверенно нажимается
+     пальцем, и втрое меньше киосковых 72px, рассчитанных на тычок не глядя. */
+  .btn { min-height: 44px; padding: 10px 14px; font-size: 16px; }
+  .btn-small { min-height: 34px; padding: 6px 12px; font-size: 13px; }
+
+  /* --- главный экран --- */
+
+  #board {
+    gap: 12px;
+    --tile-pad: 8px 10px;
+    --tile-name: 15px;
+    --tile-status: 15px;
+    --tile-owner: 13px;
+    --tile-time: 12px;
+    --tile-note: 12px;
+    --tile-btn: 38px;
+    --hero-height: 52px;
+    --hero-font: 19px;
+    --queue-pad: 8px 10px;
+    --queue-font: 13px;
+  }
+
+  /* Заголовок типа и «Расписание» — в одну строку: расписание нужно реже, чем
+     «занять сейчас», и полосой во всю ширину оно съедало экран у самих машин.
+     Большая кнопка переносится под них своим `flex-basis: 100%`, поэтому
+     порядок в разметке менять не нужно. */
+  .group-head { flex-direction: row; flex-wrap: wrap; align-items: center; gap: 6px; }
+  .group-title { flex: 1 1 auto; font-size: 13px; }
+  .btn-hero { order: 1; flex: 1 0 100%; }
+  .btn-sub { font-size: 12px; }
+  .btn-schedule { order: 0; flex: 0 0 auto; width: auto; min-height: 34px; padding: 6px 12px; font-size: 13px; }
+
+  .tiles { gap: 6px; }
+  /* Плитки и очередь — раздельными карточками. Слитная карточка на всю колонку
+     придумана для стены, где колонок несколько; в ладони колонка одна, и всё
+     склеенное превращается в одну простыню без границ. */
+  .group-body, .group-printer .group-body { gap: 6px; }
+  .group-body > .tiles > .tile,
+  .group-body > .queue { border-radius: var(--radius); }
+
+  /* Плитка в две строки вместо столбика из пяти: имя и статус в первой, кто и
+     до какого часа — во второй. Разметка на всех экранах одна, поэтому строки
+     расставлены сеткой, а не переупорядочены в шаблоне. */
+  .tile {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: baseline;
+    column-gap: 10px;
+    row-gap: 2px;
+    border-left-width: 5px;
+  }
+  .tile-name { grid-area: 1 / 1; }
+  .tile-status { grid-area: 1 / 2; text-align: right; font-weight: 700; }
+  .tile-owner { grid-area: 2 / 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .tile-time { grid-area: 2 / 2; text-align: right; }
+  .tile-note { grid-column: 1 / -1; }
+  /* Действие — во всю ширину плитки: это единственная кнопка, ради которой
+     карточку вообще открывают, и целиться в неё не должно быть нужно. */
+  .tile .btn { grid-column: 1 / -1; margin-top: 6px; font-size: 14px; }
+
+  .queue { gap: 8px; }
+  /* Очередь без единой кнопки — это «в очереди никого» и всё: ни уйти, ни
+     встать (машина занята, и предложение уже на большой кнопке сверху).
+     Отдельной карточкой такая строка читалась как пустая плитка машины,
+     поэтому на телефоне она остаётся подписью без фона. */
+  .queue:not(:has(.btn)) { padding: 4px 2px 0; background: none; }
+  .queue-list { gap: 6px 12px; }
+  .queue-pos { width: 20px; height: 20px; font-size: 12px; }
+  .queue-tag { font-size: 11px; }
+  .queue-column { grid-column: 1 / -1; margin-top: 8px; padding-top: 8px; gap: 6px; }
+
+  /* --- экраны действий --- */
+
+  .sheet { gap: 12px; }
+  /* Шапка одной строкой: «назад» и «мои брони» — маленькие, заголовок между
+     ними переносится, если не влез. Иначе три полосы подряд занимали четверть
+     экрана, на котором и так тесно. */
+  .sheet-head { flex-wrap: nowrap; gap: 8px; }
+  .sheet-head h1 { flex: 1 1 auto; min-width: 0; font-size: 17px; line-height: 1.2; }
+  .sheet-body { grid-template-columns: 1fr; gap: 14px; }
+
+  .durations { gap: 8px; }
+  .durations-when { font-size: 16px; }
+  .durations-label, .confirm-subject { font-size: 14px; }
+  .durations-grid { gap: 8px; }
+  .btn-duration { min-height: 50px; padding: 8px 6px; font-size: 16px; }
+  .durations-hint, .confirm-hint { font-size: 12px; }
+  .btn-book-now { min-height: 50px; margin-top: 4px; font-size: 18px; }
+  .confirm { gap: 12px; }
+
+  .keypad { gap: 8px; }
+  .keypad-label { font-size: 14px; }
+  .keypad-display { font-size: 30px; letter-spacing: 12px; padding: 8px 14px; }
+  .keypad-grid { gap: 8px; }
+  .key { min-height: 52px; font-size: 22px; }
+  .keypad-hint { font-size: 12px; }
+
+  /* --- расписание --- */
+
   /* Полоса дней в ладонь шириной. Семью колонками дни превращаются в нечитаемые
      столбики, а четырьмя — занимают четыре строки и уносят сетку часов за край
      экрана. Поэтому на телефоне это одна строка с горизонтальным скроллом:
      ближайшие дни видны сразу, за остальными достаточно мотнуть пальцем. */
   .days {
     display: flex;
+    gap: 6px;
     overflow-x: auto;
     scroll-snap-type: x proximity;
     -webkit-overflow-scrolling: touch;
   }
-  .day { flex: 0 0 76px; scroll-snap-align: start; }
-  .grid-row { grid-template-columns: 56px repeat(var(--cols, 1), 1fr); }
-  .cell { min-height: 46px; font-size: 15px; }
-  .grid-hour { font-size: 15px; }
+  .day { flex: 0 0 58px; min-height: 44px; padding: 5px 3px; border-radius: 10px; scroll-snap-align: start; }
+  .day-weekday { font-size: 11px; }
+  .day-number { font-size: 15px; }
+
+  .grid-hint { font-size: 12px; }
+  .grid { gap: 3px; }
+  /* Колонка часов ужимается до «08:00» и отдаёт остальное машинам: в клетку
+     нужно попасть пальцем, а часы только читают. */
+  .grid-row { grid-template-columns: 40px repeat(var(--cols, 1), 1fr); gap: 3px; }
+  .grid-machine { font-size: 12px; }
+  .grid-hour { font-size: 12px; }
+  .cell { min-height: 34px; padding: 2px 4px; border-radius: 8px; font-size: 12px; }
+
+  /* --- мои брони и заглушки --- */
+
+  .bookings { gap: 8px; }
+  .booking { padding: 10px 12px; gap: 4px; }
+  .booking-machine { font-size: 16px; }
+  .booking-when { font-size: 13px; }
+  .my-links { gap: 8px; }
+
+  .app-loading { font-size: 15px; }
+  .app-people { gap: 8px; }
+  .board-empty { font-size: 15px; }
+  .error { gap: 12px; }
+  .error-mark { width: 56px; height: 56px; font-size: 30px; }
+  .error-text { font-size: 16px; }
 }

@@ -5,7 +5,10 @@
     <div class="banner banner-ok" data-autohide="6">{{ flash }}</div>
   {% endif %}
 
-  <main id="board" data-poll="{{ base }}/partials/board" data-interval="10">
+  {# Раскрытый парк опрашивается тем же адресом с тем же `all`: иначе через
+     десять секунд на месте раскрытой доски оказалась бы сжатая. #}
+  <main id="board" data-poll="{{ base }}/partials/board{% if show_all|default(false) %}?all=1{% endif %}"
+        data-interval="10">
     {% include "_board.html" %}
   </main>
 {% endblock %}

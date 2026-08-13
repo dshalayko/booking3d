@@ -95,14 +95,20 @@ async def _bootstrap(
 
 @router.get("", response_class=HTMLResponse, include_in_schema=False)
 @router.get("/", response_class=HTMLResponse)
-async def entry(request: Request, db: Db, next: str = "", flash: str = "") -> Response:
+async def entry(
+    request: Request, db: Db, next: str = "", flash: str = "", all: bool = False
+) -> Response:
     """Точка входа и главный экран приложения.
 
     С живой сессией показывает доску — сюда же возвращают все действия. Без
     сессии показывает бутстрап, который проверит подпись и вернёт обратно.
+
+    `?all=1` — парк целиком для того, у кого машина уже занята: по умолчанию его
+    доска сжата до своей машины (screens.board_context).
     """
-    if await viewer(request, db) is not None and not next:
-        return await screens.board_page(request, db, APP, flash)
+    person = await viewer(request, db)
+    if person is not None and not next:
+        return await screens.board_page(request, db, APP, flash, viewer=person, show_all=all)
     return await _bootstrap(request, db, _safe_next(next or f"{SAFE_NEXT_PREFIX}/"))
 
 
@@ -147,8 +153,12 @@ async def open_session(
 
 
 @router.get("/partials/board", response_class=HTMLResponse)
-async def board_partial(request: Request, db: Db) -> Response:
-    return await screens.board_partial(request, db, APP)
+async def board_partial(request: Request, db: Db, all: bool = False) -> Response:
+    """`all` дублирует адрес страницы: иначе через 10 секунд опрос вернул бы
+    сжатую доску поверх раскрытой (см. `data-poll` в kiosk.html)."""
+    return await screens.board_partial(
+        request, db, APP, viewer=await viewer(request, db), show_all=all
+    )
 
 
 # --- занять / освободить -----------------------------------------------------

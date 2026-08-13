@@ -539,6 +539,8 @@ UI = {
     "queue_join": "Join the line",
     "queue_leave": "Leave the line",
     "board_schedule_cta": "Schedule",
+    "board_show_all": "All equipment",
+    "board_show_mine": "Just my machine",
     # _keypad.html
     "keypad_label": "PIN",
     "keypad_clear": "Clear",

@@ -31,6 +31,9 @@ class MachineView:
     name: str
     kind: str
     status: str
+    # Кто занял. Имя — для экрана, номер — чтобы отличить «мою» машину от чужой:
+    # имена не уникальны, и на них такое решение вешать нельзя.
+    owner_id: int | None
     owner_name: str | None
     eta_at: datetime | None
     done_since: datetime | None
@@ -145,6 +148,7 @@ async def build(db: AsyncSession, now: datetime | None = None) -> Board:
                 name=machine.name,
                 kind=machine.kind,
                 status=machine.status,
+                owner_id=session_row[0].user_id if session_row else None,
                 owner_name=session_row[1] if session_row else None,
                 eta_at=session_row[0].eta_at if session_row else None,
                 done_since=(
@@ -176,6 +180,36 @@ async def build(db: AsyncSession, now: datetime | None = None) -> Board:
         if views.get(kind) or queues.get(kind)
     ]
     return Board(groups=groups, now=now)
+
+
+def personal(board: Board, user_id: int) -> Board | None:
+    """Та же доска, но глазами человека, у которого машина уже занята.
+
+    С телефона на доску заходят с одним вопросом — «что с моей печатью»; чужие
+    машины в этот момент только оттесняют ответ за край экрана. Поэтому парк
+    сжимается до своего: остаётся занятая машина (вместе с кнопкой «освободить»)
+    и очередь её секции — по ней видно, ждёт ли кто-то освобождения.
+
+    Секция, где человек стоит в очереди, остаётся тоже, даже если своей машины в
+    ней нет: иначе из очереди стало бы некуда выйти.
+
+    `None` — «сжимать нечего»: занятой машины у человека нет, и парк нужно
+    показать целиком, иначе экран окажется пустым. Отдельным значением, а не
+    пустой доской, чтобы вызывающий не путал «ничего своего» с «парк пуст».
+    """
+    groups = [
+        KindGroup(
+            kind=group.kind,
+            machines=[machine for machine in group.machines if machine.owner_id == user_id],
+            queue=group.queue,
+        )
+        for group in board.groups
+        if any(machine.owner_id == user_id for machine in group.machines)
+        or any(person.user_id == user_id for person in group.queue)
+    ]
+    if not any(group.machines for group in groups):
+        return None
+    return Board(groups=groups, now=board.now)
 
 
 async def _queues_by_kind(db: AsyncSession) -> dict[str, list[QueueView]]:

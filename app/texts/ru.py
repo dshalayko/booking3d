@@ -530,6 +530,8 @@ UI = {
     "queue_join": "Встать в очередь",
     "queue_leave": "Выйти из очереди",
     "board_schedule_cta": "Расписание",
+    "board_show_all": "Всё оборудование",
+    "board_show_mine": "Только моя машина",
     # _keypad.html
     "keypad_label": "PIN",
     "keypad_clear": "Сброс",

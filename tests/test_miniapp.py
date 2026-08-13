@@ -367,3 +367,153 @@ class TestScreens:
         response = await client.get("/")
 
         assert "telegram.org" not in response.text
+
+
+class TestOwnBoard:
+    """Доска с занятой машиной: у телефона она сжимается до своего.
+
+    Известно, кто смотрит, и заходят с одним вопросом — «что с моей печатью».
+    Проверок больше, чем строк в шаблоне, потому что промахнуться тут можно
+    молча: доска, сжатая для чужого, скрывает от него весь парк, а забытый `all`
+    в опросе схлопывает раскрытую доску через десять секунд.
+    """
+
+    async def test_only_my_machine_is_shown(self, client, db, printers, engravers, make_user):
+        user = await make_user()
+        await machines_svc.occupy(db, user, printers[0].id, 60)
+        await db.commit()
+        await open_app(client, user)
+
+        page = (await client.get("/app/")).text
+
+        assert "P2S #1" in page
+        assert "P2S #2" not in page
+        assert "Гравёр #1" not in page
+        assert "Всё оборудование" in page
+
+    async def test_my_machine_keeps_its_action(self, client, db, printers, make_user):
+        """Сжатая доска — не витрина: освободить машину с неё по-прежнему можно."""
+        user = await make_user()
+        await machines_svc.occupy(db, user, printers[0].id, 60)
+        await db.commit()
+        await open_app(client, user)
+
+        page = (await client.get("/app/")).text
+
+        assert f'href="/app/release/{printers[0].id}"' in page
+        # Занять вторую машину предлагать некуда: она есть.
+        assert f'href="/app/occupy/{printers[1].id}"' not in page
+
+    async def test_line_i_stand_in_stays(self, client, db, printers, engravers, make_user):
+        """Иначе из очереди на другой тип стало бы некуда выйти.
+
+        Порядок действий именно такой: с занятой машиной в очередь не встают
+        (services/queue.py), а вот занять принтер, стоя в очереди на
+        гравировщик, можно — очередь проверяется в пределах своего типа.
+        """
+        user = await make_user(name="Аня")
+        await machines_svc.occupy(db, await make_user(), engravers[0].id, 60)
+        await queue_svc.join(db, user.id, MachineKind.ENGRAVER)
+        await machines_svc.occupy(db, user, printers[0].id, 60)
+        await db.commit()
+        await open_app(client, user)
+
+        page = (await client.get("/app/")).text
+
+        assert "P2S #1" in page
+        assert "Гравёр #1" not in page
+        assert 'href="/app/queue/leave"' in page
+
+    async def test_without_my_machine_the_park_is_whole(self, client, printers, make_user):
+        user = await make_user()
+        await open_app(client, user)
+
+        page = (await client.get("/app/")).text
+
+        assert "P2S #1" in page
+        assert "P2S #2" in page
+        assert "Всё оборудование" not in page
+
+    async def test_show_all_opens_the_whole_park(self, client, db, printers, make_user):
+        user = await make_user()
+        await machines_svc.occupy(db, user, printers[0].id, 60)
+        await db.commit()
+        await open_app(client, user)
+
+        page = (await client.get("/app/", params={"all": "1"})).text
+
+        assert "P2S #2" in page
+        # Опрос обязан спрашивать ту же доску, что открыта.
+        assert 'data-poll="/app/partials/board?all=1"' in page
+
+    async def test_from_the_whole_park_there_is_a_way_back(
+        self, client, db, printers, make_user
+    ):
+        """Иначе вернуться к своей машине можно только кнопкой «назад»."""
+        user = await make_user()
+        await machines_svc.occupy(db, user, printers[0].id, 60)
+        await db.commit()
+        await open_app(client, user)
+
+        page = (await client.get("/app/", params={"all": "1"})).text
+
+        assert "Только моя машина" in page
+        assert 'class="btn btn-small btn-ghost board-all" href="/app/"' in page
+
+    async def test_someone_elses_line_has_no_leave_button(
+        self, client, db, printers, make_user
+    ):
+        """Выход из очереди действует на смотрящего: в чужой очереди эта кнопка
+        вела бы в отказ «вы не в очереди»."""
+        user = await make_user()
+        waiting = await make_user()
+        await machines_svc.occupy(db, user, printers[0].id, 60)
+        await machines_svc.occupy(db, await make_user(), printers[1].id, 60)
+        await queue_svc.join(db, waiting.id, MachineKind.PRINTER)
+        await db.commit()
+        await open_app(client, user)
+
+        page = (await client.get("/app/")).text
+        wall = (await client.get("/")).text
+
+        assert waiting.name in page
+        assert 'href="/app/queue/leave"' not in page
+        # На стене неизвестно, кто нажимает, и выход остаётся общим — по PIN.
+        assert 'href="/queue/leave"' in wall
+
+    async def test_without_my_machine_there_is_nothing_to_narrow(
+        self, client, printers, make_user
+    ):
+        """Ссылки-переключателя нет вовсе: сжимать нечего, разворачивать тоже."""
+        user = await make_user()
+        await open_app(client, user)
+
+        page = (await client.get("/app/", params={"all": "1"})).text
+
+        assert "Только моя машина" not in page
+        assert "Всё оборудование" not in page
+
+    async def test_polled_partial_is_narrowed_too(self, client, db, printers, make_user):
+        """Иначе доска сжата ровно до первого опроса — десять секунд."""
+        user = await make_user()
+        await machines_svc.occupy(db, user, printers[0].id, 60)
+        await db.commit()
+        await open_app(client, user)
+
+        narrowed = (await client.get("/app/partials/board")).text
+        whole = (await client.get("/app/partials/board", params={"all": "1"})).text
+
+        assert "P2S #2" not in narrowed
+        assert "P2S #2" in whole
+
+    async def test_kiosk_board_is_never_narrowed(self, client, db, printers, make_user):
+        """На стене неизвестно, кто смотрит, и парк там нужен весь."""
+        user = await make_user()
+        await machines_svc.occupy(db, user, printers[0].id, 60)
+        await db.commit()
+        await open_app(client, user)
+
+        page = (await client.get("/")).text
+
+        assert "P2S #1" in page
+        assert "P2S #2" in page

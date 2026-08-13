@@ -136,26 +136,65 @@ async def _machine(db: AsyncSession, machine_id: int) -> Machine:
     return machine
 
 
-async def board_context(db: AsyncSession) -> dict:
+async def board_context(
+    db: AsyncSession, viewer: User | None = None, show_all: bool = False
+) -> dict:
+    """Состояние парка для шаблона доски.
+
+    `viewer` приезжает только из Mini App: там известно, кто смотрит, и у
+    человека с занятой машиной доска сжимается до его машины и очереди
+    (services/board.py, `personal`). Планшет на стене общий, `viewer` там None, и
+    парк на нём всегда целиком — как и по ссылке «всё оборудование»
+    (`show_all`), которая нужна, чтобы занять вторую машину.
+    """
     state = await board_svc.build(db)
-    return {"groups": state.groups, "free_count": state.free_count, "now": state.now}
+    mine = None if viewer is None else board_svc.personal(state, viewer.id)
+    board = state if show_all or mine is None else mine
+    return {
+        "groups": board.groups,
+        "free_count": board.free_count,
+        "now": board.now,
+        # Шаблону важно не «кто смотрит», а сжата ли доска сейчас и есть ли что
+        # сжимать: от первого зависит большая кнопка занятия, от пары — ссылка
+        # «всё оборудование» и обратная ей «моя машина». Поэтому `personal`
+        # считается и при `show_all`: иначе с раскрытой доски некуда вернуться.
+        "focused": mine is not None and not show_all,
+        "can_focus": mine is not None,
+        # Кому принадлежит кнопка «выйти из очереди»: в Mini App она действует
+        # на смотрящего, и предлагать её тому, кто в этой очереди не стоит,
+        # значит вести его в отказ. На киоске (None) выходят по PIN — там
+        # кнопка общая, как и экран.
+        "viewer_id": viewer.id if viewer is not None else None,
+    }
 
 
 # --- доска -------------------------------------------------------------------
 
 
 async def board_page(
-    request: Request, db: AsyncSession, client: Client, flash: str = ""
+    request: Request,
+    db: AsyncSession,
+    client: Client,
+    flash: str = "",
+    viewer: User | None = None,
+    show_all: bool = False,
 ) -> Response:
-    context = await board_context(db)
+    context = await board_context(db, viewer, show_all)
     context["flash"] = t.FLASH_KIOSK.get(flash)
+    context["show_all"] = show_all
     context.update(client.context)
     return templates.TemplateResponse(request, "kiosk.html", context)
 
 
-async def board_partial(request: Request, db: AsyncSession, client: Client) -> Response:
+async def board_partial(
+    request: Request,
+    db: AsyncSession,
+    client: Client,
+    viewer: User | None = None,
+    show_all: bool = False,
+) -> Response:
     """Кусок страницы, который сам перезапрашивается каждые 10 секунд."""
-    context = await board_context(db)
+    context = await board_context(db, viewer, show_all)
     context.update(client.context)
     return templates.TemplateResponse(request, "_board.html", context)
 
