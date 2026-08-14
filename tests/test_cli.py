@@ -11,6 +11,9 @@
 на машины типа `printer`. Иначе первый же гравировщик выглядел бы для неё
 «лишним принтером не из .env» и блокировал бы добавление нового принтера.
 
+Принтеры сид заводит в первое помещение: оно то самое, которое подразумевалось,
+пока помещений в системе не было вовсе.
+
 Команды ходят в БД через `app.cli.SessionLocal`, поэтому его подменяем на
 тестовую фабрику — иначе они пойдут в настоящую базу разработчика.
 """
@@ -49,7 +52,7 @@ async def names_in(db) -> list[str]:
 
 
 class TestSeed:
-    async def test_creates_declared_park(self, db, park):
+    async def test_creates_declared_park(self, db, room, park):
         park("P2S #1", "P2S #2")
         await cli.seed_printers()
         assert await names_in(db) == ["P2S #1", "P2S #2"]
@@ -94,7 +97,7 @@ class TestAdd:
         await make_user(is_admin=True)
         await db.commit()
 
-        await cli.add_machine("Гравёр #1", MachineKind.ENGRAVER.value)
+        await cli.add_machine("Гравёр #1", MachineKind.ENGRAVER.value, None)
 
         machine = await db.scalar(select(Machine).where(Machine.name == "Гравёр #1"))
         assert machine.kind == MachineKind.ENGRAVER
@@ -106,7 +109,7 @@ class TestAdd:
         await make_user(is_admin=True)
         await db.commit()
 
-        await cli.add_machine("P2S #1", MachineKind.ENGRAVER.value)
+        await cli.add_machine("P2S #1", MachineKind.ENGRAVER.value, None)
 
         assert "занято" in capsys.readouterr().out
         assert await names_in(db) == ["P2S #1", "P2S #2"]
@@ -129,6 +132,7 @@ class TestRemove:
         db.add(
             MachineSession(
                 machine_id=printers[1].id,
+                room_id=printers[1].room_id,
                 user_id=user.id,
                 started_at=NOON,
                 eta_at=NOON + timedelta(hours=1),

@@ -11,14 +11,31 @@ from string import Formatter
 
 import pytest
 
-from app.enums import MachineKind
+from app.enums import MachineKind, RoomKind
 from app.texts import en, ru
 
 LANGUAGES = {"ru": ru, "en": en}
 PUBLIC = {name for name in vars(ru) if not name.startswith("_") and name.isupper()}
 
 # Словари, где обязан быть ключ на каждый тип оборудования.
-KIND_DICTS = ("MACHINE_KIND_TITLE", "MACHINE_KIND_ONE", "MACHINE_BUSY_WORD")
+KIND_DICTS = (
+    "MACHINE_KIND_TITLE",
+    "MACHINE_KIND_ONE",
+    "MACHINE_BUSY_WORD",
+    "MACHINE_DONE_STATUS",
+    "MACHINE_DONE_ACTION",
+    "MACHINE_DONE_WORD",
+    "MACHINE_DONE_CONFIRM",
+    "MACHINE_DONE_HINT",
+    "MACHINE_ALMOST_DONE_HINT",
+    "MACHINE_FINISHED_HINT",
+    "MACHINE_CHECK_HINT",
+    "MACHINE_UNCLAIMED_OWNER_HINT",
+    "MACHINE_UNCLAIMED_QUEUE_HINT",
+)
+
+# То же для типов помещений.
+ROOM_KIND_DICTS = ("ROOM_KIND_TITLE", "ROOM_KIND_ONE", "ROOM_KIND_MARK")
 
 
 def placeholders(value: str) -> set[str]:
@@ -54,6 +71,15 @@ def test_every_kind_of_machine_has_words(lang, dict_name):
     words = getattr(LANGUAGES[lang], dict_name)
 
     assert set(words) == set(MachineKind), f"{lang}: {dict_name} не покрывает все типы"
+
+
+@pytest.mark.parametrize("lang", list(LANGUAGES))
+@pytest.mark.parametrize("dict_name", ROOM_KIND_DICTS)
+def test_every_kind_of_room_has_words(lang, dict_name):
+    """Помещение без надписей — это `meeting` в списке комнат на стене."""
+    words = getattr(LANGUAGES[lang], dict_name)
+
+    assert set(words) == set(RoomKind), f"{lang}: {dict_name} не покрывает все типы"
 
 
 @pytest.mark.parametrize("lang", ["en"])

@@ -107,20 +107,49 @@ def _timed(secret: str, salt: str, name: str) -> URLSafeTimedSerializer:
     return URLSafeTimedSerializer(secret, salt=salt)
 
 
-def issue_device_token() -> str:
+def issue_device_token(room_id: int | None = None) -> str:
+    """Метка планшета. Помещение записывается внутрь неё.
+
+    В токене, а не в отдельной cookie: планшет висит в одном помещении, и его
+    комната — такое же свойство устройства, как право вводить PIN. Подписанное
+    значение к тому же нельзя подменить, а помещение решает, что человек увидит
+    и что займёт.
+    """
     if not settings.kiosk_secret:
         raise RuntimeError("KIOSK_SECRET не задан — заполни .env")
-    return URLSafeSerializer(settings.kiosk_secret, salt="kiosk-device").dumps({"kiosk": True})
+    payload = {"kiosk": True}
+    if room_id is not None:
+        payload["room"] = room_id
+    return URLSafeSerializer(settings.kiosk_secret, salt="kiosk-device").dumps(payload)
 
 
-def is_kiosk_device(token: str | None) -> bool:
+def _device_payload(token: str | None) -> dict | None:
     if not token or not settings.kiosk_secret:
-        return False
+        return None
     try:
         payload = URLSafeSerializer(settings.kiosk_secret, salt="kiosk-device").loads(token)
     except BadSignature:
-        return False
-    return bool(payload.get("kiosk"))
+        return None
+    return payload if isinstance(payload, dict) else None
+
+
+def is_kiosk_device(token: str | None) -> bool:
+    payload = _device_payload(token)
+    return bool(payload and payload.get("kiosk"))
+
+
+def device_room_id(token: str | None) -> int | None:
+    """Помещение планшета. None — планшет зарегистрирован до появления комнат.
+
+    Такой планшет продолжает работать: он показывает список помещений и просит
+    выбрать. Отказывать ему было бы хуже — на стене висит рабочий экран, а
+    единственное, чего он не знает, спрашивается одним касанием.
+    """
+    payload = _device_payload(token)
+    if not payload or not payload.get("kiosk"):
+        return None
+    room_id = payload.get("room")
+    return room_id if isinstance(room_id, int) else None
 
 
 def issue_admin_session() -> str:

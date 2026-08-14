@@ -1,0 +1,134 @@
+{# «Сводка»: цифры парка и карточка на пару «помещение — тип».
+
+   Машины и очередь этого типа стоят в одной карточке: это одно решение — снять
+   работу или подвинуть того, кто ждёт. Карточки-цифры кликабельны там, где есть
+   куда вести: «броней впереди» открывает раздел броней. #}
+{% extends "admin/base.html" %}
+{% from "admin/_icons.html" import icon %}
+
+{# Карточка-цифра. Ссылкой — только там, где есть куда вести: карточка, которая
+   никуда не ведёт, но выглядит нажимаемой, врёт. Содержимое вынесено в свой
+   макрос, чтобы не разрезать теги условием. #}
+{% macro stat_body(item) %}
+  <span class="ad-stat-mark">{{ icon(item.icon) }}</span>
+  <span class="ad-stat-text">
+    <span class="ad-stat-label">{{ item.label }}</span>
+    <span class="ad-stat-value">{{ item.value }}</span>
+    {% if item.sub %}<span class="ad-stat-sub">{{ item.sub }}</span>{% endif %}
+  </span>
+{% endmacro %}
+
+{% macro stat_card(item) %}
+  {% if item.href %}
+    <a class="ad-stat ad-stat-link ad-stat-{{ item.tone }}" href="{{ item.href }}">
+      {{ stat_body(item) }}
+    </a>
+  {% else %}
+    <article class="ad-stat ad-stat-{{ item.tone }}">{{ stat_body(item) }}</article>
+  {% endif %}
+{% endmacro %}
+
+{% block topbar %}
+  <span class="ad-chip">{{ t.admin_updated.format(time=board.now | hhmm) }}</span>
+{% endblock %}
+
+{% block admin %}
+  {% set stats = [
+    {"label": t.admin_stat_free, "value": counts.free, "icon": "check", "tone": "free",
+     "sub": t.admin_stat_of.format(count=counts.machines)},
+    {"label": t.admin_stat_busy, "value": counts.busy, "icon": "clock", "tone": "busy",
+     "sub": t.admin_stat_of.format(count=counts.machines)},
+    {"label": t.admin_stat_broken, "value": counts.broken, "icon": "warning", "tone": "broken",
+     "sub": t.admin_stat_of.format(count=counts.machines)},
+    {"label": t.admin_stat_queue, "value": counts.queue, "icon": "people", "tone": "wait",
+     "sub": t.admin_stat_people.format(count=counts.people), "href": "/admin/people"},
+    {"label": t.admin_stat_bookings, "value": counts.bookings, "icon": "calendar",
+     "tone": "accent", "sub": t.admin_stat_ahead, "href": "/admin/bookings"},
+  ] %}
+  <section class="ad-stats">
+    {% for stat in stats %}{{ stat_card(stat) }}{% endfor %}
+  </section>
+
+  <section class="ad-cards">
+    {% for room in board.rooms %}{% for group in room.groups %}
+      <article class="ad-card">
+        <div class="ad-card-head">
+          <h2>{{ room.name }}</h2>
+          <span class="ad-card-note">{{ MACHINE_KIND_TITLE.get(group.kind, group.kind) }}</span>
+        </div>
+
+        {% for machine in group.machines %}
+          <div class="admin-row">
+            <div class="admin-row-main">
+              <strong>{{ machine.name }}</strong>
+              <span class="admin-status admin-status-{{ machine.status }}">{{ machine.status }}</span>
+              {% if machine.owner_name %}
+                <span class="admin-dim">
+                  {{ t.admin_owner_until.format(name=machine.owner_name, time=machine.eta_at | hhmm) }}
+                </span>
+              {% endif %}
+              {% if machine.reserved_for %}
+                <span class="admin-dim">
+                  {{ t.admin_reserved.format(name=machine.reserved_for,
+                                             time=machine.reserved_until | hhmm) }}
+                </span>
+              {% endif %}
+              {% if machine.note %}<span class="admin-dim">{{ machine.note }}</span>{% endif %}
+            </div>
+
+            <div class="admin-actions">
+              {% if machine.status == "broken" %}
+                <form method="post" action="/admin/machines/{{ machine.id }}/fix">
+                  <button class="btn btn-small btn-primary" type="submit">{{ t.admin_fix }}</button>
+                </form>
+              {% else %}
+                {% if machine.owner_name %}
+                  <form class="admin-form" method="post"
+                        action="/admin/machines/{{ machine.id }}/cancel">
+                    <input class="text-input" type="text" name="reason"
+                           placeholder="{{ t.admin_reason_placeholder }}" required>
+                    <button class="btn btn-small" type="submit">{{ t.admin_cancel_work }}</button>
+                  </form>
+                {% endif %}
+                <form class="admin-form" method="post" action="/admin/machines/{{ machine.id }}/break">
+                  <input class="text-input" type="text" name="note"
+                         placeholder="{{ t.admin_note_placeholder }}">
+                  <button class="btn btn-small" type="submit">{{ t.admin_break }}</button>
+                </form>
+              {% endif %}
+            </div>
+          </div>
+        {% endfor %}
+
+        <div class="ad-sub">
+          <p class="ad-sub-title">{{ t.admin_queue }}</p>
+          {% for person in group.queue %}
+            <div class="admin-row">
+              <div class="admin-row-main">
+                <span class="ad-num">{{ person.position }}</span>
+                <strong>{{ person.name }}</strong>
+                {% if person.offered %}<span class="admin-dim">{{ t.queue_offered }}</span>{% endif %}
+              </div>
+              <div class="admin-actions">
+                <form method="post"
+                      action="/admin/queue/{{ room.id }}/{{ person.user_id }}/remove">
+                  <button class="btn btn-small" type="submit">{{ t.admin_remove }}</button>
+                </form>
+              </div>
+            </div>
+          {% else %}
+            <p class="admin-dim">{{ t.admin_empty }}</p>
+          {% endfor %}
+        </div>
+      </article>
+    {% endfor %}{% endfor %}
+
+    {% if not board.rooms %}
+      <article class="ad-card">
+        <div class="ad-card-head"><h2>{{ t.admin_machines }}</h2></div>
+        <p class="admin-dim">{{ t.admin_rooms_none }}</p>
+        <a class="btn btn-small btn-primary" href="/admin/rooms">{{ t.admin_tab_rooms }}</a>
+      </article>
+    {% endif %}
+  </section>
+{% endblock %}

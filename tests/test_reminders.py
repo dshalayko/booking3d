@@ -87,13 +87,13 @@ class TestFinish:
         assert (await db.get(Machine, machine_id)).status == MachineStatus.DONE_WAIT
         assert "заберите деталь" in texts_of(outbox).lower()
 
-    async def test_tells_first_in_queue_to_check(self, db, printers, make_user, outbox):
+    async def test_tells_first_in_queue_to_check(self, db, room, printers, make_user, outbox):
         owner = await make_user(name="Иван")
         other = await make_user()
         waiting = await make_user()
         await machines_svc.occupy(db, owner, printers[0].id, 60, now=NOON)
         await machines_svc.occupy(db, other, printers[1].id, 600, now=NOON)
-        await queue_svc.join(db, waiting.id, MachineKind.PRINTER, now=NOON)
+        await queue_svc.join(db, waiting.id, room.id, MachineKind.PRINTER, now=NOON)
         await db.commit()
         outbox.clear()
 
@@ -101,7 +101,7 @@ class TestFinish:
 
         addressed = [text for chat, text in outbox if chat == waiting.tg_chat_id]
         assert len(addressed) == 1
-        assert "должна была закончиться" in addressed[0]
+        assert "должно было закончиться" in addressed[0]
         assert "Иван" in addressed[0]
 
     async def test_does_not_finish_twice(self, db, printers, make_user, outbox):
@@ -128,13 +128,13 @@ class TestFinish:
 
 
 class TestUnclaimed:
-    async def test_pings_owner_and_queue_after_an_hour(self, db, printers, make_user, outbox):
+    async def test_pings_owner_and_queue_after_an_hour(self, db, room, printers, make_user, outbox):
         owner = await make_user(name="Анна")
         other = await make_user()
         waiting = await make_user()
         await machines_svc.occupy(db, owner, printers[0].id, 60, now=NOON)
         await machines_svc.occupy(db, other, printers[1].id, 600, now=NOON)
-        await queue_svc.join(db, waiting.id, MachineKind.PRINTER, now=NOON)
+        await queue_svc.join(db, waiting.id, room.id, MachineKind.PRINTER, now=NOON)
         await reminders.reconcile(db, now=NOON + timedelta(minutes=61))
         outbox.clear()
 
@@ -144,7 +144,7 @@ class TestUnclaimed:
         owner_messages = [text for chat, text in outbox if chat == owner.tg_chat_id]
         queue_messages = [text for chat, text in outbox if chat == waiting.tg_chat_id]
         assert "Заберите" in owner_messages[0] or "заберите" in owner_messages[0]
-        assert "не забрали" in queue_messages[0]
+        assert "не освободили" in queue_messages[0]
 
     async def test_pings_only_once(self, db, printers, make_user, outbox):
         await machines_svc.occupy(db, await make_user(), printers[0].id, 60, now=NOON)
@@ -165,15 +165,17 @@ class TestUnclaimed:
 
 
 class TestOfferExpiry:
-    async def test_expired_offer_passes_to_next(self, db, printers, make_user, outbox):
+    async def test_expired_offer_passes_to_next(self, db, room, printers, make_user, outbox):
         owner = await make_user()
         other = await make_user()
         first = await make_user()
         second = await make_user()
         await machines_svc.occupy(db, owner, printers[0].id, 60, now=NOON)
         await machines_svc.occupy(db, other, printers[1].id, 600, now=NOON)
-        await queue_svc.join(db, first.id, MachineKind.PRINTER, now=NOON)
-        await queue_svc.join(db, second.id, MachineKind.PRINTER, now=NOON + timedelta(seconds=1))
+        await queue_svc.join(db, first.id, room.id, MachineKind.PRINTER, now=NOON)
+        await queue_svc.join(
+            db, second.id, room.id, MachineKind.PRINTER, now=NOON + timedelta(seconds=1)
+        )
         await machines_svc.release(db, owner, printers[0].id, now=NOON)
         await db.commit()
         outbox.clear()
@@ -181,16 +183,16 @@ class TestOfferExpiry:
         report = await reminders.reconcile(db, now=NOON + timedelta(minutes=31))
 
         assert report.expired_offers == 1
-        assert [text for chat, text in outbox if chat == first.tg_chat_id][0].startswith("Время")
-        assert "свободен" in [text for chat, text in outbox if chat == second.tg_chat_id][0]
+        assert "вышло" in [text for chat, text in outbox if chat == first.tg_chat_id][0]
+        assert "освободилось" in [text for chat, text in outbox if chat == second.tg_chat_id][0]
 
-    async def test_offer_is_not_expired_early(self, db, printers, make_user, outbox):
+    async def test_offer_is_not_expired_early(self, db, room, printers, make_user, outbox):
         owner = await make_user()
         other = await make_user()
         waiting = await make_user()
         await machines_svc.occupy(db, owner, printers[0].id, 60, now=NOON)
         await machines_svc.occupy(db, other, printers[1].id, 600, now=NOON)
-        await queue_svc.join(db, waiting.id, MachineKind.PRINTER, now=NOON)
+        await queue_svc.join(db, waiting.id, room.id, MachineKind.PRINTER, now=NOON)
         await machines_svc.release(db, owner, printers[0].id, now=NOON)
         await db.commit()
 
@@ -198,7 +200,7 @@ class TestOfferExpiry:
 
         assert report.expired_offers == 0
 
-    async def test_night_offer_survives_until_morning(self, db, printers, make_user, outbox):
+    async def test_night_offer_survives_until_morning(self, db, room, printers, make_user, outbox):
         """Правило 6 в связке с планировщиком: ночью окно не сгорает."""
         night = datetime(2026, 8, 11, 0, 0, tzinfo=UTC)  # 03:00 по Никосии
         owner = await make_user()
@@ -206,7 +208,7 @@ class TestOfferExpiry:
         waiting = await make_user()
         await machines_svc.occupy(db, owner, printers[0].id, 60, now=night)
         await machines_svc.occupy(db, other, printers[1].id, 600, now=night)
-        await queue_svc.join(db, waiting.id, MachineKind.PRINTER, now=night)
+        await queue_svc.join(db, waiting.id, room.id, MachineKind.PRINTER, now=night)
         await machines_svc.release(db, owner, printers[0].id, now=night)
         await db.commit()
 
@@ -224,14 +226,14 @@ class TestIdempotence:
         assert report.touched == 0
         assert outbox == []
 
-    async def test_catches_up_after_long_downtime(self, db, printers, make_user, outbox):
+    async def test_catches_up_after_long_downtime(self, db, room, printers, make_user, outbox):
         """Приложение лежало сутки: первая же сверка доводит всё до правды."""
         machine_id = printers[0].id
         owner = await make_user()
         waiting = await make_user()
         await machines_svc.occupy(db, owner, machine_id, 60, now=NOON)
         await machines_svc.occupy(db, await make_user(), printers[1].id, 60, now=NOON)
-        await queue_svc.join(db, waiting.id, MachineKind.PRINTER, now=NOON)
+        await queue_svc.join(db, waiting.id, room.id, MachineKind.PRINTER, now=NOON)
         await db.commit()
 
         report = await reminders.reconcile(db, now=NOON + timedelta(days=1))
@@ -268,13 +270,13 @@ class TestSchedulerWiring:
 
         assert [job.id for job in scheduler.get_jobs()] == ["reconcile"]
 
-    async def test_expired_entry_status_is_final(self, db, printers, make_user, outbox):
+    async def test_expired_entry_status_is_final(self, db, room, printers, make_user, outbox):
         owner = await make_user()
         other = await make_user()
         waiting = await make_user()
         await machines_svc.occupy(db, owner, printers[0].id, 60, now=NOON)
         await machines_svc.occupy(db, other, printers[1].id, 600, now=NOON)
-        join = await queue_svc.join(db, waiting.id, MachineKind.PRINTER, now=NOON)
+        join = await queue_svc.join(db, waiting.id, room.id, MachineKind.PRINTER, now=NOON)
         await machines_svc.release(db, owner, printers[0].id, now=NOON)
         await db.commit()
 

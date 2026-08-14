@@ -13,8 +13,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.bot import notify, texts
 from app.config import settings
-from app.enums import ACTIVE_QUEUE_STATUSES, ACTIVE_SESSION_STATUSES
-from app.models import Machine, MachineSession, QueueEntry, User
+from app.enums import ACTIVE_SESSION_STATUSES
+from app.models import Machine, MachineSession, Room, User
 from app.services import auth
 from app.services import board as board_svc
 from app.services import machines as machines_svc
@@ -119,76 +119,93 @@ async def status(db: AsyncSession) -> str:
 
 
 async def my(db: AsyncSession, chat_id: int) -> str:
-    user = await _user(db, chat_id)
-    if user is None:
-        return texts.not_registered()
+    """Всё, что за человеком числится, — по всем помещениям сразу.
 
-    session = await db.scalar(
-        select(MachineSession).where(
-            MachineSession.user_id == user.id,
-            MachineSession.status.in_(ACTIVE_SESSION_STATUSES),
-        )
-    )
-    machine_name = None
-    if session is not None:
-        machine = await db.get(Machine, session.machine_id)
-        machine_name = machine.name if machine else None
-
-    entry = await db.scalar(
-        select(QueueEntry).where(
-            QueueEntry.user_id == user.id,
-            QueueEntry.status.in_(ACTIVE_QUEUE_STATUSES),
-        )
-    )
-    offered_machine = None
-    if entry is not None and entry.offered_machine_id is not None:
-        machine = await db.get(Machine, entry.offered_machine_id)
-        offered_machine = machine.name if machine else None
-
-    booking = await reservations_svc.active_of_user(db, user.id)
-    booked_machine = None
-    if booking is not None:
-        machine = await db.get(Machine, booking.machine_id)
-        booked_machine = machine.name if machine else None
-
-    return texts.my_state(
-        machine_name=machine_name,
-        eta_at=session.eta_at if session else None,
-        now=datetime.now(UTC),
-        position=await queue_svc.position_of(db, user.id),
-        queue_kind=entry.kind if entry else None,
-        offered_machine=offered_machine,
-        offer_until=entry.offer_expires_at if entry else None,
-        booking_machine=booked_machine,
-        booking_starts_at=booking.starts_at if booking else None,
-        booking_ends_at=booking.ends_at if booking else None,
-    )
-
-
-async def queue_join(db: AsyncSession, chat_id: int, kind: str | None = None) -> str:
-    """Встать в очередь на тип оборудования.
-
-    Без типа команда однозначна только пока парк однороден: если в мастерской
-    стоят и принтеры, и гравировщики, `/queue` не знает, чего человек ждёт, и
-    отвечает списком команд по типам. Угадывать нельзя — угаданное место в
-    чужой очереди человек заметит только через несколько часов молчания.
+    Списками, а не по одному: лимиты считаются в помещении (правила 2 и 13), и
+    занятый принтер в мастерской вместе с бронью переговорной — обычное дело.
     """
     user = await _user(db, chat_id)
     if user is None:
         return texts.not_registered()
 
-    if kind is None:
-        kinds = await _kinds_in_park(db)
-        if not kinds:
-            return texts.park_empty()
-        if len(kinds) > 1:
-            return texts.queue_pick_kind(kinds)
-        kind = kinds[0]
+    works = [
+        texts.MyWork(machine=machine.name, room=room.name, eta_at=session.eta_at)
+        for session, machine, room in (
+            await db.execute(
+                select(MachineSession, Machine, Room)
+                .join(Machine, Machine.id == MachineSession.machine_id)
+                .join(Room, Room.id == MachineSession.room_id)
+                .where(
+                    MachineSession.user_id == user.id,
+                    MachineSession.status.in_(ACTIVE_SESSION_STATUSES),
+                )
+                .order_by(MachineSession.started_at)
+            )
+        ).all()
+    ]
 
+    bookings = [
+        texts.MyBooking(
+            machine=machine.name,
+            room=room.name,
+            starts_at=booking.starts_at,
+            ends_at=booking.ends_at,
+        )
+        for booking, machine, room in await reservations_svc.of_user(db, user.id)
+    ]
+
+    queues = []
+    for entry in await queue_svc.entries_of_user(db, user.id):
+        room = await db.get(Room, entry.room_id)
+        offered = None
+        if entry.offered_machine_id is not None:
+            machine = await db.get(Machine, entry.offered_machine_id)
+            offered = machine.name if machine else None
+        queues.append(
+            texts.MyQueue(
+                room=room.name if room else "",
+                kind=entry.kind,
+                position=await queue_svc.position_of(db, user.id, entry.room_id) or 1,
+                offered_machine=offered,
+                offer_until=entry.offer_expires_at,
+            )
+        )
+
+    return texts.my_state(
+        now=datetime.now(UTC), works=works, bookings=bookings, queues=queues
+    )
+
+
+async def queue_join(db: AsyncSession, chat_id: int, kind: str | None = None) -> str:
+    """Встать в очередь на оборудование одного типа в одном помещении.
+
+    Очередь — это пара (помещение, тип), и команда однозначна, только пока такая
+    пара одна. Дальше нужно спросить: если помещение одно, а типов несколько,
+    хватает команд по типу (`/queue_printer`); если помещений несколько, командой
+    их не перечислить, и выбор уходит на экран. Угадывать нельзя — угаданное
+    место в чужой очереди человек заметит только через несколько часов молчания.
+    """
+    user = await _user(db, chat_id)
+    if user is None:
+        return texts.not_registered()
+
+    options = await _queue_options(db)
+    if kind is not None:
+        options = [option for option in options if option[1] == kind]
+    if not options:
+        return texts.park_empty()
+
+    if len(options) > 1:
+        rooms = {room.id for room, _ in options}
+        if len(rooms) == 1:
+            return texts.queue_pick_kind([option[1] for option in options])
+        return texts.queue_pick_room([(room.name, kind) for room, kind in options])
+
+    room, kind = options[0]
     try:
-        result = await queue_svc.join(db, user.id, kind)
+        result = await queue_svc.join(db, user.id, room.id, kind)
     except AlreadyInQueue:
-        position = await queue_svc.position_of(db, user.id) or 1
+        position = await queue_svc.position_of(db, user.id, room.id) or 1
         return texts.queue_already(position)
     except DomainError as error:
         return str(error)
@@ -196,16 +213,27 @@ async def queue_join(db: AsyncSession, chat_id: int, kind: str | None = None) ->
     await db.commit()
     # Свободная машина могла найтись прямо сейчас — тогда предложение уже создано.
     await notify.announce_offers(db, result.offers)
-    return texts.queue_joined(result.position, result.kind)
+    return texts.queue_joined(result.position, result.kind, room.name)
 
 
 async def queue_leave(db: AsyncSession, chat_id: int) -> str:
+    """Выйти из очереди. Из какой именно — вопрос, если их несколько."""
     user = await _user(db, chat_id)
     if user is None:
         return texts.not_registered()
 
+    entries = await queue_svc.entries_of_user(db, user.id)
+    if not entries:
+        return texts.not_in_queue()
+    if len(entries) > 1:
+        options = []
+        for entry in entries:
+            room = await db.get(Room, entry.room_id)
+            options.append((room.name if room else "", entry.kind))
+        return texts.queue_leave_pick(options)
+
     try:
-        result = await queue_svc.leave(db, user.id)
+        result = await queue_svc.leave(db, user.id, entries[0].room_id)
     except NotInQueue as error:
         return str(error)
 
@@ -215,19 +243,29 @@ async def queue_leave(db: AsyncSession, chat_id: int) -> str:
 
 
 async def free(db: AsyncSession, chat_id: int) -> str:
+    """Освободить своё. Что именно — вопрос, если занято сразу в двух комнатах."""
     user = await _user(db, chat_id)
     if user is None:
         return texts.not_registered()
 
-    session = await db.scalar(
-        select(MachineSession).where(
-            MachineSession.user_id == user.id,
-            MachineSession.status.in_(ACTIVE_SESSION_STATUSES),
+    rows = (
+        await db.execute(
+            select(MachineSession, Machine, Room)
+            .join(Machine, Machine.id == MachineSession.machine_id)
+            .join(Room, Room.id == MachineSession.room_id)
+            .where(
+                MachineSession.user_id == user.id,
+                MachineSession.status.in_(ACTIVE_SESSION_STATUSES),
+            )
+            .order_by(MachineSession.started_at)
         )
-    )
-    if session is None:
+    ).all()
+    if not rows:
         return texts.nothing_to_free()
+    if len(rows) > 1:
+        return texts.free_pick([(room.name, machine.name) for _, machine, room in rows])
 
+    session = rows[0][0]
     try:
         result = await machines_svc.release(db, user, session.machine_id)
     except DomainError as error:
@@ -238,18 +276,27 @@ async def free(db: AsyncSession, chat_id: int) -> str:
     return texts.released(result.machine_name)
 
 
-async def _kinds_in_park(db: AsyncSession) -> list[str]:
-    """Типы, машины которых реально стоят в мастерской.
+async def _queue_options(db: AsyncSession) -> list[tuple[Room, str]]:
+    """Пары (помещение, тип), в которых реально есть машины.
 
-    Спрашиваем базу, а не `MachineKind`: предлагать очередь на гравировщик там,
-    где его нет, — значит поставить человека ждать машину, которая не появится.
+    Спрашиваем базу, а не `MachineKind` и не список помещений: предлагать
+    очередь на гравировщик там, где его нет, — значит поставить человека ждать
+    машину, которая не появится.
     """
     park = await machines_svc.list_machines(db)
-    kinds: list[str] = []
+    rooms = {
+        room.id: room
+        for room in (await db.scalars(select(Room).order_by(Room.id))).all()
+    }
+
+    options: list[tuple[Room, str]] = []
     for machine in park:
-        if machine.kind not in kinds:
-            kinds.append(machine.kind)
-    return kinds
+        room = rooms.get(machine.room_id)
+        if room is None:
+            continue
+        if (room, machine.kind) not in options:
+            options.append((room, machine.kind))
+    return options
 
 
 async def _user(db: AsyncSession, chat_id: int) -> User | None:

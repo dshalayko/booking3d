@@ -21,7 +21,7 @@ from fastapi.templating import Jinja2Templates
 
 from app import texts as t
 from app.config import settings
-from app.enums import MachineKind
+from app.enums import ROOM_KIND_MACHINE_KINDS, MachineKind, RoomKind
 
 templates = Jinja2Templates(directory="app/templates")
 
@@ -60,6 +60,16 @@ templates.env.globals["t_js"] = t.JS
 templates.env.globals["MACHINE_KIND_TITLE"] = t.MACHINE_KIND_TITLE
 templates.env.globals["MACHINE_KIND_ONE"] = t.MACHINE_KIND_ONE
 templates.env.globals["MACHINE_KINDS"] = tuple(MachineKind)
+# Слова о законченной работе зависят от типа: у принтера деталь на столе, у
+# переговорной — люди, которые вышли. См. app/texts/ru.py.
+templates.env.globals["MACHINE_DONE_STATUS"] = t.MACHINE_DONE_STATUS
+templates.env.globals["MACHINE_DONE_ACTION"] = t.MACHINE_DONE_ACTION
+# Помещения: их типы нужны форме заведения комнаты, а состав типов — форме
+# заведения машины, чтобы не предлагать принтер в переговорной.
+templates.env.globals["ROOM_KIND_TITLE"] = t.ROOM_KIND_TITLE
+templates.env.globals["ROOM_KIND_ONE"] = t.ROOM_KIND_ONE
+templates.env.globals["ROOM_KINDS"] = tuple(RoomKind)
+templates.env.globals["ROOM_KIND_MACHINE_KINDS"] = ROOM_KIND_MACHINE_KINDS
 # Клиент по умолчанию — киоск; Mini App переопределяет эти значения в контексте
 # (см. api/screens.py, `Client`). Глобальные значения нужны экранам, которые
 # рисуются вне обоих клиентов: ошибка из main.py, офлайн-заглушка, админка.

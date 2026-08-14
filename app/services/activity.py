@@ -24,7 +24,7 @@ from sqlalchemy.orm import aliased
 from app import texts as t
 from app.config import settings
 from app.enums import QueueStatus, ReservationStatus, SessionStatus
-from app.models import Machine, MachineSession, QueueEntry, Reservation, User
+from app.models import Machine, MachineSession, QueueEntry, Reservation, Room, User
 
 DEFAULT_LIMIT = 100
 
@@ -128,10 +128,13 @@ async def _reservation_events(db: AsyncSession, limit: int) -> list[Event]:
 
 
 async def _queue_events(db: AsyncSession, limit: int) -> list[Event]:
+    # Помещение — обычным join: у ожидания оно есть всегда, в отличие от машины,
+    # которую могли и не предложить.
     rows = (
         await db.execute(
-            select(QueueEntry, User.name, Machine.name)
+            select(QueueEntry, User.name, Machine.name, Room.name)
             .join(User, User.id == QueueEntry.user_id)
+            .join(Room, Room.id == QueueEntry.room_id)
             .outerjoin(Machine, Machine.id == QueueEntry.offered_machine_id)
             .order_by(QueueEntry.id.desc())
             .limit(limit)
@@ -145,12 +148,14 @@ async def _queue_events(db: AsyncSession, limit: int) -> list[Event]:
     }
 
     events: list[Event] = []
-    for entry, name, machine in rows:
+    for entry, name, machine, room in rows:
         events.append(
             Event(
                 entry.created_at,
                 t.LOG_QUEUE_JOINED.format(
-                    name=name, kind=t.MACHINE_KIND_ONE.get(entry.kind, entry.kind)
+                    name=name,
+                    kind=t.MACHINE_KIND_ONE.get(entry.kind, entry.kind),
+                    room=room,
                 ),
             )
         )

@@ -1,0 +1,93 @@
+{# Оборудование: состав парка.
+
+   Форма заведения — отдельной карточкой слева, список — справа и сгруппирован по
+   помещениям: машину заводят «в переговорную» или «в дальнюю мастерскую», и
+   ищут её в списке тоже по комнате. #}
+{% extends "admin/base.html" %}
+
+{% block admin %}
+  <div class="ad-split">
+    <section class="ad-card">
+      <div class="ad-card-head"><h2>{{ t.admin_machines_add }}</h2></div>
+      {% if rooms %}
+        <form class="admin-form admin-form-column" method="post" action="/admin/machines">
+          <input class="text-input" type="text" name="name" required
+                 placeholder="{{ t.admin_machines_name_placeholder }}"
+                 autocapitalize="off" autocorrect="off" spellcheck="false">
+          <label class="admin-dim" for="room_id">{{ t.admin_machines_room_label }}</label>
+          <select class="text-input" id="room_id" name="room_id">
+            {% for room in rooms %}
+              <option value="{{ room.id }}">{{ room.name }}</option>
+            {% endfor %}
+          </select>
+          <label class="admin-dim" for="kind">{{ t.admin_machines_kind_label }}</label>
+          {# Типы все: какие из них подходят выбранному помещению, знает домен
+             (`ROOM_KIND_MACHINE_KINDS`), и он же отказывает с внятным текстом.
+             Связать два <select> без скрипта нельзя, а скриптов на этих страницах
+             нет намеренно — см. base.html. #}
+          <select class="text-input" id="kind" name="kind">
+            {% for kind in MACHINE_KINDS %}
+              <option value="{{ kind }}">{{ MACHINE_KIND_TITLE.get(kind, kind) }}</option>
+            {% endfor %}
+          </select>
+          <button class="btn btn-small btn-primary" type="submit">
+            {{ t.admin_machines_add_submit }}
+          </button>
+        </form>
+        <p class="admin-dim admin-hint">{{ t.admin_machines_hint }}</p>
+      {% else %}
+        <p class="admin-dim">{{ t.admin_machines_no_rooms }}</p>
+        <a class="btn btn-small btn-primary" href="/admin/rooms">{{ t.admin_tab_rooms }}</a>
+      {% endif %}
+    </section>
+
+    <div class="ad-column">
+      {% for group in groups %}
+        <section class="ad-card">
+          <div class="ad-card-head">
+            <h2>{{ group.room.name }}</h2>
+            <span class="ad-card-note">{{ group.rows | length }}</span>
+          </div>
+          {% for row in group.rows %}
+            {% set machine = row.machine %}
+            {% set usage = row.usage %}
+            <div class="admin-row">
+              <div class="admin-row-main">
+                <strong>{{ machine.name }}</strong>
+                <span class="admin-dim">{{ MACHINE_KIND_TITLE.get(machine.kind, machine.kind) }}</span>
+                <span class="admin-status admin-status-{{ machine.status }}">{{ machine.status }}</span>
+                {% if usage.empty %}
+                  <span class="admin-dim">{{ t.admin_machines_no_history }}</span>
+                {% else %}
+                  <span class="admin-dim">
+                    {{ t.admin_machines_history.format(sessions=usage.sessions,
+                                                       offers=usage.offers,
+                                                       bookings=usage.bookings) }}
+                  </span>
+                {% endif %}
+              </div>
+
+              <div class="admin-actions">
+                <form class="admin-form" method="post" action="/admin/machines/{{ machine.id }}/name">
+                  <input class="text-input" type="text" name="name" value="{{ machine.name }}"
+                         autocapitalize="off" autocorrect="off" spellcheck="false" required>
+                  <button class="btn btn-small" type="submit">{{ t.admin_rename }}</button>
+                </form>
+                {# Удаление есть всегда и ведёт на экран подтверждения: там видно,
+                   сколько записей журнала уедет вместе с машиной. Отдельного окна
+                   «вы уверены?» нет — `confirm()` это скрипт, а страницы админки
+                   обходятся без единого (см. base.html). #}
+                <a class="btn btn-small btn-danger-ghost"
+                   href="/admin/machines/{{ machine.id }}/delete">
+                  {{ t.admin_machines_delete }}
+                </a>
+              </div>
+            </div>
+          {% else %}
+            <p class="admin-dim">{{ t.admin_machines_none }}</p>
+          {% endfor %}
+        </section>
+      {% endfor %}
+    </div>
+  </div>
+{% endblock %}

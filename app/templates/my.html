@@ -11,9 +11,14 @@
 
   {% if bookings %}
     <ul class="bookings">
-      {% for booking, machine in bookings %}
+      {% for booking, machine, room in bookings %}
         <li class="booking">
-          <span class="booking-machine">{{ machine.name }}</span>
+          {# Помещение рядом с машиной: брон теперь может быть несколько — по
+             одной на комнату (правило 13), — и «14:00» без комнаты не говорит,
+             куда идти. #}
+          <span class="booking-machine">
+            {{ t.my_where.format(machine=machine.name, room=room.name) }}
+          </span>
           <span class="booking-when">
             {{ t.my_when.format(start=booking.starts_at | when, end=booking.ends_at | hhmm) }}
           </span>
@@ -27,11 +32,12 @@
     <p class="queue-empty">{{ t.my_empty }}</p>
   {% endif %}
 
-  {# Отсюда же — вход в расписание каждого типа, что стоит в мастерской. #}
+  {# Отсюда же — вход в расписание каждой пары «помещение — тип», которая реально
+     есть в парке. #}
   <div class="my-links">
-    {% for kind in kinds %}
-      <a class="btn btn-small" href="{{ base }}/schedule/{{ kind }}">
-        {{ MACHINE_KIND_TITLE.get(kind, kind) }}
+    {% for room, kind in links %}
+      <a class="btn btn-small" href="{{ base }}/schedule/{{ room.id }}/{{ kind }}">
+        {{ room.name }} · {{ MACHINE_KIND_TITLE.get(kind, kind) }}
       </a>
     {% endfor %}
   </div>

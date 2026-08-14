@@ -101,7 +101,8 @@ cmd_check() { cmd_lint && cmd_test; }
 cmd_urls() {
     ensure_env
     echo "киоск:               http://127.0.0.1:$PORT/"
-    echo "регистрация киоска:  http://127.0.0.1:$PORT/kiosk/enroll?secret=$(secret_from_env KIOSK_ENROLL_SECRET)"
+    # Ссылка спрашивает помещение: планшет привязывается к одной комнате.
+    echo "регистрация планшета: http://127.0.0.1:$PORT/kiosk/enroll?secret=$(secret_from_env KIOSK_ENROLL_SECRET)"
     echo "админка:             http://127.0.0.1:$PORT/admin/login"
     echo "секрет админки:      $(secret_from_env ADMIN_SECRET)"
 }
@@ -139,13 +140,19 @@ PY
     say "теперь можно занять оба принтера и проверить очередь своим PIN"
 }
 
+# Тестовые люди живут в диапазоне 900000–900999: настоящий Telegram таких chat_id
+# не выдаёт, а перечислять их по одному — это то, из-за чего reset и demo уже
+# разъезжались (удалялись 900011 и 900012, а заводились 900013 и дальше).
 cmd_reset() {
     ensure_db
+    # Брони тоже: без них ни машину, ни помещение потом не удалить из админки —
+    # удаляется только то, за чем нет ни одной записи в журнале.
     docker compose exec -T db psql -U booking booking -q -c "
-        TRUNCATE sessions, queue RESTART IDENTITY;
-        DELETE FROM users WHERE tg_chat_id IN (900011, 900012);
+        TRUNCATE sessions, queue, reservations RESTART IDENTITY;
+        DELETE FROM users WHERE tg_chat_id BETWEEN 900000 AND 900999;
         UPDATE machines SET status='free', note=NULL;"
-    say "состояние очищено, тестовые люди удалены"
+    say "работы, очереди и брони очищены, тестовые люди удалены"
+    say "тестовые помещения и машины теперь удаляются из админки: истории за ними нет"
 }
 
 cmd_fastforward() {
@@ -175,11 +182,11 @@ cmd_help() {
   test [...]   прогнать тесты (аргументы уходят в pytest)
   lint         ruff
   check        lint + test
-  urls         ссылки на киоск, регистрацию киоска и админку
+  urls         ссылки на киоск, регистрацию планшета и админку
   admin <id>   выдать права админа по telegram chat id
-  demo         создать двух тестовых людей с PIN 1111 и 2222
+  demo         создать тестовых людей (chat_id 9000xx, PIN печатаются)
   fastforward  сдвинуть сроки печатей и предложений в прошлое
-  reset        очистить состояние и удалить тестовых людей
+  reset        очистить работы, очереди и брони, удалить тестовых людей
   psql         консоль базы
   stop         остановить приложение и базу
 

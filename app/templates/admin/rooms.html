@@ -1,0 +1,88 @@
+{# Помещения: комнаты, внутри которых считаются все правила системы.
+
+   Два блока: слева форма заведения, справа список. Форма отдельной карточкой,
+   потому что это единственное действие, ради которого сюда заходят впервые, —
+   искать её среди строк списка не нужно.
+
+   Часы работы и адрес планшета показаны рядом с каждой комнатой: это то, что
+   нужно, когда её только что завели, — задать часы и повесить планшет. #}
+{% extends "admin/base.html" %}
+{% block topbar %}
+  <span class="ad-chip">{{ rows | length }}</span>
+{% endblock %}
+
+{% block admin %}
+  <div class="ad-split">
+    <section class="ad-card">
+      <div class="ad-card-head"><h2>{{ t.admin_rooms_add }}</h2></div>
+      <form class="admin-form admin-form-column" method="post" action="/admin/rooms">
+        <input class="text-input" type="text" name="name" required
+               placeholder="{{ t.admin_rooms_name_placeholder }}"
+               autocapitalize="off" autocorrect="off" spellcheck="false">
+        <label class="admin-dim" for="kind">{{ t.admin_rooms_kind_label }}</label>
+        <select class="text-input" id="kind" name="kind">
+          {% for kind in ROOM_KINDS %}
+            <option value="{{ kind }}">{{ ROOM_KIND_TITLE.get(kind, kind) }}</option>
+          {% endfor %}
+        </select>
+        <button class="btn btn-small btn-primary" type="submit">
+          {{ t.admin_rooms_add_submit }}
+        </button>
+      </form>
+      <p class="admin-dim admin-hint">{{ t.admin_rooms_hint }}</p>
+    </section>
+
+    <section class="ad-card">
+      <div class="ad-card-head"><h2>{{ t.admin_rooms_title }}</h2></div>
+      {% for row in rows %}
+        {% set room = row.room %}
+        <div class="admin-row">
+          <div class="admin-row-main">
+            <strong>{{ room.name }}</strong>
+            <span class="admin-status">{{ ROOM_KIND_ONE.get(room.kind, room.kind) }}</span>
+            <span class="admin-dim">{{ t.admin_rooms_hours.format(hours=row.hours.text()) }}</span>
+            {% if row.usage.removable %}
+              <span class="admin-dim">{{ t.admin_rooms_empty }}</span>
+            {% elif row.usage.keeps_machines %}
+              <span class="admin-dim">
+                {{ t.admin_rooms_machines.format(count=row.usage.machines) }}
+                {%- if row.usage.queue %},
+                  {{ t.admin_rooms_queue.format(count=row.usage.queue) }}
+                {%- endif %}
+              </span>
+            {% else %}
+              {# У переговорной оборудование не отдельный объект: удалить ей мешает
+                 только собственная история. #}
+              <span class="admin-dim">
+                {{ t.admin_rooms_history.format(count=row.usage.history + row.usage.queue) }}
+              </span>
+            {% endif %}
+            {# Адрес доски этой комнаты: его вбивают в планшет при настройке. #}
+            <span class="admin-dim">{{ t.admin_rooms_kiosk.format(url="/room/" ~ room.id) }}</span>
+          </div>
+
+          <div class="admin-actions">
+            {# Экран помещения — то, что висит на его стене; из админки на него
+               удобно заглянуть, не набирая адрес руками. #}
+            <a class="btn btn-small btn-ghost" href="/room/{{ room.id }}">
+              {{ t.admin_rooms_open }}
+            </a>
+            <form class="admin-form" method="post" action="/admin/rooms/{{ room.id }}/name">
+              <input class="text-input" type="text" name="name" value="{{ room.name }}"
+                     autocapitalize="off" autocorrect="off" spellcheck="false" required>
+              <button class="btn btn-small" type="submit">{{ t.admin_rename }}</button>
+            </form>
+            {# Удаление есть всегда: ведёт на экран подтверждения, где видно, что
+               уедет вместе с комнатой. Раньше кнопку у комнаты с историей прятали,
+               и вычистить её было нечем, кроме psql. #}
+            <a class="btn btn-small btn-danger-ghost" href="/admin/rooms/{{ room.id }}/delete">
+              {{ t.admin_rooms_delete }}
+            </a>
+          </div>
+        </div>
+      {% else %}
+        <p class="admin-dim">{{ t.admin_rooms_none }}</p>
+      {% endfor %}
+    </section>
+  </div>
+{% endblock %}

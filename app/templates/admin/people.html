@@ -1,0 +1,68 @@
+{# Люди: слева форма заведения, справа список — как в «Помещениях» и
+   «Оборудовании». Обычно человек заводится сам у бота, и форма нужна для
+   тестовых учёток и для тех, кто до бота не дошёл. #}
+{% extends "admin/base.html" %}
+
+{% block topbar %}
+  <span class="ad-chip">{{ users | length }}</span>
+{% endblock %}
+
+{% block admin %}
+  <div class="ad-split">
+    <section class="ad-card">
+      <div class="ad-card-head"><h2>{{ t.admin_people_add }}</h2></div>
+      <form class="admin-form admin-form-column" method="post" action="/admin/users">
+        <input class="text-input" type="text" name="login" required
+               placeholder="{{ t.admin_people_login_placeholder }}"
+               autocapitalize="off" autocorrect="off" spellcheck="false">
+        <label class="admin-dim" for="tg_chat_id">{{ t.admin_people_chat_label }}</label>
+        <input class="text-input" type="number" id="tg_chat_id" name="tg_chat_id" min="1" required
+               placeholder="{{ t.admin_people_chat_placeholder }}">
+        <label class="admin-dim" for="pin">{{ t.admin_people_pin_label }}</label>
+        {# `password`, а не `text`: PIN набирают при живой админке на общем
+           экране, и показывать его соседям незачем. #}
+        <input class="text-input" type="password" id="pin" name="pin" required
+               inputmode="numeric" pattern="[0-9]{4}" maxlength="4" autocomplete="off"
+               placeholder="{{ t.admin_people_pin_placeholder }}">
+        <button class="btn btn-small btn-primary" type="submit">
+          {{ t.admin_people_add_submit }}
+        </button>
+      </form>
+      <p class="admin-dim admin-hint">{{ t.admin_people_hint }}</p>
+    </section>
+
+    <section class="ad-card">
+      <div class="ad-card-head"><h2>{{ t.admin_nav_people }}</h2></div>
+      {% for user in users %}
+        <div class="admin-row">
+          <div class="admin-row-main">
+            <strong>{{ user.name }}</strong>
+            {% if user.is_admin %}
+              <span class="admin-status admin-status-admin">{{ t.admin_role }}</span>
+            {% endif %}
+            <span class="admin-dim">{{ t.admin_tg.format(chat_id=user.tg_chat_id) }}</span>
+          </div>
+          <div class="admin-actions">
+            {# Логин человек вводит сам при регистрации, и опечатку в нём иначе не
+               исправить: бот второй раз логин не спрашивает. #}
+            <form class="admin-form" method="post" action="/admin/users/{{ user.id }}/name">
+              <input class="text-input" type="text" name="name" value="{{ user.name }}"
+                     autocapitalize="off" autocorrect="off" spellcheck="false" required>
+              <button class="btn btn-small" type="submit">{{ t.admin_rename }}</button>
+            </form>
+            <form method="post" action="/admin/users/{{ user.id }}/pin">
+              <button class="btn btn-small" type="submit">{{ t.admin_new_pin }}</button>
+            </form>
+            {# Ведёт на подтверждение: там видно, сколько работ и брон уедет
+               вместе с человеком. #}
+            <a class="btn btn-small btn-danger-ghost" href="/admin/users/{{ user.id }}/delete">
+              {{ t.admin_people_delete }}
+            </a>
+          </div>
+        </div>
+      {% else %}
+        <p class="admin-dim">{{ t.admin_people_none }}</p>
+      {% endfor %}
+    </section>
+  </div>
+{% endblock %}

@@ -1,0 +1,35 @@
+{# Брони на будущее: их не видно ни на плитках, ни в очереди, а снимать
+   зависшую бронь иначе пришлось бы в psql. #}
+{% extends "admin/base.html" %}
+
+{% block topbar %}
+  <span class="ad-chip">{{ bookings | length }}</span>
+{% endblock %}
+
+{% block admin %}
+  <section class="ad-card">
+    {% for booking, machine_name, person_name, room_name in bookings %}
+      <div class="admin-row">
+        <div class="admin-row-main">
+          <strong>{{ person_name }}</strong>
+          <span class="admin-dim">
+            {{ t.admin_booking_row.format(machine=machine_name,
+                                          start=booking.starts_at | when,
+                                          end=booking.ends_at | hhmm) }}
+          </span>
+          <span class="admin-dim">{{ t.admin_booking_where.format(room=room_name) }}</span>
+        </div>
+        <div class="admin-actions">
+          <form class="admin-form" method="post"
+                action="/admin/bookings/{{ booking.id }}/cancel">
+            <input class="text-input" type="text" name="reason"
+                   placeholder="{{ t.admin_reason_placeholder }}">
+            <button class="btn btn-small" type="submit">{{ t.admin_booking_cancel }}</button>
+          </form>
+        </div>
+      </div>
+    {% else %}
+      <p class="admin-dim">{{ t.admin_bookings_none }}</p>
+    {% endfor %}
+  </section>
+{% endblock %}

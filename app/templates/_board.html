@@ -1,7 +1,11 @@
 {# Живая часть главного экрана: сама перезапрашивается каждые 10 секунд.
 
-   Секция на каждый тип оборудования — у принтеров и гравировщиков свои очереди
-   (services/queue.py), и одна общая полоса внизу врала бы про место в очереди.
+   Три уровня: помещение → тип оборудования → машина. Помещение всегда подписано
+   именем — на стене планшет висит в одной комнате, и её имя это то, что человек
+   сверяет с дверью; в «моём» (Mini App) помещений может быть несколько сразу.
+
+   Секция типа подписана только когда типов в помещении больше одного: в
+   переговорной «Дуб» подзаголовок «Переговорная» — это второй раз то же самое.
 
    Адреса действий идут через `base`: пусто у киоска, `/app` у Mini App
    (см. api/render.py). #}
@@ -9,7 +13,7 @@
 {# Очередь секции. Рисуется в двух местах, поэтому макросом: в секции из
    нескольких машин — полосой под плитками, в секции из одной — столбиком внутри
    самой плитки (см. ниже). #}
-{% macro queue_block(group, free, column=false) %}
+{% macro queue_block(room, group, free, column=false) %}
   <footer class="queue{% if column %} queue-column{% endif %}">
     {% if group.queue %}
       <ol class="queue-list">
@@ -26,134 +30,157 @@
          «вы не в очереди». #}
       {% set viewer = viewer_id|default(none) %}
       {% if viewer is none or group.queue | selectattr("user_id", "equalto", viewer) | first %}
-        <a class="btn btn-small" href="{{ base }}/queue/leave">{{ t.queue_leave }}</a>
+        <a class="btn btn-small" href="{{ base }}/queue/leave/{{ room.id }}">{{ t.queue_leave }}</a>
       {% endif %}
     {% elif group.machines %}
       <p class="queue-empty">{{ t.queue_empty }}</p>
       {# Когда всё занято, «встать в очередь» уже написано на большой кнопке
          сверху — вторая такая же рядом только добавляет, во что тыкать. #}
       {% if free %}
-        <a class="btn btn-small" href="{{ base }}/queue/join/{{ group.kind }}">{{ t.queue_join }}</a>
+        <a class="btn btn-small" href="{{ base }}/queue/join/{{ room.id }}/{{ group.kind }}">
+          {{ t.queue_join }}
+        </a>
       {% endif %}
     {% endif %}
   </footer>
 {% endmacro %}
 
-{% if not groups %}
-  <p class="board-empty">{{ t.board_park_empty }}</p>
-{% endif %}
-
-{# Ширина секции — по числу машин в ней: у типа с четырьмя машинами плитки не
-   должны стать вчетверо уже, чем у соседа с одной. Считает Jinja, а не CSS:
-   `flex-grow` не умеет смотреть на количество детей. #}
-{% for group in groups %}
-  {% set free = group.first_free %}
-  {# Машина в секции одна — очередь уезжает внутрь её плитки, и цветная полоса
-     статуса идёт во всю высоту карточки. Разделять их незачем: очередь тут
-     ровно к этой машине, а не к нескольким. #}
-  {% set single = group.machines | length == 1 %}
-  <section class="group group-{{ group.kind }}" style="--machines: {{ group.machines | length or 1 }}">
-    <header class="group-head">
-      <h2 class="group-title">{{ MACHINE_KIND_TITLE.get(group.kind, group.kind) }}</h2>
-      {# Доска сжата до своей машины (`focused`) — большой кнопки здесь нет: у
-         человека машина уже есть, а «встать в очередь» на своей же секции
-         предлагать нечего. Занять вторую можно из парка целиком, ссылка ниже. #}
+{% for room in rooms %}
+  <article class="room">
+    <header class="room-head">
+      {# В сжатой доске («моё») имя комнаты — ссылка на неё целиком: занять
+         вторую машину или посмотреть, что там ещё стоит, иначе некуда. На стене
+         и на доске помещения это просто заголовок — ссылка вела бы на ту же
+         страницу. #}
       {% if focused|default(false) %}
-      {% elif free %}
-        <a class="btn btn-hero" href="{{ base }}/occupy/{{ free.id }}">
-          {{ t.board_occupy_cta.format(kind=MACHINE_KIND_ONE.get(group.kind, group.kind)) }}
-          <span class="btn-sub">
-            {{ t.board_free_of.format(free=group.free_count, total=group.machines | length) }}
-          </span>
-        </a>
-      {% elif group.machines %}
-        <a class="btn btn-hero btn-hero-wait" href="{{ base }}/queue/join/{{ group.kind }}">
-          {{ t.board_queue_cta }}
-          <span class="btn-sub">{{ t.board_all_busy }}</span>
-        </a>
+        <h1 class="room-name"><a href="{{ base }}/room/{{ room.id }}">{{ room.name }}</a></h1>
+      {% else %}
+        <h1 class="room-name">{{ room.name }}</h1>
       {% endif %}
-      {# Брони — второй способ получить машину, и вход в них должен быть виден
-         на главном экране, а не только в боте. #}
-      {% if group.machines %}
-        <a class="btn btn-schedule" href="{{ base }}/schedule/{{ group.kind }}">
-          {{ t.board_schedule_cta }}
-        </a>
-      {% endif %}
+      {% if room.note %}<p class="room-note">{{ room.note }}</p>{% endif %}
     </header>
 
-    {# Плитки и очередь — один блок без зазора: очередь относится к этим самым
-       машинам, а отдельной карточкой снизу она читалась как ещё одна машина. #}
-    <div class="group-body">
-      <div class="tiles">
-        {% for machine in group.machines %}
-          <section class="tile tile-{{ machine.status }}{% if machine.reserved_for or machine.booking_now %} tile-reserved{% endif %}{% if single %} tile-single{% endif %}">
-            <h3 class="tile-name">{{ machine.name }}</h3>
+    {% if not room.groups %}
+      <p class="board-empty">{{ t.board_park_empty }}</p>
+    {% endif %}
 
-            {% if machine.status == "broken" %}
-              <p class="tile-status">{{ t.tile_broken }}</p>
-              {% if machine.note %}<p class="tile-note">{{ machine.note }}</p>{% endif %}
+    {# Секции стоят рядом по горизонтали, помещения — друг под другом: на стене
+       видно одно помещение, и его машины должны оказаться в одном ряду.
 
-            {% elif machine.status == "printing" %}
-              <p class="tile-status">{{ t.tile_busy }}</p>
-              <p class="tile-owner">{{ machine.owner_name }}</p>
-              <p class="tile-time" data-eta="{{ machine.eta_at | iso }}">
-                {{ t.tile_until.format(time=machine.eta_at | hhmm) }}
-              </p>
-              <a class="btn btn-ghost" href="{{ base }}/release/{{ machine.id }}">{{ t.tile_release }}</a>
+       Ширина секции — по числу машин в ней: у типа с четырьмя машинами плитки не
+       должны стать вчетверо уже, чем у соседа с одной. Считает Jinja, а не CSS:
+       `flex-grow` не умеет смотреть на количество детей. #}
+    <div class="room-groups">
+    {% for group in room.groups %}
+      {% set free = group.first_free %}
+      {# Машина в секции одна — очередь уезжает внутрь её плитки, и цветная полоса
+         статуса идёт во всю высоту карточки. Разделять их незачем: очередь тут
+         ровно к этой машине, а не к нескольким. #}
+      {% set single = group.machines | length == 1 %}
+      <section class="group group-{{ group.kind }}" style="--machines: {{ group.machines | length or 1 }}">
+        <header class="group-head">
+          {% if not room.single_group %}
+            <h2 class="group-title">{{ MACHINE_KIND_TITLE.get(group.kind, group.kind) }}</h2>
+          {% endif %}
+          {# Доска сжата до своей машины (`focused`) — большой кнопки здесь нет: у
+             человека машина уже есть, а «встать в очередь» на своей же секции
+             предлагать нечего. Занять вторую можно из помещения — по ссылке в
+             его заголовке. #}
+          {% if focused|default(false) %}
+          {% elif free %}
+            <a class="btn btn-hero" href="{{ base }}/occupy/{{ free.id }}">
+              {{ t.board_occupy_cta.format(kind=MACHINE_KIND_ONE.get(group.kind, group.kind)) }}
+              <span class="btn-sub">
+                {{ t.board_free_of.format(free=group.free_count, total=group.machines | length) }}
+              </span>
+            </a>
+          {% elif group.machines %}
+            <a class="btn btn-hero btn-hero-wait"
+               href="{{ base }}/queue/join/{{ room.id }}/{{ group.kind }}">
+              {{ t.board_queue_cta }}
+              <span class="btn-sub">{{ t.board_all_busy }}</span>
+            </a>
+          {% endif %}
+          {# Брони — второй способ получить машину, и вход в них должен быть виден
+             на главном экране, а не только в боте. #}
+          {% if group.machines %}
+            <a class="btn btn-schedule" href="{{ base }}/schedule/{{ room.id }}/{{ group.kind }}">
+              {{ t.board_schedule_cta }}
+            </a>
+          {% endif %}
+        </header>
 
-            {% elif machine.status == "done_wait" %}
-              <p class="tile-status">{{ t.tile_done_wait }}</p>
-              <p class="tile-owner">{{ machine.owner_name }}</p>
-              <p class="tile-time" data-since="{{ machine.done_since | iso }}">
-                {{ t.tile_done_at.format(time=machine.done_since | hhmm) }}
-              </p>
-              <a class="btn btn-primary" href="{{ base }}/release/{{ machine.id }}">{{ t.tile_claimed }}</a>
+        {# Плитки и очередь — один блок без зазора: очередь относится к этим самым
+           машинам, а отдельной карточкой снизу она читалась как ещё одна машина. #}
+        <div class="group-body">
+          <div class="tiles">
+            {% for machine in group.machines %}
+              <section class="tile tile-{{ machine.status }}{% if machine.reserved_for or machine.booking_now %} tile-reserved{% endif %}{% if single %} tile-single{% endif %}">
+                {# У переговорной единица брони названа по комнате, и имя на
+                   плитке повторяло бы заголовок помещения слово в слово. #}
+                {% if machine.name != room.name %}
+                  <h3 class="tile-name">{{ machine.name }}</h3>
+                {% endif %}
 
-            {% elif machine.reserved_for %}
-              <p class="tile-status">{{ t.tile_reserved }}</p>
-              <p class="tile-owner">{{ machine.reserved_for }}</p>
-              <p class="tile-time">{{ t.tile_until.format(time=machine.reserved_until | hhmm) }}</p>
-              <a class="btn btn-ghost" href="{{ base }}/occupy/{{ machine.id }}">{{ t.tile_its_me }}</a>
+                {% if machine.status == "broken" %}
+                  <p class="tile-status">{{ t.tile_broken }}</p>
+                  {% if machine.note %}<p class="tile-note">{{ machine.note }}</p>{% endif %}
 
-            {% elif machine.booking_now %}
-              {# Машина физически свободна, но её час принадлежит человеку с
-                 бронью — «Свободен» здесь читался бы как приглашение занять. #}
-              <p class="tile-status">{{ t.tile_booked }}</p>
-              <p class="tile-owner">{{ machine.booked_by }}</p>
-              <p class="tile-time">{{ t.tile_until.format(time=machine.booked_until | hhmm) }}</p>
-              <a class="btn btn-ghost" href="{{ base }}/occupy/{{ machine.id }}">{{ t.tile_its_me }}</a>
+                {% elif machine.status == "printing" %}
+                  <p class="tile-status">{{ t.tile_busy }}</p>
+                  <p class="tile-owner">{{ machine.owner_name }}</p>
+                  <p class="tile-time" data-eta="{{ machine.eta_at | iso }}">
+                    {{ t.tile_until.format(time=machine.eta_at | hhmm) }}
+                  </p>
+                  <a class="btn btn-ghost" href="{{ base }}/release/{{ machine.id }}">{{ t.tile_release }}</a>
 
-            {% else %}
-              <p class="tile-status">{{ t.tile_free }}</p>
-              {% if machine.booked_from %}
-                {# Иначе непонятно, почему свободную машину не дают занять на
-                   восемь часов. #}
-                <p class="tile-time tile-booked-from">
-                  {{ t.tile_booked_from.format(time=machine.booked_from | hhmm) }}
-                </p>
-              {% endif %}
-            {% endif %}
+                {% elif machine.status == "done_wait" %}
+                  {# «Заберите деталь» на переговорной было бы бессмыслицей —
+                     слова берутся по типу (см. app/texts/ru.py). #}
+                  <p class="tile-status">{{ MACHINE_DONE_STATUS.get(machine.kind, "") }}</p>
+                  <p class="tile-owner">{{ machine.owner_name }}</p>
+                  <p class="tile-time" data-since="{{ machine.done_since | iso }}">
+                    {{ t.tile_done_at.format(time=machine.done_since | hhmm) }}
+                  </p>
+                  <a class="btn btn-primary" href="{{ base }}/release/{{ machine.id }}">
+                    {{ MACHINE_DONE_ACTION.get(machine.kind, t.tile_release) }}
+                  </a>
 
-            {% if single %}{{ queue_block(group, free, column=true) }}{% endif %}
-          </section>
-        {% endfor %}
-      </div>
+                {% elif machine.reserved_for %}
+                  <p class="tile-status">{{ t.tile_reserved }}</p>
+                  <p class="tile-owner">{{ machine.reserved_for }}</p>
+                  <p class="tile-time">{{ t.tile_until.format(time=machine.reserved_until | hhmm) }}</p>
+                  <a class="btn btn-ghost" href="{{ base }}/occupy/{{ machine.id }}">{{ t.tile_its_me }}</a>
 
-      {% if not single %}{{ queue_block(group, free) }}{% endif %}
+                {% elif machine.booking_now %}
+                  {# Машина физически свободна, но её час принадлежит человеку с
+                     бронью — «Свободно» здесь читалось бы как приглашение занять. #}
+                  <p class="tile-status">{{ t.tile_booked }}</p>
+                  <p class="tile-owner">{{ machine.booked_by }}</p>
+                  <p class="tile-time">{{ t.tile_until.format(time=machine.booked_until | hhmm) }}</p>
+                  <a class="btn btn-ghost" href="{{ base }}/occupy/{{ machine.id }}">{{ t.tile_its_me }}</a>
+
+                {% else %}
+                  <p class="tile-status">{{ t.tile_free }}</p>
+                  {% if machine.booked_from %}
+                    {# Иначе непонятно, почему свободную машину не дают занять на
+                       восемь часов. #}
+                    <p class="tile-time tile-booked-from">
+                      {{ t.tile_booked_from.format(time=machine.booked_from | hhmm) }}
+                    </p>
+                  {% endif %}
+                {% endif %}
+
+                {% if single %}{{ queue_block(room, group, free, column=true) }}{% endif %}
+              </section>
+            {% endfor %}
+          </div>
+
+          {% if not single %}{{ queue_block(room, group, free) }}{% endif %}
+        </div>
+      </section>
+    {% endfor %}
     </div>
-  </section>
+  </article>
 {% endfor %}
 
-{# Переключатель сжатой и полной доски — в обе стороны: уйдя на весь парк,
-   человек должен вернуться к своей машине не системной кнопкой «назад».
-   Внутри партиала, а не в kiosk.html: опрос заменяет содержимое #board целиком,
-   и ссылка снаружи осталась бы висеть от предыдущего вида. #}
-{% if focused|default(false) %}
-  <a class="btn btn-small btn-ghost board-all" href="{{ base }}/?all=1">
-    {{ t.board_show_all }}
-  </a>
-{% elif can_focus|default(false) %}
-  <a class="btn btn-small btn-ghost board-all" href="{{ base }}/">
-    {{ t.board_show_mine }}
-  </a>
-{% endif %}

@@ -59,7 +59,7 @@ body {
   -webkit-user-select: none;
   user-select: none;
 }
-.admin, .text-input { -webkit-user-select: text; user-select: text; }
+.ad, .text-input { -webkit-user-select: text; user-select: text; }
 
 /* --- баннеры --- */
 
@@ -75,9 +75,13 @@ body {
 
 /* --- главный экран --- */
 
-/* Секции типов стоят рядом по горизонтали: так плитки всех машин оказываются в
-   одном ряду, как когда парк был из одних принтеров, и взгляд не приходится
-   вести сверху вниз.
+/* Помещения идут друг под другом, а секции типов внутри помещения — рядом по
+   горизонтали: так плитки всех машин комнаты оказываются в одном ряду, как когда
+   парк был из одних принтеров, и взгляд не приходится вести сверху вниз.
+
+   На стене помещение почти всегда одно — планшет привязан к комнате (api/kiosk.py),
+   и вертикальный список из одного элемента ничего не стоит. Несколько помещений
+   разом бывает только в сжатом «моём» на телефоне.
 
    Размеры плитки — в переменных: узкая колонка сжимает их сильнее широкой.
    Порог по ширине, а не по числу секций: с четырьмя принтерами в одной секции
@@ -85,6 +89,7 @@ body {
 #board {
   flex: 1;
   display: flex;
+  flex-direction: column;
   gap: 20px;
   min-height: 0;
 
@@ -118,6 +123,56 @@ body {
 }
 
 .board-empty { margin: auto; font-size: 26px; color: var(--muted); text-align: center; }
+
+/* Помещение: имя сверху, секции типов под ним.
+
+   Имя показано всегда, даже когда помещение одно: планшет висит на стене, и по
+   имени человек сверяет экран с дверью, в которую вошёл. */
+.room {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-height: 0;
+}
+.room-head { flex: 0 0 auto; display: flex; align-items: baseline; gap: 16px; flex-wrap: wrap; }
+.room-name { margin: 0; font-size: 30px; font-weight: 700; }
+/* Имя-ссылка (сжатая доска) не должно выглядеть чужеродно среди заголовков:
+   подчёркивание появляется только при касании. */
+.room-name a { color: inherit; text-decoration: none; }
+.room-name a:active { text-decoration: underline; }
+.room-note { margin: 0; font-size: 20px; color: var(--muted); }
+.room-groups { flex: 1; display: flex; gap: 20px; min-height: 0; }
+
+@media (max-width: 1100px) {
+  .room-name { font-size: 24px; }
+  .room-note { font-size: 17px; }
+}
+
+/* Плитка помещения. Экран один — выбор комнаты при регистрации планшета: у
+   каждого помещения свой адрес, и списка «все помещения» в системе нет. */
+.rooms {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 16px;
+  align-content: start;
+}
+.room-card {
+  background: var(--card);
+  border-radius: var(--radius);
+  border-left: 12px solid var(--free);
+  padding: 20px 22px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  color: inherit;
+  text-decoration: none;
+}
+/* Переговорная другого цвета: в списке она стоит рядом с мастерскими, а идут
+   туда за другим. */
+.room-card-meeting { border-left-color: var(--accent); }
+.room-card-name { margin: 0; font-size: 28px; font-weight: 700; }
+.room-card-free { margin: 0; font-size: 22px; color: var(--muted); }
 
 /* Секция типа оборудования. Ширину задаёт `--machines` из шаблона: секция с
    четырьмя машинами шире соседней с одной, и плитки в обеих выходят примерно
@@ -498,10 +553,6 @@ body {
 .my-links { display: flex; flex-wrap: wrap; gap: 10px; margin-top: auto; }
 .tile-booked-from { color: var(--wait); }
 .btn-schedule { width: 100%; min-height: 56px; font-size: 20px; }
-/* Выход из сжатой доски (Mini App, у человека занята машина). Не растянут по
-   ширине: это не действие, а «показать остальное», и спорить с кнопкой своей
-   машины ему незачем. `flex` — потому что лежит прямо в #board. */
-.board-all { flex: 0 0 auto; align-self: center; }
 
 .error { text-align: center; max-width: 560px; display: flex; flex-direction: column; gap: 20px; }
 .error-mark {
@@ -518,27 +569,188 @@ body {
 
 /* --- админка ---
    Открывается с ноутбука через SSH-туннель, а не с планшета, поэтому здесь
-   плотнее и мельче: нужна информация, а не кнопки под палец. */
+   плотнее и мельче: нужна информация, а не кнопки под палец.
 
-.admin { flex: 1; overflow: auto; display: flex; flex-direction: column; gap: 20px; }
-.admin-head { display: flex; align-items: center; justify-content: space-between; }
-.admin-head h1 { margin: 0; font-size: 26px; }
+   Оболочка своя (`.ad`): постоянное меню слева, содержимое справа карточками.
+   Меню заменило строку вкладок, когда разделов стало семь — в строку они
+   влезали только сокращениями. Меню и содержимое скроллятся по отдельности:
+   список разделов не должен уезжать вверх, пока мотаешь длинный журнал.
 
-.admin-tabs { display: flex; align-items: center; gap: 10px; }
-.admin-tab {
-  padding: 10px 18px;
-  border-radius: var(--radius);
-  font-size: 17px;
-  font-weight: 600;
+   Палитра общая с доской и Mini App. Светлая тема админки означала бы второй
+   набор переменных, который расходится с первым при первой же правке цвета. */
+
+/* Собственная оболочка занимает окно целиком: отступы страницы здесь мешают —
+   меню должно доходить до края, как в любой панели. */
+body.admin-page { padding: 0; gap: 0; }
+
+.ad {
+  flex: 1;
+  display: grid;
+  grid-template-columns: 252px minmax(0, 1fr);
+  min-height: 0;
+}
+
+/* --- меню --- */
+
+.ad-side {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  padding: 20px 14px;
+  overflow: auto;
+  background: var(--card);
+  border-right: 1px solid rgba(255, 255, 255, .06);
+}
+
+.ad-brand { display: flex; align-items: center; gap: 12px; padding: 4px 10px; color: inherit; text-decoration: none; }
+.ad-brand-mark {
+  flex: 0 0 auto;
+  width: 42px; height: 42px;
+  border-radius: 13px;
+  background: var(--accent);
+  color: #fff;
+  display: flex; align-items: center; justify-content: center;
+}
+.ad-brand-name { display: block; font-size: 18px; font-weight: 700; line-height: 1.2; }
+.ad-brand-sub { display: block; font-size: 13px; color: var(--muted); }
+
+.ad-group { display: flex; flex-direction: column; gap: 2px; }
+.ad-group-title {
+  margin: 0 0 6px 12px;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.ad-nav {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 12px;
+  border-radius: 12px;
   color: var(--muted);
   text-decoration: none;
-  background: rgba(255, 255, 255, .06);
+  font-size: 16px;
+  font-weight: 600;
 }
-.admin-tab-active { background: var(--accent); color: #fff; }
+.ad-nav:hover { background: rgba(255, 255, 255, .05); color: var(--text); }
+/* Активный раздел — заливкой, а не только цветом текста: меню читают боковым
+   зрением, возвращаясь к нему между действиями. */
+.ad-nav-on { background: rgba(59, 130, 246, .16); color: var(--accent); }
+.ad-nav-on:hover { background: rgba(59, 130, 246, .22); color: var(--accent); }
+.ad-ico { width: 20px; height: 20px; flex: 0 0 auto; }
 
-.admin-hint { margin: 12px 0 0; max-width: 70ch; line-height: 1.45; }
-.admin-block { background: var(--card); border-radius: var(--radius); padding: 16px 20px; }
-.admin-block h2 { margin: 0 0 12px; font-size: 18px; color: var(--muted); font-weight: 600; }
+.ad-side-note { margin: auto 12px 0; padding-top: 16px; font-size: 13px; line-height: 1.45; color: var(--muted); }
+
+/* --- содержимое --- */
+
+.ad-main { display: flex; flex-direction: column; min-width: 0; min-height: 0; overflow: auto; }
+/* Шапка липкая: у длинных страниц (журнал, список машин) заголовок иначе
+   уезжает, и по дороге теряется, на какой ты вкладке. */
+.ad-top {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+  padding: 16px 26px;
+  background: var(--bg);
+  border-bottom: 1px solid rgba(255, 255, 255, .06);
+}
+.ad-top h1 { margin: 0; font-size: 24px; }
+.ad-top-actions { display: flex; align-items: center; gap: 12px; }
+.ad-chip {
+  padding: 6px 14px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, .06);
+  color: var(--muted);
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.ad-body { display: flex; flex-direction: column; gap: 18px; padding: 20px 26px 40px; }
+
+/* Цифры парка. Узкие карточки в один ряд: их читают целиком, одним взглядом. */
+.ad-stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 14px; }
+.ad-stat {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 16px 18px;
+  border-radius: var(--radius);
+  background: var(--card);
+}
+.ad-stat-mark {
+  flex: 0 0 auto;
+  width: 44px; height: 44px;
+  border-radius: 14px;
+  display: flex; align-items: center; justify-content: center;
+  background: rgba(255, 255, 255, .06);
+  color: var(--muted);
+}
+.ad-stat-text { display: flex; flex-direction: column; min-width: 0; }
+.ad-stat-label { font-size: 14px; color: var(--muted); }
+.ad-stat-value { font-size: 26px; font-weight: 800; line-height: 1.15; }
+.ad-stat-sub { font-size: 13px; color: var(--muted); }
+/* Кликабельна только та карточка, которой есть куда вести (см. summary.html). */
+.ad-stat-link { color: inherit; text-decoration: none; }
+.ad-stat-link:hover { background: rgba(255, 255, 255, .09); }
+.ad-stat-free .ad-stat-mark { background: rgba(46, 204, 113, .16); color: var(--free); }
+.ad-stat-busy .ad-stat-mark { background: rgba(231, 76, 60, .16); color: var(--busy); }
+.ad-stat-wait .ad-stat-mark { background: rgba(241, 196, 15, .16); color: var(--wait); }
+.ad-stat-accent .ad-stat-mark { background: rgba(59, 130, 246, .18); color: var(--accent); }
+
+/* Карточка — логический блок: у неё свой заголовок, и на неё ссылается меню. */
+.ad-card {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 16px 20px 18px;
+  border-radius: var(--radius);
+  background: var(--card);
+  min-width: 0;
+  /* Якорь из меню не должен подводить карточку под липкую шапку. */
+  scroll-margin-top: 76px;
+}
+.ad-card-head { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.ad-card h2 { margin: 0; font-size: 17px; font-weight: 700; }
+.ad-card-note { font-size: 14px; color: var(--muted); }
+/* Экран подтверждения: читать нужно текст, а не бежать глазами по ширине окна. */
+.ad-card-narrow { max-width: 70ch; }
+.ad-fallout { margin: 0; padding-left: 20px; display: flex; flex-direction: column; gap: 4px; font-size: 16px; }
+
+/* Кнопки удаления. Красным только та, что удаляет прямо сейчас (на экране
+   подтверждения); та, что ведёт на этот экран, остаётся обычной — иначе красное
+   в каждой строке списка перестаёт что-либо значить. */
+.btn-danger { background: var(--busy); color: #fff; }
+.btn-danger-ghost { color: var(--busy); background: rgba(231, 76, 60, .1); }
+
+/* Карточки парка рядом, пока помещаются: помещение с двумя типами машин — это
+   две карточки, и держать их друг под другом значит мотать экран между ними. */
+.ad-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(440px, 1fr)); gap: 16px; align-items: start; }
+.ad-column { display: flex; flex-direction: column; gap: 16px; min-width: 0; }
+/* Форма заведения слева, список справа: форма узкая и не должна растягиваться
+   на половину экрана. */
+.ad-split { display: grid; grid-template-columns: minmax(280px, 340px) minmax(0, 1fr); gap: 16px; align-items: start; }
+
+/* Очередь внутри карточки машины: то же решение, что и сама машина, но
+   отделено линией — снять работу и убрать человека из очереди путать нельзя. */
+.ad-sub { margin-top: 4px; padding-top: 10px; border-top: 1px solid rgba(255, 255, 255, .08); }
+.ad-sub-title { margin: 0 0 4px; font-size: 13px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); }
+.ad-num {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 24px; height: 24px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, .1);
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.admin-hint { margin: 4px 0 0; max-width: 70ch; line-height: 1.45; }
 
 .admin-row {
   display: flex;
@@ -549,11 +761,18 @@ body {
   border-top: 1px solid rgba(255, 255, 255, .06);
   flex-wrap: wrap;
 }
-.admin-row:first-of-type { border-top: none; }
+/* Первая строка блока идёт сразу под его заголовком — линия там лишняя. */
+.ad-card > .admin-row:first-of-type,
+.ad-sub > .admin-row:first-of-type { border-top: none; padding-top: 2px; }
 .admin-row-main { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; font-size: 17px; }
 .admin-dim { color: var(--muted); font-size: 15px; }
 .admin-actions { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
 .admin-form { display: flex; gap: 8px; align-items: center; }
+/* Форма заведения — столбиком: у неё три поля с подписями, и в строку они
+   вытягивают карточку за край экрана. */
+.admin-form-column { flex-direction: column; align-items: stretch; gap: 6px; }
+.admin-form-column .btn { margin-top: 8px; }
+.admin-form-column .admin-dim { margin-top: 6px; }
 
 .admin-status {
   font-size: 13px;
@@ -562,14 +781,49 @@ body {
   padding: 3px 10px;
   border-radius: 999px;
   background: rgba(255, 255, 255, .08);
+  color: var(--muted);
 }
-.admin-status-free { color: var(--free); }
-.admin-status-printing { color: var(--busy); }
-.admin-status-done_wait { color: var(--wait); }
+.admin-status-free { color: var(--free); background: rgba(46, 204, 113, .14); }
+.admin-status-printing { color: var(--busy); background: rgba(231, 76, 60, .14); }
+.admin-status-done_wait { color: var(--wait); background: rgba(241, 196, 15, .14); }
 .admin-status-broken { color: var(--muted); }
+.admin-status-admin { color: var(--accent); background: rgba(59, 130, 246, .16); }
 
 .admin-log { margin: 0; padding-left: 20px; display: flex; flex-direction: column; gap: 6px; }
 .admin-log li { font-size: 16px; }
+
+/* Вход в админку: та же карточка, что и блоки внутри, — чтобы экран входа не
+   выглядел куском другой системы. */
+.ad-login {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  width: min(420px, 100%);
+  padding: 26px;
+  border-radius: var(--radius);
+  background: var(--card);
+}
+.ad-login h1 { margin: 0; font-size: 24px; }
+
+/* Узкое окно: меню ложится полосой сверху и мотается вбок. Админку открывают с
+   ноутбука, но половину экрана ей отдают часто — рядом с терминалом, из
+   которого поднят туннель. */
+@media (max-width: 1080px) {
+  .ad { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr); }
+  .ad-side {
+    flex-direction: row;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 14px;
+    overflow-x: auto;
+    border-right: none;
+    border-bottom: 1px solid rgba(255, 255, 255, .06);
+  }
+  .ad-group { flex-direction: row; gap: 4px; }
+  .ad-group-title, .ad-side-note, .ad-brand-sub { display: none; }
+  .ad-nav { white-space: nowrap; }
+  .ad-cards, .ad-split { grid-template-columns: minmax(0, 1fr); }
+}
 
 .text-input {
   background: rgba(255, 255, 255, .06);
@@ -582,6 +836,10 @@ body {
   min-width: 180px;
 }
 .text-input:focus { outline: 2px solid var(--accent); }
+/* Часы — четыре знака: поле шириной с имя машины выглядит незаполненным.
+   Ширину считает браузер: у `type=time` внутри ещё и своя иконка, и заданная
+   руками ширина обрезает минуты. */
+.text-input-time { min-width: 0; width: auto; }
 
 /* --- узкий экран ---
    Оба блока ниже стоят в конце файла намеренно: они перебивают правила плиток и
@@ -599,7 +857,12 @@ body {
    физически, и «не скроллить» означало бы обрезать имена машин. */
 @media (max-width: 900px) {
   body { overflow: auto; }
-  #board { flex-direction: column; gap: 14px; overflow: visible; }
+  #board { gap: 14px; overflow: visible; }
+  /* Секции типов встают друг под другом: рядом они помещаются только на стене.
+     Помещения и так идут столбиком — здесь они просто перестают тянуться на всю
+     высоту экрана. */
+  .room { flex: 0 0 auto; }
+  .room-groups { flex-direction: column; gap: 14px; }
   .group { flex: 0 0 auto; }
   .group-body { flex: 0 0 auto; }
   /* Высота строки — по содержимому: свободной машине хватает двух строк, и

@@ -1,4 +1,10 @@
-"""Роуты киоска — планшета, который висит на стене мастерской.
+"""Роуты киоска — планшета, который висит на стене помещения.
+
+Планшет привязан к одному помещению: комната записана в его device-cookie при
+настройке (`/kiosk/enroll`, api/auth.py), и главный экран показывает только её.
+Так и висит: один планшет — одна комната, никаких переключателей, которые
+кто-нибудь оставит в чужом помещении. Планшет, зарегистрированный до появления
+комнат, показывает их список и просит выбрать — отказывать ему было бы хуже.
 
 iPad висит там постоянно, поэтому:
 
@@ -18,10 +24,10 @@ from fastapi.responses import FileResponse, HTMLResponse, Response
 
 from app import texts as t
 from app.api import screens
-from app.api.deps import Db, client_key, is_kiosk
+from app.api.deps import Db, client_key, is_kiosk, kiosk_room_id
 from app.api.render import templates
 from app.api.screens import KIOSK, duration_options  # noqa: F401  (зовут тесты)
-from app.models import User
+from app.models import Room, User
 from app.services import auth
 from app.services.errors import AuthFailed
 
@@ -49,12 +55,35 @@ async def resolve_actor(request: Request, db: Db, pin: str) -> User:
 
 @router.get("/", response_class=HTMLResponse)
 async def board(request: Request, db: Db, flash: str = "") -> Response:
-    return await screens.board_page(request, db, KIOSK, flash)
+    """Доска помещения этого планшета.
+
+    Планшет, зарегистрированный без комнаты (например, ещё до появления
+    помещений), и любой посторонний браузер видят здесь первое помещение: экрана
+    «все помещения» в системе нет, у каждой комнаты свой адрес.
+
+    Помещение могли и удалить — закрылась мастерская, а планшет остался висеть.
+    Тогда экран показывает первое из оставшихся, а не пятисотую: планшет на стене
+    никто не перезагружает по звонку, и ошибка на нём живёт до следующего обхода.
+    """
+    room_id = kiosk_room_id(request)
+    if room_id is None or await db.get(Room, room_id) is None:
+        room_id = await screens.default_room_id(db)
+    return await screens.board_page(request, db, KIOSK, room_id, flash)
 
 
-@router.get("/partials/board", response_class=HTMLResponse)
-async def board_partial(request: Request, db: Db) -> Response:
-    return await screens.board_partial(request, db, KIOSK)
+@router.get("/room/{room_id}", response_class=HTMLResponse)
+async def room_board(request: Request, db: Db, room_id: int, flash: str = "") -> Response:
+    """Доска указанного помещения — постоянный адрес комнаты.
+
+    Его вбивают в планшет, на него ведёт кнопка из админки, по нему же смотрят
+    статусы с компьютера: доска открыта всем и без входа.
+    """
+    return await screens.board_page(request, db, KIOSK, room_id, flash)
+
+
+@router.get("/partials/board/{room_id}", response_class=HTMLResponse)
+async def board_partial(request: Request, db: Db, room_id: int) -> Response:
+    return await screens.board_partial(request, db, KIOSK, room_id)
 
 
 # --- занять / освободить -----------------------------------------------------
@@ -93,38 +122,42 @@ async def release_action(
 # --- очередь -----------------------------------------------------------------
 
 
-@router.get("/queue/join/{kind}", response_class=HTMLResponse)
-async def queue_join_form(request: Request, db: Db, kind: str) -> Response:
-    return await screens.queue_join_page(request, db, KIOSK, kind)
+@router.get("/queue/join/{room_id}/{kind}", response_class=HTMLResponse)
+async def queue_join_form(request: Request, db: Db, room_id: int, kind: str) -> Response:
+    return await screens.queue_join_page(request, db, KIOSK, room_id, kind)
 
 
-@router.post("/queue/join/{kind}")
+@router.post("/queue/join/{room_id}/{kind}")
 async def queue_join_action(
-    request: Request, db: Db, kind: str, pin: str = Form("")
+    request: Request, db: Db, room_id: int, kind: str, pin: str = Form("")
 ) -> Response:
     user = await resolve_actor(request, db, pin)
-    return await screens.do_queue_join(db, KIOSK, user, kind)
+    return await screens.do_queue_join(db, KIOSK, user, room_id, kind)
 
 
-@router.get("/queue/leave", response_class=HTMLResponse)
-async def queue_leave_form(request: Request) -> Response:
-    return await screens.queue_leave_page(request, KIOSK)
+@router.get("/queue/leave/{room_id}", response_class=HTMLResponse)
+async def queue_leave_form(request: Request, db: Db, room_id: int) -> Response:
+    return await screens.queue_leave_page(request, db, KIOSK, room_id)
 
 
-@router.post("/queue/leave")
-async def queue_leave_action(request: Request, db: Db, pin: str = Form("")) -> Response:
+@router.post("/queue/leave/{room_id}")
+async def queue_leave_action(
+    request: Request, db: Db, room_id: int, pin: str = Form("")
+) -> Response:
     user = await resolve_actor(request, db, pin)
-    return await screens.do_queue_leave(db, KIOSK, user)
+    return await screens.do_queue_leave(db, KIOSK, user, room_id)
 
 
 # --- расписание и брони ------------------------------------------------------
 
 
-@router.get("/schedule/{kind}", response_class=HTMLResponse)
-async def schedule_screen(request: Request, db: Db, kind: str, date: str = "") -> Response:
-    """Расписание парка одного типа. Своих брон киоск не подсвечивает: кто перед
-    экраном, известно только после ввода PIN."""
-    return await screens.schedule_page(request, db, KIOSK, kind, date)
+@router.get("/schedule/{room_id}/{kind}", response_class=HTMLResponse)
+async def schedule_screen(
+    request: Request, db: Db, room_id: int, kind: str, date: str = ""
+) -> Response:
+    """Расписание одного типа в помещении. Своих брон киоск не подсвечивает: кто
+    перед экраном, известно только после ввода PIN."""
+    return await screens.schedule_page(request, db, KIOSK, room_id, kind, date)
 
 
 @router.get("/book/{machine_id}", response_class=HTMLResponse)

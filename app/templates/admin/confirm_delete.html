@@ -1,0 +1,39 @@
+{# «Удалить навсегда?» — один экран на все разделы.
+
+   Отдельная страница, а не окно браузера: `confirm()` — это скрипт, а скриптов
+   на страницах админки нет (см. base.html). Заодно на странице помещается то,
+   чего в окне не покажешь, — список того, что уедет вместе с объектом.
+
+   Кнопка удаления стоит после списка и после предупреждения: сначала читаешь,
+   потом нажимаешь, а не наоборот. #}
+{% extends "admin/base.html" %}
+{% block heading %}{{ t.admin_delete_confirm.format(name=name) }}{% endblock %}
+
+{% block admin %}
+  <section class="ad-card ad-card-narrow">
+    {% if fallout.empty %}
+      <p class="admin-dim">{{ t.admin_delete_nothing }}</p>
+    {% else %}
+      <p class="ad-sub-title">{{ t.admin_delete_what }}</p>
+      <ul class="ad-fallout">
+        {% if fallout.machines %}<li>{{ t.admin_delete_machines.format(count=fallout.machines) }}</li>{% endif %}
+        {% if fallout.sessions %}<li>{{ t.admin_delete_sessions.format(count=fallout.sessions) }}</li>{% endif %}
+        {% if fallout.bookings %}<li>{{ t.admin_delete_bookings.format(count=fallout.bookings) }}</li>{% endif %}
+        {% if fallout.queue %}<li>{{ t.admin_delete_queue.format(count=fallout.queue) }}</li>{% endif %}
+      </ul>
+      <p class="admin-dim admin-hint">
+        {{ t.admin_delete_warning }}{% if hint %} {{ hint }}{% endif %}
+      </p>
+    {% endif %}
+
+    <div class="admin-actions">
+      <form method="post" action="{{ action }}">
+        {# Подтверждение — это поле формы, а не адрес: случайный POST мимо этой
+           страницы удалит только то, за чем ничего не записано. #}
+        <input type="hidden" name="confirm" value="1">
+        <button class="btn btn-small btn-danger" type="submit">{{ t.admin_delete_submit }}</button>
+      </form>
+      <a class="btn btn-small btn-ghost" href="{{ back }}">{{ t.admin_delete_cancel }}</a>
+    </div>
+  </section>
+{% endblock %}

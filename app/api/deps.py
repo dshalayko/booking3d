@@ -35,6 +35,15 @@ def require_admin(request: Request) -> None:
         raise HTTPException(status.HTTP_403_FORBIDDEN, t.ERR_ADMIN_LOGIN_REQUIRED)
 
 
+def kiosk_room_id(request: Request) -> int | None:
+    """Помещение этого планшета, если он к нему привязан.
+
+    Здесь, а рядом с `is_kiosk`, потому что оба ответа читает один и тот же
+    роутер: первый решает, можно ли вводить PIN, второй — что вообще показывать.
+    """
+    return auth.device_room_id(request.cookies.get(auth.DEVICE_COOKIE))
+
+
 def is_kiosk(request: Request) -> bool:
     """Может ли этот запрос вводить PIN.
 

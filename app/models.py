@@ -14,11 +14,47 @@ from sqlalchemy import (
 )
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
-from app.enums import MachineKind, MachineStatus, ReservationStatus
+from app.enums import MachineKind, MachineStatus, ReservationStatus, RoomKind
 
 
 class Base(DeclarativeBase):
     pass
+
+
+class Room(Base):
+    """Помещение: мастерская с оборудованием или переговорная.
+
+    Появилось, когда система перестала быть системой одной комнаты. Помещение —
+    это не украшение экрана, а граница, внутри которой считаются правила:
+    очередь общая на машины одного типа *в этом помещении* (правило 3), и одна
+    работа, одно место в очереди и одна бронь на человека — тоже в пределах
+    помещения (правила 2 и 13). Иначе бронь переговорной запрещала бы печать, а
+    ожидающий принтер в одном корпусе получал бы приглашение в другой.
+
+    Часы работы у каждого помещения свои (правило 15): переговорная закрывается
+    в шесть, а мастерская работает до ночи. См. `WorkHours`.
+    """
+
+    __tablename__ = "rooms"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    # Имя уникально: человек видит его на планшете, в списке помещений и в
+    # сообщении бота, и две «Переговорные» рядом означали бы, что он не знает,
+    # куда идти. Та же причина, что у имени машины.
+    name: Mapped[str] = mapped_column(String(64), unique=True, nullable=False)
+    kind: Mapped[str] = mapped_column(
+        String(16), nullable=False, server_default=text(f"'{RoomKind.WORKSHOP}'")
+    )
+    note: Mapped[str | None] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=func.now()
+    )
+
+    def __repr__(self) -> str:
+        return f"<Room {self.id} {self.name} {self.kind}>"
 
 
 class User(Base):
@@ -40,14 +76,20 @@ class User(Base):
 
 
 class WorkHours(Base):
-    """Часы работы мастерской — одна строка на всю базу.
+    """Часы работы помещения — одна строка на помещение.
 
-    В .env их держать нельзя: часы меняет тот, кто отвечает за мастерскую, а не
+    В .env их держать нельзя: часы меняет тот, кто отвечает за помещение, а не
     тот, у кого есть ssh на сервер. Поэтому таблица и форма в админке.
 
-    Одна строка, а не строка на день недели: коворкинг открыт по одному
-    расписанию, а «в субботу до шести» — это следующая задача, и решать её
-    заранее значит рисовать семь полей ради одного используемого.
+    Одна строка на помещение, а не на день недели: переговорная и мастерская
+    открыты по-разному, и это разница, которую видно каждый день, — а «в субботу
+    до шести» пока нет, и решать её заранее значит рисовать семь полей ради
+    одного используемого.
+
+    Строки может не быть вовсе: заведённое помещение работает по значениям из
+    `services/workhours.py`, пока часы не сохранили руками. Так помещение можно
+    создать одним полем, а не заполняя форму часов ради того, чтобы оно вообще
+    появилось на экране.
 
     Время местное и без зоны: 08:00 — это то, что написано на двери, а в какой
     момент UTC оно случится, считает services/schedule.py по `settings.zone`.
@@ -56,6 +98,12 @@ class WorkHours(Base):
     __tablename__ = "work_hours"
 
     id: Mapped[int] = mapped_column(primary_key=True)
+    # Помещение, чьи это часы. Уникально — строка ровно одна на помещение;
+    # удаление помещения забирает часы с собой (ON DELETE CASCADE), иначе от
+    # удалённой комнаты остались бы часы, которые никто уже не откроет.
+    room_id: Mapped[int] = mapped_column(
+        ForeignKey("rooms.id", ondelete="CASCADE"), unique=True, nullable=False
+    )
     opens_at: Mapped[time] = mapped_column(Time, nullable=False)
     # 00:00 означает «до полуночи», а не «нулевой длины»: иначе круглосуточную
     # мастерскую нельзя было бы описать вовсе. Разбирает `schedule.work_bounds`.
@@ -65,22 +113,29 @@ class WorkHours(Base):
     )
 
     def __repr__(self) -> str:
-        return f"<WorkHours {self.opens_at}–{self.closes_at}>"
+        return f"<WorkHours room={self.room_id} {self.opens_at}–{self.closes_at}>"
 
 
 class Machine(Base):
-    """Единица парка: 3D-принтер или гравировщик.
+    """Единица парка: 3D-принтер, гравировщик или сама переговорная.
 
     Одна таблица на все типы, а не таблица на тип: занятие, освобождение,
     поломка, очередь и журнал устроены одинаково, и вторая копия этой логики
     разошлась бы с первой на первой же правке. Различает машины `kind`.
+
+    Переговорная лежит здесь же — строкой с типом `meeting_room` в помещении
+    типа `meeting`. Комнату занимают, освобождают и бронируют теми же
+    действиями, что принтер, поэтому отдельной «брони помещения» в системе нет.
     """
 
     __tablename__ = "machines"
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    # Имя уникально по всему парку, а не внутри типа: человек видит его на
-    # экране и в сообщении бота без пометки типа, и два «№1» рядом
+    # В каком помещении стоит. Не nullable: машина без помещения не попала бы ни
+    # на один экран — доска, расписание и очередь начинаются с помещения.
+    room_id: Mapped[int] = mapped_column(ForeignKey("rooms.id"), nullable=False)
+    # Имя уникально по всему парку, а не внутри помещения: человек видит его на
+    # экране и в сообщении бота без пометки, где машина стоит, и два «№1» рядом
     # означали бы, что подошедший не знает, к какой машине идти.
     name: Mapped[str] = mapped_column(String(64), unique=True, nullable=False)
     kind: Mapped[str] = mapped_column(
@@ -105,6 +160,12 @@ class MachineSession(Base):
 
     id: Mapped[int] = mapped_column(primary_key=True)
     machine_id: Mapped[int] = mapped_column(ForeignKey("machines.id"), nullable=False)
+    # Помещение машины, скопированное в саму работу. Копия, а не join: правило 2
+    # («одна работа на человека в помещении») держит частичный уникальный индекс,
+    # а индекс не умеет смотреть в соседнюю таблицу. Машина из помещения в
+    # помещение не переезжает (services/machines.py), так что копия не разойдётся
+    # с оригиналом.
+    room_id: Mapped[int] = mapped_column(ForeignKey("rooms.id"), nullable=False)
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), nullable=False)
     started_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
@@ -134,11 +195,14 @@ class MachineSession(Base):
             unique=True,
             postgresql_where=text("status IN ('printing', 'done_wait')"),
         ),
-        # Правило 2: одна активная сессия на человека — на весь парк, а не на
-        # тип. Занял принтер — освободи, прежде чем брать гравировщик.
+        # Правило 2: одна активная работа на человека в помещении — на все типы
+        # разом, а не на тип. Занял принтер — освободи, прежде чем брать
+        # гравировщик рядом. А переговорная в другом помещении печати не мешает:
+        # это разные комнаты и разные дела.
         Index(
             "one_active_session_per_user",
             "user_id",
+            "room_id",
             unique=True,
             postgresql_where=text("status IN ('printing', 'done_wait')"),
         ),
@@ -153,6 +217,10 @@ class QueueEntry(Base):
 
     id: Mapped[int] = mapped_column(primary_key=True)
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), nullable=False)
+    # Где человек ждёт. Очередь — это (помещение, тип): освободившийся принтер в
+    # соседнем корпусе не нужен тому, кто сидит в этом, а приглашение туда
+    # придержало бы машину на всё окно подтверждения впустую.
+    room_id: Mapped[int] = mapped_column(ForeignKey("rooms.id"), nullable=False)
     # Тип, которого человек ждёт. Очередь на принтеры и очередь на гравировщики
     # независимы: освободившийся гравировщик не должен уходить тому, кому нужна
     # печать, — он бы отказался, а машина простояла бы окно подтверждения.
@@ -170,22 +238,27 @@ class QueueEntry(Base):
     resolved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
     __table_args__ = (
-        # Правило 2: одно место в очереди на человека — тоже на весь парк.
-        # Стоять сразу в двух очередях бессмысленно: занять по правилу 2 всё
-        # равно получится только что-то одно, а второе приглашение сгорело бы
-        # впустую, придержав машину на всё окно подтверждения.
+        # Правило 2: одно место в очереди на человека в помещении — на все его
+        # типы разом. Стоять сразу в двух очередях одной комнаты бессмысленно:
+        # занять там всё равно получится только что-то одно, а второе
+        # приглашение сгорело бы впустую, придержав машину на всё окно.
         Index(
             "one_queue_entry_per_user",
             "user_id",
+            "room_id",
             unique=True,
             postgresql_where=text("status IN ('waiting', 'offered')"),
         ),
-        # Порядок очереди: FIFO по created_at среди активных своего типа.
-        Index("queue_active_order", "kind", "status", "created_at"),
+        # Порядок очереди: FIFO по created_at среди активных своей пары
+        # (помещение, тип) — ею очередь и выбирается, поэтому оба поля впереди.
+        Index("queue_active_order", "room_id", "kind", "status", "created_at"),
     )
 
     def __repr__(self) -> str:
-        return f"<QueueEntry {self.id} user={self.user_id} {self.kind} {self.status}>"
+        return (
+            f"<QueueEntry {self.id} user={self.user_id} "
+            f"room={self.room_id} {self.kind} {self.status}>"
+        )
 
 
 class Reservation(Base):
@@ -204,6 +277,10 @@ class Reservation(Base):
 
     id: Mapped[int] = mapped_column(primary_key=True)
     machine_id: Mapped[int] = mapped_column(ForeignKey("machines.id"), nullable=False)
+    # Помещение машины — копия, как и у работы: правило 13 («одна бронь на
+    # человека в помещении») держит частичный уникальный индекс, а тот не умеет
+    # смотреть в `machines`.
+    room_id: Mapped[int] = mapped_column(ForeignKey("rooms.id"), nullable=False)
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), nullable=False)
     starts_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     ends_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
@@ -222,11 +299,13 @@ class Reservation(Base):
     started_notified_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
     __table_args__ = (
-        # Правило 13: одна бронь на человека. Парк маленький, и без ограничения
-        # один человек забивает собой всю неделю вперёд.
+        # Правило 13: одна бронь на человека в помещении. Парк маленький, и без
+        # ограничения один человек забивает собой всю неделю вперёд. Бронь
+        # переговорной при этом печати не мешает: это другое помещение.
         Index(
             "one_active_reservation_per_user",
             "user_id",
+            "room_id",
             unique=True,
             postgresql_where=text(f"status = '{ReservationStatus.BOOKED}'"),
         ),

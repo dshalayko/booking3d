@@ -210,7 +210,7 @@ class TestOccupyWithBooking:
 
         assert result.eta_at == NOON + 3 * HOUR
 
-    async def test_booking_beats_the_queue(self, db, printers, make_user):
+    async def test_booking_beats_the_queue(self, db, room, printers, make_user):
         """Правило 12 сильнее правила 7: иначе бронь не гарантирует ничего."""
         booker = await make_user()
         waiting = await make_user()
@@ -219,13 +219,13 @@ class TestOccupyWithBooking:
         await svc.book(db, booker, printers[0].id, tomorrow(), 120, now=NOON)
         # Второй принтер занят, чтобы человек мог встать в очередь на тип.
         await machines_svc.occupy(db, busy_owner, printers[1].id, 60, now=NOON)
-        await queue_svc.join(db, waiting.id, MachineKind.PRINTER, now=NOON)
+        await queue_svc.join(db, waiting.id, room.id, MachineKind.PRINTER, now=NOON)
 
         result = await machines_svc.occupy(db, booker, printers[0].id, 60, now=tomorrow(0))
 
         assert result.from_reservation is True
 
-    async def test_queue_is_not_offered_a_booked_machine(self, db, printers, make_user):
+    async def test_queue_is_not_offered_a_booked_machine(self, db, room, printers, make_user):
         """Предложение на машину в чужом окне сгорело бы впустую."""
         booker = await make_user()
         waiting = await make_user()
@@ -234,14 +234,14 @@ class TestOccupyWithBooking:
         await svc.book(db, booker, printers[0].id, NOON, 120, now=NOON - HOUR)
         await machines_svc.occupy(db, owner, printers[1].id, 60, now=NOON)
 
-        result = await queue_svc.join(db, waiting.id, MachineKind.PRINTER, now=NOON)
+        result = await queue_svc.join(db, waiting.id, room.id, MachineKind.PRINTER, now=NOON)
 
         assert result.offers == []
         entry = await db.scalar(select(QueueEntry).where(QueueEntry.user_id == waiting.id))
         assert entry.status == QueueStatus.WAITING
 
     async def test_queue_is_not_offered_a_machine_booked_within_minutes(
-        self, db, printers, make_user
+        self, db, room, printers, make_user
     ):
         """До брони десять минут — предложение бессмысленно, занять не выйдет."""
         booker = await make_user()
@@ -252,7 +252,7 @@ class TestOccupyWithBooking:
         await machines_svc.occupy(db, owner, printers[1].id, 60, now=NOON)
 
         result = await queue_svc.join(
-            db, waiting.id, MachineKind.PRINTER, now=NOON + timedelta(minutes=50)
+            db, waiting.id, room.id, MachineKind.PRINTER, now=NOON + timedelta(minutes=50)
         )
 
         assert result.offers == []
@@ -300,7 +300,7 @@ class TestCancel:
         assert reservation.cancel_reason == "уехала машина"
 
     async def test_cancelling_running_window_offers_machine_to_queue(
-        self, db, printers, make_user
+        self, db, room, printers, make_user
     ):
         """Пока окно шло, машина была придержана; после отмены она свободна."""
         booker = await make_user()
@@ -309,7 +309,7 @@ class TestCancel:
 
         booking = await svc.book(db, booker, printers[0].id, NOON, 120, now=NOON - HOUR)
         await machines_svc.occupy(db, owner, printers[1].id, 60, now=NOON)
-        await queue_svc.join(db, waiting.id, MachineKind.PRINTER, now=NOON)
+        await queue_svc.join(db, waiting.id, room.id, MachineKind.PRINTER, now=NOON)
 
         result = await svc.cancel(db, booker, booking.reservation_id, now=NOON)
 
@@ -365,7 +365,7 @@ class TestNoShow:
         reservation = await db.get(Reservation, booking.reservation_id)
         assert reservation.status == ReservationStatus.BOOKED
 
-    async def test_expired_booking_goes_to_the_queue(self, db, printers, make_user):
+    async def test_expired_booking_goes_to_the_queue(self, db, room, printers, make_user):
         booker = await make_user()
         waiting = await make_user()
         owner = await make_user()
@@ -375,7 +375,7 @@ class TestNoShow:
         # Встаёт в очередь за десять минут до чужого окна: свободный принтер ему
         # не предложат — занять его всё равно не выйдет.
         await queue_svc.join(
-            db, waiting.id, MachineKind.PRINTER, now=NOON + timedelta(minutes=50)
+            db, waiting.id, room.id, MachineKind.PRINTER, now=NOON + timedelta(minutes=50)
         )
         late = NOON + HOUR + timedelta(minutes=31)
 
@@ -451,14 +451,14 @@ class TestReconcile:
 
 class TestDaySchedule:
     async def test_grid_has_a_column_per_machine_and_a_row_per_working_hour(
-        self, db, printers, make_user
+        self, db, room, printers, make_user
     ):
         """Строк ровно столько, сколько мастерская открыта: 08:00–20:00 — это
         двенадцать слотов, последний из которых начинается в 19:00."""
         park = await machines_svc.list_machines(db, kind=MachineKind.PRINTER)
 
         grid = await svc.day_schedule(
-            db, park, MachineKind.PRINTER, schedule.day_of(tomorrow()), now=NOON
+            db, park, room, MachineKind.PRINTER, schedule.day_of(tomorrow()), now=NOON
         )
 
         assert len(grid.columns) == 2
@@ -466,7 +466,7 @@ class TestDaySchedule:
         assert grid.hours[0] == "08:00" and grid.hours[-1] == "19:00"
         assert len(grid.days) == 14
 
-    async def test_booked_hours_are_marked(self, db, printers, make_user):
+    async def test_booked_hours_are_marked(self, db, room, printers, make_user):
         user = await make_user(name="Аня")
         await svc.book(db, user, printers[0].id, tomorrow(), 120, now=NOON)
         park = await machines_svc.list_machines(db, kind=MachineKind.PRINTER)
@@ -474,6 +474,7 @@ class TestDaySchedule:
         grid = await svc.day_schedule(
             db,
             park,
+            room,
             MachineKind.PRINTER,
             schedule.day_of(tomorrow()),
             now=NOON,
@@ -485,7 +486,7 @@ class TestDaySchedule:
         assert all(cell.state == svc.CELL_MINE for cell in booked)
         assert booked[0].who == "Аня"
 
-    async def test_someone_elses_booking_is_not_mine(self, db, printers, make_user):
+    async def test_someone_elses_booking_is_not_mine(self, db, room, printers, make_user):
         owner = await make_user()
         viewer = await make_user()
         await svc.book(db, owner, printers[0].id, tomorrow(), 60, now=NOON)
@@ -494,6 +495,7 @@ class TestDaySchedule:
         grid = await svc.day_schedule(
             db,
             park,
+            room,
             MachineKind.PRINTER,
             schedule.day_of(tomorrow()),
             now=NOON,
@@ -504,37 +506,37 @@ class TestDaySchedule:
         assert svc.CELL_BOOKED in states
         assert svc.CELL_MINE not in states
 
-    async def test_past_hours_are_not_bookable(self, db, printers, make_user):
+    async def test_past_hours_are_not_bookable(self, db, room, printers, make_user):
         park = await machines_svc.list_machines(db, kind=MachineKind.PRINTER)
 
         grid = await svc.day_schedule(
-            db, park, MachineKind.PRINTER, schedule.day_of(NOON), now=NOON
+            db, park, room, MachineKind.PRINTER, schedule.day_of(NOON), now=NOON
         )
 
         first = grid.columns[0].cells[0]
         assert first.state == svc.CELL_PAST
         assert first.bookable is False
 
-    async def test_running_work_occupies_its_hours(self, db, printers, make_user):
+    async def test_running_work_occupies_its_hours(self, db, room, printers, make_user):
         owner = await make_user(name="Пётр")
         await machines_svc.occupy(db, owner, printers[0].id, 120, now=NOON)
         park = await machines_svc.list_machines(db, kind=MachineKind.PRINTER)
 
         grid = await svc.day_schedule(
-            db, park, MachineKind.PRINTER, schedule.day_of(NOON), now=NOON
+            db, park, room, MachineKind.PRINTER, schedule.day_of(NOON), now=NOON
         )
 
         busy = [cell for cell in grid.columns[0].cells if cell.state == svc.CELL_BUSY]
         assert len(busy) == 2
         assert busy[0].who == "Пётр"
 
-    async def test_broken_machine_is_not_bookable(self, db, printers, make_user):
+    async def test_broken_machine_is_not_bookable(self, db, room, printers, make_user):
         admin = await make_user(is_admin=True)
         await machines_svc.set_broken(db, admin, printers[0].id, note="сопло")
         park = await machines_svc.list_machines(db, kind=MachineKind.PRINTER)
 
         grid = await svc.day_schedule(
-            db, park, MachineKind.PRINTER, schedule.day_of(tomorrow()), now=NOON
+            db, park, room, MachineKind.PRINTER, schedule.day_of(tomorrow()), now=NOON
         )
 
         assert all(cell.state == svc.CELL_BROKEN for cell in grid.columns[0].cells)

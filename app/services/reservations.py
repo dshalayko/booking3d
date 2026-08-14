@@ -7,9 +7,11 @@
 Правила отсюда (PLAN.md):
   12. в своё окно машину занимает только тот, кто её забронировал, — это право
       сильнее очереди (правило 7);
-  13. одна активная бронь на человека;
+  13. одна активная бронь на человека в помещении;
   14. бронь не сгорает, пока машина занята чужой работой: отсчёт неявки идёт
-      только со свободной машины.
+      только со свободной машины;
+  15. начать бронь можно только в рабочие часы помещения — у каждого свои
+      (services/workhours.py).
 
 Непересечение окон держит EXCLUDE-ограничение в БД (миграция 0006), а не
 проверка в коде: двое, жмущие «забронировать» на один час, — обычная гонка.
@@ -42,7 +44,7 @@ from app.enums import (
     ReservationStatus,
     SessionStatus,
 )
-from app.models import Machine, MachineSession, Reservation, User
+from app.models import Machine, MachineSession, Reservation, Room, User
 from app.services import queue as queue_svc
 from app.services import schedule
 from app.services import workhours as workhours_svc
@@ -70,6 +72,7 @@ class BookResult:
     reservation_id: int
     machine_id: int
     machine_name: str
+    room_id: int
     starts_at: datetime
     ends_at: datetime
 
@@ -122,6 +125,7 @@ class MachineColumn:
 
 @dataclass(frozen=True)
 class DaySchedule:
+    room: Room
     kind: str
     day: date
     days: list[schedule.DayOption]
@@ -181,25 +185,28 @@ async def book(
 
     ends_at = starts_at + timedelta(minutes=duration_minutes)
 
-    # Часы работы ограничивают начало окна, а не его конец: ночная печать,
-    # поставленная в 19:00, — обычное дело. Проверка последняя из временных:
-    # она одна обращается к базе, и незачем ходить туда ради брони на прошлый
-    # вторник.
-    hours = await workhours_svc.get(db)
-    if not schedule.is_open_at(starts_at, hours):
-        raise InvalidReservationTime(t.ERR_RESERVATION_WORK_HOURS.format(hours=hours.text()))
-
     machine = await _lock_machine(db, machine_id)
     if machine.status == MachineStatus.BROKEN:
         raise MachineNotAvailable(t.ERR_MACHINE_BROKEN.format(machine=machine.name))
 
-    if await active_of_user(db, user.id) is not None:
+    # Часы работы ограничивают начало окна, а не его конец: ночная печать,
+    # поставленная в 19:00, — обычное дело. Проверка идёт после машины, а не
+    # раньше, как было до помещений: часы теперь у каждого помещения свои, и
+    # какие из них спрашивать, известно только по машине.
+    hours = await workhours_svc.get(db, machine.room_id)
+    if not schedule.is_open_at(starts_at, hours):
+        raise InvalidReservationTime(t.ERR_RESERVATION_WORK_HOURS.format(hours=hours.text()))
+
+    # Правило 13 — в пределах помещения: бронь переговорной не должна запрещать
+    # бронь принтера, это разные комнаты и разные дела.
+    if await active_of_user(db, user.id, machine.room_id) is not None:
         raise AlreadyBooked(t.ERR_ALREADY_BOOKED)
 
     await _ensure_window_free(db, machine, starts_at, ends_at)
 
     reservation = Reservation(
         machine_id=machine.id,
+        room_id=machine.room_id,
         user_id=user.id,
         starts_at=starts_at,
         ends_at=ends_at,
@@ -219,6 +226,7 @@ async def book(
         reservation_id=reservation.id,
         machine_id=machine.id,
         machine_name=machine.name,
+        room_id=machine.room_id,
         starts_at=starts_at,
         ends_at=ends_at,
     )
@@ -322,15 +330,21 @@ async def get_active(db: AsyncSession, reservation_id: int) -> Reservation:
     return reservation
 
 
-async def active_of_user(db: AsyncSession, user_id: int) -> Reservation | None:
-    return await db.scalar(
-        select(Reservation)
-        .where(
-            Reservation.user_id == user_id,
-            Reservation.status.in_(ACTIVE_RESERVATION_STATUSES),
-        )
-        .order_by(Reservation.starts_at)
+async def active_of_user(
+    db: AsyncSession, user_id: int, room_id: int | None = None
+) -> Reservation | None:
+    """Ближайшая незакрытая бронь человека. С `room_id` — в этом помещении.
+
+    Без помещения — любая: боту в `/my` нужна ближайшая, какой бы комнаты она ни
+    была. С помещением проверяется правило 13, и его граница — комната.
+    """
+    query = select(Reservation).where(
+        Reservation.user_id == user_id,
+        Reservation.status.in_(ACTIVE_RESERVATION_STATUSES),
     )
+    if room_id is not None:
+        query = query.where(Reservation.room_id == room_id)
+    return await db.scalar(query.order_by(Reservation.starts_at))
 
 
 async def current_for_machine(
@@ -426,12 +440,17 @@ async def upcoming_for_machines(
     return nearest
 
 
-async def of_user(db: AsyncSession, user_id: int) -> list[tuple[Reservation, Machine]]:
-    """Брони человека, ближайшая первой — экран «мои брони»."""
+async def of_user(db: AsyncSession, user_id: int) -> list[tuple[Reservation, Machine, Room]]:
+    """Брони человека, ближайшая первой — экран «мои брони».
+
+    Помещение приходит вместе с машиной: брон теперь может быть несколько — по
+    одной на комнату, — и «14:00, Дуб» без комнаты не говорит, куда идти.
+    """
     rows = (
         await db.execute(
-            select(Reservation, Machine)
+            select(Reservation, Machine, Room)
             .join(Machine, Machine.id == Reservation.machine_id)
+            .join(Room, Room.id == Reservation.room_id)
             .where(
                 Reservation.user_id == user_id,
                 Reservation.status.in_(ACTIVE_RESERVATION_STATUSES),
@@ -439,17 +458,18 @@ async def of_user(db: AsyncSession, user_id: int) -> list[tuple[Reservation, Mac
             .order_by(Reservation.starts_at)
         )
     ).all()
-    return [(reservation, machine) for reservation, machine in rows]
+    return [(reservation, machine, room) for reservation, machine, room in rows]
 
 
 async def booked_ahead(db: AsyncSession, now: datetime | None = None) -> list[tuple]:
-    """Все незакрытые брони с именами машин и людей — для админки."""
+    """Все незакрытые брони с именами помещений, машин и людей — для админки."""
     now = now or _utcnow()
     return (
         await db.execute(
-            select(Reservation, Machine.name, User.name)
+            select(Reservation, Machine.name, User.name, Room.name)
             .join(Machine, Machine.id == Reservation.machine_id)
             .join(User, User.id == Reservation.user_id)
+            .join(Room, Room.id == Reservation.room_id)
             .where(
                 Reservation.status.in_(ACTIVE_RESERVATION_STATUSES),
                 Reservation.ends_at > now,
@@ -509,26 +529,28 @@ async def due_to_expire(db: AsyncSession, now: datetime) -> list[Reservation]:
 async def day_schedule(
     db: AsyncSession,
     park: list[Machine],
+    room: Room,
     kind: str,
     day: date,
     now: datetime | None = None,
     viewer_id: int | None = None,
 ) -> DaySchedule:
-    """Расписание рабочего дня: столбец на машину, строка на слот.
+    """Расписание рабочего дня одного помещения: столбец на машину, строка на слот.
 
     Часы строками, а не столбцами: столбец на машину читается и на iPad, и на
     телефоне, а экран один и тот же — и на стене, и в Mini App.
 
-    Строк ровно столько, сколько мастерская открыта: ночные часы никому не
-    нужны, а сетка из 24 строк на телефоне — это экран, который надо листать,
-    чтобы найти рабочий день внутри ночи.
+    Строк ровно столько, сколько помещение открыто: ночные часы никому не нужны,
+    а сетка из 24 строк на телефоне — это экран, который надо листать, чтобы
+    найти рабочий день внутри ночи. Часы берутся у этого помещения: переговорная
+    закрывается раньше мастерской, и её сетка короче.
 
     Парк приходит аргументом, а не выбирается здесь: список машин умеет отдавать
     services/machines.py, и импортировать его сюда значило бы замкнуть кольцо
     зависимостей (см. преамбулу модуля).
     """
     now = now or _utcnow()
-    hours = await workhours_svc.get(db)
+    hours = await workhours_svc.get(db, room.id)
     start, end = schedule.work_bounds(day, hours)
 
     reservations: dict[int, list[tuple[Reservation, str]]] = {}
@@ -580,6 +602,7 @@ async def day_schedule(
         )
 
     return DaySchedule(
+        room=room,
         kind=kind,
         day=day,
         days=schedule.day_options(now),

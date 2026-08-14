@@ -3,8 +3,16 @@
 Используется и экраном киоска, и командой `/status` в боте — чтобы человек
 видел одно и то же и на стене, и в телефоне.
 
-Парк разбит на группы по типу оборудования: у принтеров и гравировщиков свои
-очереди (см. services/queue.py), и на экране это две независимые секции.
+Три уровня, и каждый из них — граница, за которой правила считаются отдельно:
+
+* помещение: своя очередь, свои лимиты на человека, свои часы работы;
+* тип оборудования внутри помещения: своя очередь (принтеры и гравировщики
+  ждут по отдельности, см. services/queue.py);
+* машина: то, что занимают.
+
+Планшет на стене показывает одно помещение — то, на которое его повесили
+(см. api/kiosk.py). Целиком парк нужен боту, админке и телефону, у которого
+своего помещения нет.
 """
 
 from dataclasses import dataclass
@@ -20,9 +28,10 @@ from app.enums import (
     MachineStatus,
     QueueStatus,
 )
-from app.models import MachineSession, QueueEntry, User
+from app.models import MachineSession, QueueEntry, Room, User
 from app.services import machines as machines_svc
 from app.services import reservations as reservations_svc
+from app.services import rooms as rooms_svc
 
 
 @dataclass
@@ -86,9 +95,14 @@ class KindGroup:
 
 
 @dataclass
-class Board:
+class RoomView:
+    """Помещение со всем, что в нём стоит и кто в нём ждёт."""
+
+    id: int
+    name: str
+    kind: str
+    note: str | None
     groups: list[KindGroup]
-    now: datetime
 
     @property
     def machines(self) -> list[MachineView]:
@@ -102,16 +116,59 @@ class Board:
     def free_count(self) -> int:
         return sum(group.free_count for group in self.groups)
 
+    @property
+    def total_count(self) -> int:
+        return len(self.machines)
 
-async def build(db: AsyncSession, now: datetime | None = None) -> Board:
+    @property
+    def single_group(self) -> bool:
+        """Тип в помещении один — заголовок секции повторял бы имя комнаты.
+
+        В переговорной «Дуб» подзаголовок «Переговорная» — это второй раз то же
+        самое; в мастерской с принтерами и гравировщиками секции нужны.
+        """
+        return len(self.groups) <= 1
+
+
+@dataclass
+class Board:
+    rooms: list[RoomView]
+    now: datetime
+
+    @property
+    def groups(self) -> list[KindGroup]:
+        return [group for room in self.rooms for group in room.groups]
+
+    @property
+    def machines(self) -> list[MachineView]:
+        return [machine for room in self.rooms for machine in room.machines]
+
+    @property
+    def queue(self) -> list[QueueView]:
+        return [person for room in self.rooms for person in room.queue]
+
+    @property
+    def free_count(self) -> int:
+        return sum(room.free_count for room in self.rooms)
+
+
+async def build(
+    db: AsyncSession, now: datetime | None = None, room_id: int | None = None
+) -> Board:
     """Состояние парка на момент `now` — по умолчанию на сейчас.
 
     Момент передаётся, а не берётся из часов внутри: от него зависит, какая
     бронь считается идущей, а какая ещё впереди, и проверить это можно только
     задав время явно.
+
+    `room_id` сужает доску до одного помещения — так её видит планшет на стене.
+    Выборки при этом остаются общими: они и так идут по индексам, а вторая ветка
+    «а если помещение задано» в каждой из четырёх — это четыре места, где можно
+    забыть условие.
     """
     now = now or datetime.now(UTC)
-    machines = await machines_svc.list_machines(db)
+    park = await machines_svc.list_machines(db)
+    all_rooms = await rooms_svc.list_rooms(db)
 
     sessions = {
         session.machine_id: (session, name)
@@ -137,12 +194,12 @@ async def build(db: AsyncSession, now: datetime | None = None) -> Board:
 
     bookings = await reservations_svc.upcoming_for_machines(db, now)
 
-    views: dict[str, list[MachineView]] = {}
-    for machine in machines:
+    views: dict[tuple[int, str], list[MachineView]] = {}
+    for machine in park:
         session_row = sessions.get(machine.id)
         offer_row = offers.get(machine.id)
         booking_row = bookings.get(machine.id)
-        views.setdefault(machine.kind, []).append(
+        views.setdefault((machine.room_id, machine.kind), []).append(
             MachineView(
                 id=machine.id,
                 name=machine.name,
@@ -166,20 +223,18 @@ async def build(db: AsyncSession, now: datetime | None = None) -> Board:
             )
         )
 
-    queues = await _queues_by_kind(db)
+    queues = await _queues_by_room_and_kind(db)
 
-    # Порядок секций — порядок объявления типов в MachineKind, а не порядок,
-    # в котором машины попались в выборке: на стене секции не должны меняться
-    # местами от того, что кто-то завёл новую машину.
-    groups = [
-        KindGroup(kind=kind, machines=views.get(kind, []), queue=queues.get(kind, []))
-        for kind in MachineKind
-        # Тип без машин показывать нечего. Очередь без машин остаться может —
-        # например единственный гравировщик удалили, пока его кто-то ждал, —
-        # и тогда секцию показываем, чтобы человек увидел себя и мог выйти.
-        if views.get(kind) or queues.get(kind)
+    # Пустые помещения остаются в списке: заведённая комната, которой не видно
+    # на экране, читается как «админка не сработала», а плитка с надписью «пока
+    # пусто» сама объясняет, чего в ней не хватает. Сжатая доска пустые комнаты
+    # отбрасывает сама (см. `personal`).
+    rooms = [
+        _room_view(room, views, queues)
+        for room in all_rooms
+        if room_id is None or room.id == room_id
     ]
-    return Board(groups=groups, now=now)
+    return Board(rooms=rooms, now=now)
 
 
 def personal(board: Board, user_id: int) -> Board | None:
@@ -191,29 +246,71 @@ def personal(board: Board, user_id: int) -> Board | None:
     и очередь её секции — по ней видно, ждёт ли кто-то освобождения.
 
     Секция, где человек стоит в очереди, остаётся тоже, даже если своей машины в
-    ней нет: иначе из очереди стало бы некуда выйти.
+    ней нет: иначе из очереди стало бы некуда выйти. Помещения без своего и без
+    ожидания не остаются вовсе — в них для этого человека ничего не происходит.
 
-    `None` — «сжимать нечего»: занятой машины у человека нет, и парк нужно
-    показать целиком, иначе экран окажется пустым. Отдельным значением, а не
-    пустой доской, чтобы вызывающий не путал «ничего своего» с «парк пуст».
+    Место в очереди без занятой машины — это тоже «своё»: человек ждёт и заходит
+    посмотреть, не дошла ли очередь. Поэтому сжатая доска остаётся и у него.
+
+    `None` — «сжимать нечего»: ни машины, ни очереди, и показывать нужно список
+    помещений. Отдельным значением, а не пустой доской, чтобы вызывающий не
+    путал «ничего своего» с «парк пуст».
     """
+    rooms = []
+    for room in board.rooms:
+        groups = [
+            KindGroup(
+                kind=group.kind,
+                machines=[machine for machine in group.machines if machine.owner_id == user_id],
+                queue=group.queue,
+            )
+            for group in room.groups
+            if any(machine.owner_id == user_id for machine in group.machines)
+            or any(person.user_id == user_id for person in group.queue)
+        ]
+        if groups:
+            rooms.append(
+                RoomView(
+                    id=room.id,
+                    name=room.name,
+                    kind=room.kind,
+                    note=room.note,
+                    groups=groups,
+                )
+            )
+
+    if not rooms:
+        return None
+    return Board(rooms=rooms, now=board.now)
+
+
+def _room_view(
+    room: Room,
+    views: dict[tuple[int, str], list[MachineView]],
+    queues: dict[tuple[int, str], list[QueueView]],
+) -> RoomView:
+    # Порядок секций — порядок объявления типов в MachineKind, а не порядок, в
+    # котором машины попались в выборке: на стене секции не должны меняться
+    # местами от того, что кто-то завёл новую машину.
     groups = [
         KindGroup(
-            kind=group.kind,
-            machines=[machine for machine in group.machines if machine.owner_id == user_id],
-            queue=group.queue,
+            kind=kind,
+            machines=views.get((room.id, kind), []),
+            queue=queues.get((room.id, kind), []),
         )
-        for group in board.groups
-        if any(machine.owner_id == user_id for machine in group.machines)
-        or any(person.user_id == user_id for person in group.queue)
+        for kind in MachineKind
+        # Тип без машин показывать нечего. Очередь без машин остаться может —
+        # например единственный гравировщик удалили, пока его кто-то ждал, —
+        # и тогда секцию показываем, чтобы человек увидел себя и мог выйти.
+        if views.get((room.id, kind)) or queues.get((room.id, kind))
     ]
-    if not any(group.machines for group in groups):
-        return None
-    return Board(groups=groups, now=board.now)
+    return RoomView(
+        id=room.id, name=room.name, kind=room.kind, note=room.note, groups=groups
+    )
 
 
-async def _queues_by_kind(db: AsyncSession) -> dict[str, list[QueueView]]:
-    """Очереди по типам. Номера считаются внутри своего типа."""
+async def _queues_by_room_and_kind(db: AsyncSession) -> dict[tuple[int, str], list[QueueView]]:
+    """Очереди по парам (помещение, тип). Номера считаются внутри своей пары."""
     entries = await db.execute(
         select(QueueEntry, User.name)
         .join(User, User.id == QueueEntry.user_id)
@@ -221,9 +318,9 @@ async def _queues_by_kind(db: AsyncSession) -> dict[str, list[QueueView]]:
         .order_by(QueueEntry.created_at, QueueEntry.id)
     )
 
-    queues: dict[str, list[QueueView]] = {}
+    queues: dict[tuple[int, str], list[QueueView]] = {}
     for entry, name in entries.all():
-        people = queues.setdefault(entry.kind, [])
+        people = queues.setdefault((entry.room_id, entry.kind), [])
         people.append(
             QueueView(
                 position=len(people) + 1,

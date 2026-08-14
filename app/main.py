@@ -10,7 +10,7 @@ from fastapi.staticfiles import StaticFiles
 from sqlalchemy import text
 
 from app import texts as t
-from app.api import admin as admin_routes
+from app.admin import router as admin_router
 from app.api import auth as auth_routes
 from app.api import kiosk as kiosk_routes
 from app.api import miniapp as miniapp_routes
@@ -26,13 +26,17 @@ from app.services.errors import (
     AppSessionRequired,
     AuthFailed,
     BadInitData,
+    ChatIdInvalid,
+    ChatIdTaken,
     DomainError,
     InvalidDuration,
     InvalidReservationTime,
+    LastAdmin,
     LoginInvalid,
     LoginTaken,
     MachineBooked,
     MachineHasHistory,
+    MachineKindNotInRoom,
     MachineKindUnknown,
     MachineNameInvalid,
     MachineNameTaken,
@@ -46,8 +50,14 @@ from app.services.errors import (
     ReservationForbidden,
     ReservationNotFound,
     ReservationOverlap,
+    RoomKindUnknown,
+    RoomNameInvalid,
+    RoomNameTaken,
+    RoomNotEmpty,
+    RoomNotFound,
     TooManyAttempts,
     UserBusy,
+    UserNotFound,
     WorkHoursInvalid,
 )
 
@@ -91,6 +101,19 @@ STATUS_BY_ERROR: dict[type[DomainError], int] = {
     LoginInvalid: 400,
     MachineNameInvalid: 400,
     MachineKindUnknown: 400,
+    # Помещения. `RoomNotFound` — 404, как и любое «нет такого»; остальное —
+    # конфликт состава (имя занято, комната непуста) или дурной ввод.
+    RoomNotFound: 404,
+    RoomNameTaken: 409,
+    RoomNotEmpty: 409,
+    RoomNameInvalid: 400,
+    RoomKindUnknown: 400,
+    MachineKindNotInRoom: 409,
+    # Люди: заводит и удаляет их админка.
+    UserNotFound: 404,
+    ChatIdTaken: 409,
+    ChatIdInvalid: 400,
+    LastAdmin: 409,
 }
 
 
@@ -147,7 +170,7 @@ app.mount("/static", StaticFiles(directory="app/static"), name="static")
 app.include_router(auth_routes.router)
 app.include_router(miniapp_routes.router)
 app.include_router(kiosk_routes.router)
-app.include_router(admin_routes.router)
+app.include_router(admin_router)
 
 
 def _wants_html(request: Request) -> bool:

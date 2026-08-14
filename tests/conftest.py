@@ -37,15 +37,17 @@ from sqlalchemy.ext.asyncio import (
 
 from app.api.deps import get_db
 from app.config import settings
-from app.enums import MachineKind, MachineStatus
+from app.enums import MachineKind, MachineStatus, RoomKind
 from app.main import app
-from app.models import Machine, User
+from app.models import Machine, Room, User
 from app.services.security import pin_digest
 
 TEST_DB_NAME = "booking_test"
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
-TABLES = "users, machines, sessions, queue, reservations"
-WORK_HOURS_RESET = "UPDATE work_hours SET opens_at = '08:00', closes_at = '20:00' WHERE id = 1"
+# `rooms` вычищается вместе с остальными, а CASCADE забирает и `work_hours`:
+# помещения заводят сами тесты, и оставшаяся от миграции комната мешала бы
+# считать их — в списке помещений она была бы третьей лишней.
+TABLES = "users, rooms, machines, sessions, queue, reservations"
 
 TEST_ZONE = ZoneInfo("Europe/Nicosia")
 
@@ -130,12 +132,10 @@ def test_database_url() -> str:
 async def engine(test_database_url: str) -> AsyncIterator[AsyncEngine]:
     engine = create_async_engine(test_database_url)
     async with engine.begin() as conn:
+        # Часы работы уезжают вместе с помещениями (ON DELETE CASCADE): комнату
+        # без своей строки часов обслуживает `workhours.DEFAULT` — те же
+        # 08:00–20:00, на которые рассчитаны проверки расписания.
         await conn.execute(text(f"TRUNCATE {TABLES} RESTART IDENTITY CASCADE"))
-        # Часы работы не в `TABLES`: строка там одна, и её не создают тесты, а
-        # заводит миграция. Но менять её они могут, а сетка расписания зависит
-        # от неё целиком — поэтому возвращаем к значениям миграции, иначе
-        # проверка часов роняет соседний набор через полчаса после правки.
-        await conn.execute(text(WORK_HOURS_RESET))
     yield engine
     await engine.dispose()
 
@@ -153,7 +153,33 @@ async def db(sessions: async_sessionmaker[AsyncSession]) -> AsyncIterator[AsyncS
 
 
 @pytest_asyncio.fixture
-async def printers(db: AsyncSession) -> list[Machine]:
+async def room(db: AsyncSession) -> Room:
+    """Мастерская, в которой стоит всё остальное.
+
+    Помещение — граница правил (своя очередь, свои лимиты, свои часы), поэтому
+    без него не существует ни машины, ни ожидания: `room_id` у них не nullable.
+    """
+    item = Room(name="Мастерская", kind=RoomKind.WORKSHOP)
+    db.add(item)
+    await db.commit()
+    return item
+
+
+@pytest_asyncio.fixture
+async def other_room(db: AsyncSession) -> Room:
+    """Вторая мастерская — ею проверяются границы помещения.
+
+    Отдельной фикстурой, а не внутри `room`: большинство проверок про одно
+    помещение, и лишняя комната в них только мешала бы считать список.
+    """
+    item = Room(name="Мастерская на первом", kind=RoomKind.WORKSHOP)
+    db.add(item)
+    await db.commit()
+    return item
+
+
+@pytest_asyncio.fixture
+async def printers(db: AsyncSession, room: Room) -> list[Machine]:
     """Два одинаковых принтера, как в коворкинге.
 
     Имена заданы здесь, а не из `PRINTER_NAMES`: тесты сверяют их дословно и не
@@ -161,8 +187,12 @@ async def printers(db: AsyncSession) -> list[Machine]:
     Разбор самой переменной проверяет test_machines.py.
     """
     items = [
-        Machine(name="P2S #1", kind=MachineKind.PRINTER, status=MachineStatus.FREE),
-        Machine(name="P2S #2", kind=MachineKind.PRINTER, status=MachineStatus.FREE),
+        Machine(
+            room_id=room.id, name="P2S #1", kind=MachineKind.PRINTER, status=MachineStatus.FREE
+        ),
+        Machine(
+            room_id=room.id, name="P2S #2", kind=MachineKind.PRINTER, status=MachineStatus.FREE
+        ),
     ]
     db.add_all(items)
     await db.commit()
@@ -170,16 +200,45 @@ async def printers(db: AsyncSession) -> list[Machine]:
 
 
 @pytest_asyncio.fixture
-async def engravers(db: AsyncSession) -> list[Machine]:
+async def engravers(db: AsyncSession, room: Room) -> list[Machine]:
     """Гравировщик рядом с принтерами — парк из машин разного типа.
 
     Отдельной фикстурой, а не внутри `printers`: большинство проверок про
     принтеры, и лишняя машина в них только мешала бы считать свободные.
     """
-    items = [Machine(name="Гравёр #1", kind=MachineKind.ENGRAVER, status=MachineStatus.FREE)]
+    items = [
+        Machine(
+            room_id=room.id,
+            name="Гравёр #1",
+            kind=MachineKind.ENGRAVER,
+            status=MachineStatus.FREE,
+        )
+    ]
     db.add_all(items)
     await db.commit()
     return items
+
+
+@pytest_asyncio.fixture
+async def meeting(db: AsyncSession) -> tuple[Room, Machine]:
+    """Переговорная: помещение вместе со своей единицей брони.
+
+    Так её и заводит `services/rooms.create` — комната и строка в `machines` с
+    тем же именем. Здесь пара собирается руками, чтобы фикстура не зависела от
+    прав админа.
+    """
+    item = Room(name="Переговорная «Дуб»", kind=RoomKind.MEETING)
+    db.add(item)
+    await db.commit()
+    unit = Machine(
+        room_id=item.id,
+        name=item.name,
+        kind=MachineKind.MEETING_ROOM,
+        status=MachineStatus.FREE,
+    )
+    db.add(unit)
+    await db.commit()
+    return item, unit
 
 
 @pytest_asyncio.fixture

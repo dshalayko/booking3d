@@ -1,22 +1,27 @@
 """Служебные команды.
 
     python -m app.cli seed_printers
+    python -m app.cli rooms
+    python -m app.cli add_room <имя> [--kind workshop|meeting]
     python -m app.cli machines
     python -m app.cli rename_machine <id-или-имя> <новое имя>
-    python -m app.cli add_machine <имя> [--kind printer|engraver]
+    python -m app.cli add_machine <имя> [--room id-или-имя] [--kind printer|engraver|meeting_room]
     python -m app.cli remove_machine <id-или-имя>
     python -m app.cli make_admin <tg_chat_id> [--name Имя]
 
-Состав парка теперь правится из админки, вкладка «Оборудование» — эти команды
-остались для случая, когда админка недоступна: первый запуск на пустой базе,
-разбор на месте по SSH. Логика у них та же самая, из `services/machines.py`,
-поэтому «нельзя удалить машину с историей» здесь и там значит одно и то же.
+Состав парка и помещений правится из админки, вкладки «Помещения» и
+«Оборудование» — эти команды остались для случая, когда админка недоступна:
+первый запуск на пустой базе, разбор на месте по SSH. Логика у них та же самая,
+из `services/rooms.py` и `services/machines.py`, поэтому «нельзя удалить машину с
+историей» здесь и там значит одно и то же.
 
 Про `seed_printers` и `PRINTER_NAMES`. Переменная нужна ровно один раз — чтобы
-на свежей базе появились принтеры и было что показать на стене. Дальше парк
-живёт в таблице `machines`: `seed_printers` только досоздаёт недостающее по
-имени и ничего не удаляет. Гравировщиков она не касается вовсе — их заводят
-руками, из админки или `add_machine`.
+на свежей базе появились принтеры и было что показать на стене. Принтеры
+заводятся в первое помещение: миграция 0008 создаёт его одно, и оно же
+подразумевалось, когда помещений в системе не было вовсе. Дальше парк живёт в
+таблице `machines`: `seed_printers` только досоздаёт недостающее по имени и
+ничего не удаляет. Гравировщиков и переговорных она не касается вовсе — их
+заводят руками, из админки или командами выше.
 """
 
 import argparse
@@ -26,9 +31,10 @@ from sqlalchemy import select
 
 from app.config import settings
 from app.db import SessionLocal, engine
-from app.enums import MachineKind, MachineStatus
-from app.models import Machine, User
+from app.enums import MachineKind, MachineStatus, RoomKind
+from app.models import Machine, Room, User
 from app.services import machines as machines_svc
+from app.services import rooms as rooms_svc
 from app.services.auth import pick_free_pin
 from app.services.errors import DomainError
 from app.services.security import pin_digest
@@ -49,9 +55,29 @@ async def _cli_admin(db) -> User:
     return admin
 
 
+async def _first_room(db) -> Room | None:
+    return await db.scalar(select(Room).order_by(Room.id).limit(1))
+
+
+async def _find_room(db, target: str) -> Room | None:
+    """Помещение по id или по имени."""
+    room = await db.get(Room, int(target)) if target.isdigit() else None
+    if room is None:
+        room = await db.scalar(select(Room).where(Room.name == target))
+    return room
+
+
 async def seed_printers() -> None:
     """Создать принтеры, объявленные в PRINTER_NAMES. Существующие не трогает."""
     async with SessionLocal() as db:
+        room = await _first_room(db)
+        if room is None:
+            print(
+                "нет ни одного помещения — заведи: "
+                'python -m app.cli add_room "Мастерская"'
+            )
+            return
+
         printers = await machines_svc.list_machines(db, kind=MachineKind.PRINTER)
         existing = {printer.name for printer in printers}
         declared = set(settings.printers)
@@ -81,8 +107,15 @@ async def seed_printers() -> None:
             if name in existing:
                 print(f"уже есть: {name}")
                 continue
-            db.add(Machine(name=name, kind=MachineKind.PRINTER, status=MachineStatus.FREE))
-            print(f"добавлен: {name}")
+            db.add(
+                Machine(
+                    room_id=room.id,
+                    name=name,
+                    kind=MachineKind.PRINTER,
+                    status=MachineStatus.FREE,
+                )
+            )
+            print(f"добавлен: {name} ({room.name})")
         await db.commit()
 
         # Лишнее в базе не удаляем: на эти строки ссылается история работ.
@@ -95,16 +128,49 @@ async def seed_printers() -> None:
             )
 
 
+async def list_rooms() -> None:
+    """Показать id, тип и имена помещений: id нужен для add_machine."""
+    async with SessionLocal() as db:
+        rooms = await rooms_svc.list_rooms(db)
+        if not rooms:
+            print("помещений нет — заведи: python -m app.cli add_room \"Мастерская\"")
+            return
+        for room in rooms:
+            park = await machines_svc.list_machines(db, room_id=room.id)
+            print(f"{room.id}\t{room.kind}\t{room.name}\tоборудования: {len(park)}")
+
+
+async def add_room(name: str, kind: str) -> None:
+    """Завести помещение. У переговорной сразу появляется её единица брони."""
+    async with SessionLocal() as db:
+        admin = await _cli_admin(db)
+        try:
+            room = await rooms_svc.create(db, admin, name, kind)
+        except DomainError as error:
+            print(error)
+            return
+        await db.commit()
+        print(f"добавлено помещение: {room.name} ({room.kind}), id {room.id}")
+        if room.kind == RoomKind.MEETING:
+            print("единица брони переговорной создана вместе с ней — её можно бронировать")
+        print(f"планшет этого помещения открывать на /room/{room.id}")
+
+
 async def list_machines() -> None:
-    """Показать id, тип и имена: id нужен для rename_machine."""
+    """Показать id, помещение, тип и имена: id нужен для rename_machine."""
     async with SessionLocal() as db:
         park = await machines_svc.list_machines(db)
         if not park:
             print("парк пуст — заведи машины в админке или: python -m app.cli seed_printers")
             return
+        rooms = {room.id: room.name for room in await rooms_svc.list_rooms(db)}
         for machine in park:
             note = f" — {machine.note}" if machine.note else ""
-            print(f"{machine.id}\t{machine.kind}\t{machine.name}\t{machine.status}{note}")
+            room = rooms.get(machine.room_id, "?")
+            print(
+                f"{machine.id}\t{room}\t{machine.kind}\t{machine.name}"
+                f"\t{machine.status}{note}"
+            )
 
 
 async def _find_machine(db, target: str) -> Machine | None:
@@ -115,17 +181,31 @@ async def _find_machine(db, target: str) -> Machine | None:
     return machine
 
 
-async def add_machine(name: str, kind: str) -> None:
-    """Завести одну машину. Для случая, когда парк реально пополнился."""
+async def add_machine(name: str, kind: str, room: str | None) -> None:
+    """Завести одну машину. Для случая, когда парк реально пополнился.
+
+    Без `--room` — в первое помещение: пока комната одна, называть её каждый раз
+    незачем, а когда их несколько, ошибка «завёл не туда» стоит дороже одного
+    аргумента, поэтому она названа в подсказке.
+    """
     async with SessionLocal() as db:
+        target = await (_find_room(db, room) if room else _first_room(db))
+        if target is None:
+            print(
+                "не нашёл помещение — посмотри: python -m app.cli rooms"
+                if room
+                else "нет ни одного помещения — заведи: python -m app.cli add_room <имя>"
+            )
+            return
+
         admin = await _cli_admin(db)
         try:
-            machine = await machines_svc.create(db, admin, name, kind)
+            machine = await machines_svc.create(db, admin, target.id, name, kind)
         except DomainError as error:
             print(error)
             return
         await db.commit()
-        print(f"добавлен: {machine.name} ({machine.kind})")
+        print(f"добавлен: {machine.name} ({machine.kind}) в {target.name}")
         if machine.kind == MachineKind.PRINTER and machine.name not in settings.printers:
             print("допиши его в PRINTER_NAMES в .env, иначе seed_printers будет считать лишним")
 
@@ -192,7 +272,17 @@ def main() -> None:
     sub = parser.add_subparsers(dest="command", required=True)
 
     sub.add_parser("seed_printers", help="создать принтеры из PRINTER_NAMES")
-    sub.add_parser("machines", help="показать машины с их id и типом")
+    sub.add_parser("rooms", help="показать помещения с их id и типом")
+    sub.add_parser("machines", help="показать машины с их id, помещением и типом")
+
+    room = sub.add_parser("add_room", help="завести помещение")
+    room.add_argument("name", help="имя помещения")
+    room.add_argument(
+        "--kind",
+        default=RoomKind.WORKSHOP.value,
+        choices=[kind.value for kind in RoomKind],
+        help="тип помещения",
+    )
 
     rename = sub.add_parser("rename_machine", help="переименовать машину")
     rename.add_argument("machine", help="id или текущее имя")
@@ -200,6 +290,7 @@ def main() -> None:
 
     add = sub.add_parser("add_machine", help="завести одну машину")
     add.add_argument("name", help="имя новой машины")
+    add.add_argument("--room", default=None, help="id или имя помещения (по умолчанию первое)")
     add.add_argument(
         "--kind",
         default=MachineKind.PRINTER.value,
@@ -220,12 +311,16 @@ def main() -> None:
         try:
             if args.command == "seed_printers":
                 await seed_printers()
+            elif args.command == "rooms":
+                await list_rooms()
+            elif args.command == "add_room":
+                await add_room(args.name, args.kind)
             elif args.command == "machines":
                 await list_machines()
             elif args.command == "rename_machine":
                 await rename_machine(args.machine, args.name)
             elif args.command == "add_machine":
-                await add_machine(args.name, args.kind)
+                await add_machine(args.name, args.kind, args.room)
             elif args.command == "remove_machine":
                 await remove_machine(args.machine)
             elif args.command == "make_admin":

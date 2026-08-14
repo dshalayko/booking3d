@@ -2,6 +2,7 @@
 import pytest
 from sqlalchemy import select
 
+from app.admin import SECTIONS
 from app.bot import notify
 from app.config import settings
 from app.enums import (
@@ -11,7 +12,7 @@ from app.enums import (
     ReservationStatus,
     SessionStatus,
 )
-from app.models import Machine, MachineSession, QueueEntry, Reservation, User
+from app.models import Machine, MachineSession, QueueEntry, Reservation, Room, User
 from app.services import activity as activity_svc
 from app.services import auth
 from app.services import machines as machines_svc
@@ -55,13 +56,48 @@ class TestAccess:
 
         assert response.status_code == 200
         assert "P2S #1" in response.text
-        assert "Иван" in response.text
 
     async def test_actions_are_closed_without_secret(self, client, printers):
         response = await client.post(f"/admin/machines/{printers[0].id}/break", data={"note": "x"})
 
         assert response.status_code == 403
 
+
+class TestPanel:
+    """Ядро панели: разделы объявляются списком, а не разбросаны по коду.
+
+    Проверки идут по реестру, а не по написанному руками списку адресов: новый
+    раздел проверяется ими сам, и забыть его здесь нельзя.
+    """
+
+    async def test_every_section_is_closed_without_secret(self, client, printers):
+        """Доступ висит на общем роутере — раздел не может открыться наружу
+        потому, что в нём забыли проверку."""
+        for section in SECTIONS:
+            assert (await client.get(section.path)).status_code == 403, section.slug
+
+    async def test_every_section_opens_and_shows_the_whole_menu(
+        self, client, printers, make_user
+    ):
+        """Меню рисуется из реестра, поэтому с любой страницы видны все
+        разделы — раздел без пункта в меню невозможен."""
+        await make_user(is_admin=True)
+        await login(client)
+
+        for section in SECTIONS:
+            response = await client.get(section.path)
+
+            assert response.status_code == 200, section.slug
+            for item in SECTIONS:
+                assert f'href="{item.path}"' in response.text, (section.slug, item.slug)
+
+    async def test_people_section_lists_everyone(self, client, printers, make_user):
+        await make_user(name="Иван", is_admin=True)
+        await login(client)
+
+        response = await client.get("/admin/people")
+
+        assert "Иван" in response.text
 
 class TestMachineActions:
     async def test_break_cancels_print_and_tells_the_owner(
@@ -88,7 +124,7 @@ class TestMachineActions:
         assert [text for chat, text in outbox if chat == owner_chat]
 
     async def test_fix_returns_printer_and_offers_it_to_queue(
-        self, client, db, printers, make_user, outbox
+        self, client, db, room, printers, make_user, outbox
     ):
         machine_id = printers[0].id
         admin = await make_user(is_admin=True)
@@ -96,7 +132,7 @@ class TestMachineActions:
         waiting_chat = waiting.tg_chat_id
         await machines_svc.set_broken(db, admin, machine_id)
         await machines_svc.set_broken(db, admin, printers[1].id)
-        await queue_svc.join(db, waiting.id, MachineKind.PRINTER)
+        await queue_svc.join(db, waiting.id, room.id, MachineKind.PRINTER)
         await db.commit()
         await login(client)
         outbox.clear()
@@ -164,18 +200,18 @@ class TestMachineActions:
 
 
 class TestQueueAndUsers:
-    async def test_remove_from_queue(self, client, db, printers, make_user, outbox):
+    async def test_remove_from_queue(self, client, db, room, printers, make_user, outbox):
         await make_user(is_admin=True)
         waiting = await make_user()
         waiting_id, waiting_chat = waiting.id, waiting.tg_chat_id
         for printer in printers:
             await machines_svc.occupy(db, await make_user(), printer.id, 60)
-        join = await queue_svc.join(db, waiting.id, MachineKind.PRINTER)
+        join = await queue_svc.join(db, waiting.id, room.id, MachineKind.PRINTER)
         await db.commit()
         await login(client)
         outbox.clear()
 
-        await client.post(f"/admin/queue/{waiting_id}/remove")
+        await client.post(f"/admin/queue/{room.id}/{waiting_id}/remove")
 
         db.expire_all()
         assert (await db.get(QueueEntry, join.entry_id)).status == QueueStatus.LEFT
@@ -303,20 +339,20 @@ class TestActivityLog:
         assert "P2S #1 — занят: Иван" in text
         assert "деталь забрали (Анна)" in text
 
-    async def test_log_shows_queue_life(self, db, printers, make_user):
+    async def test_log_shows_queue_life(self, db, room, printers, make_user):
         owner = await make_user()
         other = await make_user()
         waiting = await make_user(name="Пётр")
         await machines_svc.occupy(db, owner, printers[0].id, 60)
         await machines_svc.occupy(db, other, printers[1].id, 60)
-        await queue_svc.join(db, waiting.id, MachineKind.PRINTER)
+        await queue_svc.join(db, waiting.id, room.id, MachineKind.PRINTER)
         await machines_svc.release(db, owner, printers[0].id)
-        await queue_svc.leave(db, waiting.id)
+        await queue_svc.leave(db, waiting.id, room.id)
         await db.commit()
 
         text = "\n".join(event.text for event in await activity_svc.recent(db))
 
-        assert "В очередь на принтер: Пётр" in text
+        assert "В очередь на принтер (Мастерская): Пётр" in text
         assert "Приглашение на P2S #1: Пётр" in text
         assert "Выход из очереди: Пётр" in text
 
@@ -346,14 +382,14 @@ class TestActivityLog:
     async def test_empty_log_is_fine(self, db, printers):
         assert await activity_svc.recent(db) == []
 
-    async def test_log_is_visible_in_dashboard(self, client, db, printers, make_user):
+    async def test_log_is_visible_in_its_section(self, client, db, printers, make_user):
         await make_user(is_admin=True)
         owner = await make_user(name="Иван")
         await machines_svc.occupy(db, owner, printers[0].id, 60)
         await db.commit()
         await login(client)
 
-        response = await client.get("/admin")
+        response = await client.get("/admin/log")
 
         assert "P2S #1 — занят: Иван" in response.text
 
@@ -383,7 +419,7 @@ class TestMachinesTab:
         summary = await client.get("/admin")
         response = await client.get("/admin/machines")
 
-        assert '/admin/machines"' in summary.text, "со сводки должна быть ссылка на вкладку"
+        assert '/admin/machines"' in summary.text, "со сводки должна быть ссылка на раздел"
         assert response.status_code == 200
         assert "P2S #1" in response.text and "Гравёр #1" in response.text
 
@@ -393,13 +429,14 @@ class TestMachinesTab:
             "name": "Гравёр #9", "kind": "engraver"
         })).status_code == 403
 
-    async def test_add_engraver(self, client, db, printers, make_user):
+    async def test_add_engraver(self, client, db, room, printers, make_user):
         await make_user(is_admin=True)
         await db.commit()
         await login(client)
 
         response = await client.post(
-            "/admin/machines", data={"name": "Гравёр #1", "kind": "engraver"}
+            "/admin/machines",
+            data={"name": "Гравёр #1", "kind": "engraver", "room_id": room.id},
         )
 
         assert response.status_code == 303
@@ -408,24 +445,30 @@ class TestMachinesTab:
         assert machine.kind == MachineKind.ENGRAVER
         assert machine.status == MachineStatus.FREE
 
-    async def test_added_machine_shows_up_on_the_wall(self, client, db, printers, make_user):
+    async def test_added_machine_shows_up_on_the_wall(self, client, db, room, printers, make_user):
         await make_user(is_admin=True)
         await db.commit()
         await login(client)
 
-        await client.post("/admin/machines", data={"name": "Гравёр #1", "kind": "engraver"})
+        await client.post(
+            "/admin/machines",
+            data={"name": "Гравёр #1", "kind": "engraver", "room_id": room.id},
+        )
 
-        board = await client.get("/")
+        # Планшет не привязан к помещению, поэтому доску открываем по адресу
+        # комнаты — так же, как это делает планшет со своей меткой.
+        board = await client.get(f"/room/{room.id}")
         assert "Гравёр #1" in board.text
         assert "Гравировщики" in board.text
 
-    async def test_add_refuses_a_taken_name(self, client, db, printers, make_user):
+    async def test_add_refuses_a_taken_name(self, client, db, room, printers, make_user):
         await make_user(is_admin=True)
         await db.commit()
         await login(client)
 
         response = await client.post(
-            "/admin/machines", data={"name": "P2S #1", "kind": "engraver"}
+            "/admin/machines",
+            data={"name": "P2S #1", "kind": "engraver", "room_id": room.id},
         )
 
         assert response.status_code == 409
@@ -473,33 +516,205 @@ class TestMachinesTab:
         db.expire_all()
         assert await db.get(Machine, machine_id) is not None
 
-    async def test_delete_button_is_hidden_when_it_would_fail(
+    async def test_delete_leads_to_confirmation_for_every_machine(
         self, client, db, printers, make_user
     ):
-        """Кнопка, которая всегда отвечает отказом, учит не читать сообщения."""
+        """Кнопка есть и у машины с историей: она ведёт на экран подтверждения.
+
+        Раньше её прятали — и машину с историей нельзя было убрать ничем, кроме
+        psql. Теперь прячется не кнопка, а мгновенное удаление.
+        """
         await make_user(is_admin=True)
         owner = await make_user()
         await machines_svc.occupy(db, owner, printers[0].id, 60)
         await db.commit()
         await login(client)
 
-        response = await client.get("/admin/machines")
+        listing = await client.get("/admin/machines")
+        confirm = await client.get(f"/admin/machines/{printers[0].id}/delete")
 
-        assert f"/admin/machines/{printers[1].id}/delete" in response.text
-        assert f"/admin/machines/{printers[0].id}/delete" not in response.text
+        assert f"/admin/machines/{printers[0].id}/delete" in listing.text
+        assert f"/admin/machines/{printers[1].id}/delete" in listing.text
+        assert confirm.status_code == 200
+        assert "работ в журнале: 1" in confirm.text
+
+    async def test_confirmed_delete_takes_the_machine_with_its_history(
+        self, client, db, printers, make_user
+    ):
+        machine_id = printers[0].id
+        await make_user(is_admin=True)
+        owner = await make_user()
+        await machines_svc.occupy(db, owner, machine_id, 60)
+        await machines_svc.release(db, owner, machine_id)
+        await db.commit()
+        await login(client)
+
+        response = await client.post(
+            f"/admin/machines/{machine_id}/delete", data={"confirm": "1"}
+        )
+
+        assert response.status_code == 303
+        db.expire_all()
+        assert await db.get(Machine, machine_id) is None
+        assert (
+            await db.scalars(
+                select(MachineSession).where(MachineSession.machine_id == machine_id)
+            )
+        ).all() == []
+
+
+class TestPeople:
+    """Заводить и удалять людей: тестовые учётки и тот, кто до бота не дошёл."""
+
+    async def test_admin_adds_a_person_with_a_pin(self, client, db, printers, make_user):
+        await make_user(is_admin=True)
+        await db.commit()
+        await login(client)
+
+        response = await client.post(
+            "/admin/users", data={"login": "n_novikov", "tg_chat_id": 900500, "pin": "8391"}
+        )
+
+        assert response.status_code == 303
+        person = await db.scalar(select(User).where(User.name == "n_novikov"))
+        assert person is not None
+        # PIN — рабочий: заведённый из админки человек сразу может им пользоваться.
+        assert (await auth.user_by_pin(db, "8391")).id == person.id
+
+    async def test_added_person_cannot_take_a_busy_login(self, client, db, printers, make_user):
+        await make_user(is_admin=True)
+        await make_user(name="p_petrov")
+        await db.commit()
+        await login(client)
+
+        response = await client.post(
+            "/admin/users", data={"login": "p_petrov", "tg_chat_id": 900501, "pin": "8392"}
+        )
+
+        assert response.status_code == 409
+
+    async def test_delete_takes_the_person_with_their_work_and_frees_the_machine(
+        self, client, db, printers, make_user
+    ):
+        """Работа исчезает вместе с человеком, а машина возвращается в строй.
+
+        Статус машины живёт в своей колонке: без этого шага на доске осталась бы
+        «занятая» машина, за которой никого нет, и занять её было бы нельзя.
+        """
+        machine_id = printers[0].id
+        await make_user(is_admin=True)
+        owner = await make_user()
+        owner_id = owner.id
+        await machines_svc.occupy(db, owner, machine_id, 60)
+        await db.commit()
+        await login(client)
+
+        response = await client.post(f"/admin/users/{owner_id}/delete")
+
+        assert response.status_code == 303
+        db.expire_all()
+        assert await db.get(User, owner_id) is None
+        assert (await db.get(Machine, machine_id)).status == MachineStatus.FREE
+        assert (
+            await db.scalars(select(MachineSession).where(MachineSession.user_id == owner_id))
+        ).all() == []
+
+    async def test_the_last_admin_stays(self, client, db, printers, make_user):
+        """От имени админа из базы панель пишет каждое действие в журнал:
+        удалив последнего, оператор закрыл бы админку сам на себя."""
+        admin = await make_user(is_admin=True)
+        admin_id = admin.id
+        await db.commit()
+        await login(client)
+
+        response = await client.post(f"/admin/users/{admin_id}/delete")
+
+        assert response.status_code == 409
+        db.expire_all()
+        assert await db.get(User, admin_id) is not None
+
+
+class TestPurge:
+    """Удаление вместе с историей — второй ответ на «удалить», см. purge.py."""
+
+    async def test_room_goes_with_its_machines_and_their_history(
+        self, client, db, room, printers, make_user
+    ):
+        room_id = room.id
+        machine_id = printers[0].id
+        await make_user(is_admin=True)
+        owner = await make_user()
+        await machines_svc.occupy(db, owner, machine_id, 60)
+        await db.commit()
+        await login(client)
+
+        confirm = await client.get(f"/admin/rooms/{room_id}/delete")
+        response = await client.post(f"/admin/rooms/{room_id}/delete", data={"confirm": "1"})
+
+        assert "оборудование: 2" in confirm.text
+        assert response.status_code == 303
+        db.expire_all()
+        assert await db.get(Room, room_id) is None
+        assert await db.get(Machine, machine_id) is None
+        assert (await db.scalars(select(MachineSession))).all() == []
+
+    async def test_unconfirmed_post_still_refuses_a_room_with_history(
+        self, client, db, room, printers, make_user
+    ):
+        """Подтверждение — поле формы: случайный POST мимо экрана подтверждения
+        удаляет только то, за чем ничего не записано."""
+        room_id = room.id
+        await make_user(is_admin=True)
+        await db.commit()
+        await login(client)
+
+        response = await client.post(f"/admin/rooms/{room_id}/delete")
+
+        assert response.status_code == 409
+        db.expire_all()
+        assert await db.get(Room, room_id) is not None
+
+    async def test_waiting_person_keeps_their_place_when_the_machine_goes(
+        self, client, db, room, printers, make_user
+    ):
+        """Человек ждал не эту машину, а любую своего типа: приглашение на
+        удалённую машину возвращает его в очередь, а не выкидывает из неё."""
+        await make_user(is_admin=True)
+        waiting = await make_user()
+        waiting_id = waiting.id
+        owners = []
+        for printer in printers:
+            owner = await make_user()
+            owners.append(owner)
+            await machines_svc.occupy(db, owner, printer.id, 60)
+        await queue_svc.join(db, waiting.id, room.id, MachineKind.PRINTER)
+        # Освободившийся принтер уходит первому в очереди — теперь он «предложен».
+        await machines_svc.release(db, owners[0], printers[0].id)
+        await db.commit()
+        assert (
+            await db.scalar(select(QueueEntry.status).where(QueueEntry.user_id == waiting_id))
+        ) == QueueStatus.OFFERED
+        await login(client)
+
+        await client.post(f"/admin/machines/{printers[0].id}/delete", data={"confirm": "1"})
+
+        db.expire_all()
+        entry = await db.scalar(select(QueueEntry).where(QueueEntry.user_id == waiting_id))
+        assert entry.status == QueueStatus.WAITING
+        assert entry.offered_machine_id is None
 
 
 class TestBookings:
     """Брони на будущее: их не видно ни на плитках, ни в очереди."""
 
-    async def test_dashboard_lists_bookings(self, client, db, printers, make_user, work_slot):
+    async def test_section_lists_bookings(self, client, db, printers, make_user, work_slot):
         await make_user(is_admin=True)
         person = await make_user(name="Анна")
         await reservations_svc.book(db, person, printers[0].id, work_slot(), 120)
         await db.commit()
         await login(client)
 
-        response = await client.get("/admin")
+        response = await client.get("/admin/bookings")
 
         assert "Анна" in response.text
         assert "P2S #1" in response.text

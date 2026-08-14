@@ -147,7 +147,9 @@ async def _warn_before_finish(
         machine = await db.get(Machine, session.machine_id)
         minutes = max(1, round((session.eta_at - now).total_seconds() / 60))
         session.warned_at = now
-        pending.add(session.user_id, texts.almost_done(machine.name, minutes))
+        pending.add(
+            session.user_id, texts.almost_done(machine.name, machine.kind, minutes)
+        )
         report.warned += 1
 
 
@@ -173,14 +175,22 @@ async def _finish_overdue(
             continue
 
         session.finished_notified_at = now
-        pending.add(result.owner_user_id, texts.finished(result.machine_name))
+        pending.add(
+            result.owner_user_id,
+            texts.finished(result.machine_name, result.machine_kind),
+        )
 
         owner_name = await db.scalar(select(User.name).where(User.id == result.owner_user_id))
-        # Подсказка «сходи проверь» уходит первому в очереди этого типа: тому,
-        # кто ждёт гравировщик, освободившийся принтер не нужен.
-        first = await _first_in_queue(db, result.machine_kind)
+        # Подсказка «сходи проверь» уходит первому в этой очереди: тому, кто ждёт
+        # гравировщик — или принтер в другом помещении, — этот принтер не нужен.
+        first = await _first_in_queue(db, result.room_id, result.machine_kind)
         if first is not None:
-            pending.add(first.user_id, texts.check_machine(result.machine_name, owner_name or ""))
+            pending.add(
+                first.user_id,
+                texts.check_machine(
+                    result.machine_name, result.machine_kind, owner_name or ""
+                ),
+            )
         report.finished += 1
 
 
@@ -204,14 +214,17 @@ async def _ping_unclaimed(
         machine = await db.get(Machine, session.machine_id)
         minutes = round((now - session.eta_at).total_seconds() / 60)
         session.unclaimed_notified_at = now
-        pending.add(session.user_id, texts.unclaimed_owner(machine.name, minutes))
+        pending.add(
+            session.user_id,
+            texts.unclaimed_owner(machine.name, machine.kind, minutes),
+        )
 
         owner_name = await db.scalar(select(User.name).where(User.id == session.user_id))
-        first = await _first_in_queue(db, machine.kind)
+        first = await _first_in_queue(db, machine.room_id, machine.kind)
         if first is not None:
             pending.add(
                 first.user_id,
-                texts.unclaimed_queue(machine.name, owner_name or "", minutes),
+                texts.unclaimed_queue(machine.name, machine.kind, owner_name or "", minutes),
             )
         report.unclaimed += 1
 
@@ -342,8 +355,8 @@ async def _active_session(db: AsyncSession, machine_id: int) -> MachineSession |
     )
 
 
-async def _first_in_queue(db: AsyncSession, kind: str) -> QueueEntry | None:
-    entries = await queue_svc.active_entries(db, kind=kind)
+async def _first_in_queue(db: AsyncSession, room_id: int, kind: str) -> QueueEntry | None:
+    entries = await queue_svc.active_entries(db, room_id=room_id, kind=kind)
     return entries[0] if entries else None
 
 

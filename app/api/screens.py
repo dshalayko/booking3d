@@ -1,8 +1,13 @@
 """Экраны и действия — один набор на киоск и на Mini App.
 
-Планшет на стене и телефон в Telegram показывают одно и то же: доску, расписание,
-формы занятия и брони. Отличаются они ровно двумя вещами, и обе описаны в
-`Client`: префикс адресов и нужен ли PIN. Всё остальное — этот модуль.
+Планшет на стене и телефон в Telegram показывают одно и то же: список помещений,
+доску помещения, расписание, формы занятия и брони. Отличаются они ровно двумя
+вещами, и обе описаны в `Client`: префикс адресов и нужен ли PIN. Всё остальное —
+этот модуль.
+
+Помещение есть в адресе почти каждого экрана: доска, расписание и очередь у
+каждого свои. Планшет своё помещение знает (оно записано в его device-cookie,
+см. api/kiosk.py), телефон выбирает из списка.
 
 Разделение сделано ради одной строки правил: вторая копия «показать расписание»
 или «занять машину» разошлась бы с первой на первой же правке, а расходятся такие
@@ -25,11 +30,12 @@ from app.api.render import hhmm, templates, when
 from app.bot import notify, texts
 from app.config import settings
 from app.enums import MachineKind, MachineStatus
-from app.models import Machine, User
+from app.models import Machine, Room, User
 from app.services import board as board_svc
 from app.services import machines as machines_svc
 from app.services import queue as queue_svc
 from app.services import reservations as reservations_svc
+from app.services import rooms as rooms_svc
 from app.services import schedule as schedule_svc
 from app.services import workhours as workhours_svc
 from app.services.errors import (
@@ -37,6 +43,7 @@ from app.services.errors import (
     MachineKindUnknown,
     MachineNotAvailable,
     ReservationOverlap,
+    RoomNotFound,
 )
 
 
@@ -136,30 +143,58 @@ async def _machine(db: AsyncSession, machine_id: int) -> Machine:
     return machine
 
 
-async def board_context(
-    db: AsyncSession, viewer: User | None = None, show_all: bool = False
-) -> dict:
-    """Состояние парка для шаблона доски.
+async def _room(db: AsyncSession, room_id: int) -> Room:
+    room = await db.get(Room, room_id)
+    if room is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, t.ERR_ROOM_NOT_FOUND)
+    return room
 
-    `viewer` приезжает только из Mini App: там известно, кто смотрит, и у
-    человека с занятой машиной доска сжимается до его машины и очереди
-    (services/board.py, `personal`). Планшет на стене общий, `viewer` там None, и
-    парк на нём всегда целиком — как и по ссылке «всё оборудование»
-    (`show_all`), которая нужна, чтобы занять вторую машину.
+
+# --- доска -------------------------------------------------------------------
+
+
+async def default_room_id(db: AsyncSession) -> int:
+    """Какое помещение показать, когда его не назвали.
+
+    Экрана «все помещения» в системе нет: у каждой комнаты свой адрес, и попасть
+    на него можно с планшета (его комната записана в метке устройства), из
+    админки или по ссылке. Но корень `/` открыть можно всегда, и показать на нём
+    что-то нужно — первое помещение подходит: их редко больше двух-трёх, а
+    планшет со стены сюда и не заходит.
     """
-    state = await board_svc.build(db)
-    mine = None if viewer is None else board_svc.personal(state, viewer.id)
-    board = state if show_all or mine is None else mine
+    rooms = await rooms_svc.list_rooms(db)
+    if not rooms:
+        raise RoomNotFound(t.ERR_NO_ROOMS)
+    return rooms[0].id
+
+
+async def board_context(
+    db: AsyncSession,
+    room_id: int | None = None,
+    viewer: User | None = None,
+) -> dict:
+    """Состояние для шаблона доски.
+
+    С `room_id` — одно помещение целиком: так доску видят планшет на стене и
+    телефон, открывший комнату. Без него — «моё»: парк сжимается до занятой
+    машины и очереди её секции, по всем помещениям сразу (services/board.py,
+    `personal`). Сжатый вид бывает только там, где известно, кто смотрит, то есть
+    в Mini App.
+    """
+    if room_id is not None:
+        state = await board_svc.build(db, room_id=room_id)
+        rooms = state.rooms
+    else:
+        state = await board_svc.build(db)
+        mine = None if viewer is None else board_svc.personal(state, viewer.id)
+        rooms = [] if mine is None else mine.rooms
+
     return {
-        "groups": board.groups,
-        "free_count": board.free_count,
-        "now": board.now,
-        # Шаблону важно не «кто смотрит», а сжата ли доска сейчас и есть ли что
-        # сжимать: от первого зависит большая кнопка занятия, от пары — ссылка
-        # «всё оборудование» и обратная ей «моя машина». Поэтому `personal`
-        # считается и при `show_all`: иначе с раскрытой доски некуда вернуться.
-        "focused": mine is not None and not show_all,
-        "can_focus": mine is not None,
+        "rooms": rooms,
+        "now": state.now,
+        # Сжата ли доска: от этого зависит, показывать ли большую кнопку
+        # «занять» — у человека машина уже есть, а вторую он берёт из помещения.
+        "focused": room_id is None,
         # Кому принадлежит кнопка «выйти из очереди»: в Mini App она действует
         # на смотрящего, и предлагать её тому, кто в этой очереди не стоит,
         # значит вести его в отказ. На киоске (None) выходят по PIN — там
@@ -168,20 +203,19 @@ async def board_context(
     }
 
 
-# --- доска -------------------------------------------------------------------
-
-
 async def board_page(
     request: Request,
     db: AsyncSession,
     client: Client,
+    room_id: int,
     flash: str = "",
     viewer: User | None = None,
-    show_all: bool = False,
 ) -> Response:
-    context = await board_context(db, viewer, show_all)
+    """Доска одного помещения — главный экран планшета на стене."""
+    room = await _room(db, room_id)
+    context = await board_context(db, room_id=room.id, viewer=viewer)
     context["flash"] = t.FLASH_KIOSK.get(flash)
-    context["show_all"] = show_all
+    context["poll"] = f"{client.base}/partials/board/{room.id}"
     context.update(client.context)
     return templates.TemplateResponse(request, "kiosk.html", context)
 
@@ -190,11 +224,39 @@ async def board_partial(
     request: Request,
     db: AsyncSession,
     client: Client,
+    room_id: int,
     viewer: User | None = None,
-    show_all: bool = False,
 ) -> Response:
     """Кусок страницы, который сам перезапрашивается каждые 10 секунд."""
-    context = await board_context(db, viewer, show_all)
+    context = await board_context(db, room_id=room_id, viewer=viewer)
+    context.update(client.context)
+    return templates.TemplateResponse(request, "_board.html", context)
+
+
+async def mine_page(
+    request: Request,
+    db: AsyncSession,
+    client: Client,
+    flash: str = "",
+    viewer: User | None = None,
+) -> Response:
+    """«Моё» — доска, сжатая до занятого и своей очереди, по всем помещениям.
+
+    Только для Mini App: на телефон заходят с вопросом «что с моей печатью», и
+    чужие машины в этот момент оттесняют ответ за край экрана. Имя комнаты в
+    заголовке — ссылка на её доску целиком.
+    """
+    context = await board_context(db, viewer=viewer)
+    context["flash"] = t.FLASH_KIOSK.get(flash)
+    context["poll"] = f"{client.base}/partials/board"
+    context.update(client.context)
+    return templates.TemplateResponse(request, "kiosk.html", context)
+
+
+async def mine_partial(
+    request: Request, db: AsyncSession, client: Client, viewer: User | None = None
+) -> Response:
+    context = await board_context(db, viewer=viewer)
     context.update(client.context)
     return templates.TemplateResponse(request, "_board.html", context)
 
@@ -251,13 +313,23 @@ async def release_page(
 ) -> Response:
     machine = await _machine(db, machine_id)
 
+    # Слова зависят от типа: у принтера это деталь на столе, у переговорной —
+    # люди, которые вышли из комнаты.
     claimed = machine.status == MachineStatus.DONE_WAIT
     return templates.TemplateResponse(
         request,
         "confirm.html",
         {
-            "title": t.CONFIRM_CLAIM_TITLE if claimed else t.CONFIRM_RELEASE_TITLE,
-            "hint": t.CONFIRM_CLAIM_HINT if claimed else t.CONFIRM_RELEASE_HINT,
+            "title": (
+                t.MACHINE_DONE_CONFIRM.get(machine.kind, t.CONFIRM_RELEASE_TITLE)
+                if claimed
+                else t.CONFIRM_RELEASE_TITLE
+            ),
+            "hint": (
+                t.MACHINE_DONE_HINT.get(machine.kind, t.CONFIRM_RELEASE_HINT)
+                if claimed
+                else t.CONFIRM_RELEASE_HINT
+            ),
             "subject": machine.name,
             "action": f"{client.base}/release/{machine.id}",
             "submit": t.CONFIRM_RELEASE_SUBMIT,
@@ -285,10 +357,11 @@ async def do_release(
 
 
 async def queue_join_page(
-    request: Request, db: AsyncSession, client: Client, kind: str
+    request: Request, db: AsyncSession, client: Client, room_id: int, kind: str
 ) -> Response:
-    """Очередь у каждого типа своя, поэтому тип — часть адреса кнопки."""
+    """Очередь у каждой пары (помещение, тип) своя — обе части в адресе кнопки."""
     valid_kind(kind)
+    room = await _room(db, room_id)
     return templates.TemplateResponse(
         request,
         "confirm.html",
@@ -296,9 +369,9 @@ async def queue_join_page(
             "title": t.CONFIRM_QUEUE_JOIN_TITLE,
             "hint": t.CONFIRM_QUEUE_JOIN_HINT,
             "subject": t.CONFIRM_QUEUE_JOIN_SUBJECT.format(
-                title=t.MACHINE_KIND_TITLE.get(kind, kind)
+                title=t.MACHINE_KIND_TITLE.get(kind, kind), room=room.name
             ),
-            "action": f"{client.base}/queue/join/{kind}",
+            "action": f"{client.base}/queue/join/{room.id}/{kind}",
             "submit": t.CONFIRM_QUEUE_JOIN_SUBMIT,
             **client.context,
         },
@@ -306,31 +379,36 @@ async def queue_join_page(
 
 
 async def do_queue_join(
-    db: AsyncSession, client: Client, user: User, kind: str
+    db: AsyncSession, client: Client, user: User, room_id: int, kind: str
 ) -> Response:
-    result = await queue_svc.join(db, user.id, kind)
+    result = await queue_svc.join(db, user.id, room_id, kind)
     await db.commit()
     await notify.announce_offers(db, result.offers)
     return client.done("queued")
 
 
-async def queue_leave_page(request: Request, client: Client) -> Response:
+async def queue_leave_page(
+    request: Request, db: AsyncSession, client: Client, room_id: int
+) -> Response:
+    room = await _room(db, room_id)
     return templates.TemplateResponse(
         request,
         "confirm.html",
         {
             "title": t.CONFIRM_QUEUE_LEAVE_TITLE,
             "hint": t.CONFIRM_QUEUE_LEAVE_HINT,
-            "subject": t.CONFIRM_QUEUE_LEAVE_SUBJECT,
-            "action": f"{client.base}/queue/leave",
+            "subject": t.CONFIRM_QUEUE_LEAVE_SUBJECT.format(room=room.name),
+            "action": f"{client.base}/queue/leave/{room.id}",
             "submit": t.CONFIRM_QUEUE_LEAVE_SUBMIT,
             **client.context,
         },
     )
 
 
-async def do_queue_leave(db: AsyncSession, client: Client, user: User) -> Response:
-    result = await queue_svc.leave(db, user.id)
+async def do_queue_leave(
+    db: AsyncSession, client: Client, user: User, room_id: int
+) -> Response:
+    result = await queue_svc.leave(db, user.id, room_id)
     await db.commit()
     await notify.announce_offers(db, result.offers)
     return client.done("left")
@@ -343,16 +421,20 @@ async def schedule_page(
     request: Request,
     db: AsyncSession,
     client: Client,
+    room_id: int,
     kind: str,
     day_value: str = "",
     viewer: User | None = None,
 ) -> Response:
+    """Расписание одного типа в одном помещении: часы — свои у каждой комнаты."""
     valid_kind(kind)
+    room = await _room(db, room_id)
     now = datetime.now(UTC)
-    park = await machines_svc.list_machines(db, kind=kind)
+    park = await machines_svc.list_machines(db, room_id=room.id, kind=kind)
     grid = await reservations_svc.day_schedule(
         db,
         park,
+        room,
         kind,
         parse_day(day_value, now),
         now=now,
@@ -378,7 +460,7 @@ async def book_page(
         raise InvalidReservationTime(
             t.ERR_RESERVATION_HORIZON.format(days=settings.reservation_horizon_days)
         )
-    hours = await workhours_svc.get(db)
+    hours = await workhours_svc.get(db, machine.room_id)
     if not schedule_svc.is_open_at(starts_at, hours):
         raise InvalidReservationTime(t.ERR_RESERVATION_WORK_HOURS.format(hours=hours.text()))
     # Опять же: форма, которая заведомо кончится отказом, не должна открываться.
@@ -425,8 +507,16 @@ async def do_book(
         db, user, machine_id, parse_start(start), minutes
     )
     await db.commit()
+    room = await db.get(Room, result.room_id)
     await notify.send_to_user(
-        db, user.id, texts.booked(result.machine_name, result.starts_at, result.ends_at)
+        db,
+        user.id,
+        texts.booked(
+            result.machine_name,
+            room.name if room else "",
+            result.starts_at,
+            result.ends_at,
+        ),
     )
     return client.done("booked")
 
@@ -474,13 +564,30 @@ async def my_page(
     request: Request, db: AsyncSession, client: Client, user: User
 ) -> Response:
     """Свои брони. Экран есть только там, где известно, кто смотрит."""
-    bookings = await reservations_svc.of_user(db, user.id)
-    park = await machines_svc.list_machines(db)
-    # Типы спрашиваем у парка, а не у `MachineKind`: ссылка на расписание
-    # гравировщиков там, где их нет, ведёт на пустую сетку.
-    kinds = list(dict.fromkeys(machine.kind for machine in park))
     return templates.TemplateResponse(
         request,
         "my.html",
-        {"person": user, "bookings": bookings, "kinds": kinds, **client.context},
+        {
+            "person": user,
+            "bookings": await reservations_svc.of_user(db, user.id),
+            "links": await schedule_links(db),
+            **client.context,
+        },
     )
+
+
+async def schedule_links(db: AsyncSession) -> list[tuple[Room, str]]:
+    """Пары (помещение, тип), у которых есть расписание.
+
+    Спрашиваем парк, а не `MachineKind` и не список помещений: ссылка на
+    расписание гравировщиков там, где их нет, ведёт на пустую сетку.
+    """
+    park = await machines_svc.list_machines(db)
+    rooms = {room.id: room for room in await rooms_svc.list_rooms(db)}
+
+    links: list[tuple[Room, str]] = []
+    for machine in park:
+        room = rooms.get(machine.room_id)
+        if room is not None and (room, machine.kind) not in links:
+            links.append((room, machine.kind))
+    return links

@@ -18,6 +18,22 @@ class TestTokens:
     def test_device_token_roundtrip(self):
         assert auth.is_kiosk_device(auth.issue_device_token()) is True
 
+    def test_device_token_carries_the_room(self):
+        """Планшет висит в одном помещении, и оно записано в саму метку."""
+        token = auth.issue_device_token(7)
+
+        assert auth.device_room_id(token) == 7
+
+    def test_old_device_token_has_no_room(self):
+        """Планшет, зарегистрированный до появления комнат, остаётся киоском."""
+        token = auth.issue_device_token()
+
+        assert auth.is_kiosk_device(token) is True
+        assert auth.device_room_id(token) is None
+
+    def test_forged_token_has_no_room(self):
+        assert auth.device_room_id("подделка") is None
+
     def test_device_token_rejects_garbage(self):
         assert auth.is_kiosk_device("подделка") is False
         assert auth.is_kiosk_device(None) is False
@@ -109,11 +125,32 @@ class TestKioskRoutes:
         assert response.status_code == 403
         assert auth.DEVICE_COOKIE not in response.cookies
 
-    async def test_enroll_sets_device_cookie(self, client):
+    async def test_enroll_asks_for_the_room_first(self, client, room):
+        """Планшет висит в одном помещении, и при настройке нужно сказать, в каком."""
         response = await client.get(f"/kiosk/enroll?secret={settings.kiosk_enroll_secret}")
 
+        assert response.status_code == 200
+        assert room.name in response.text
+        assert auth.DEVICE_COOKIE not in client.cookies
+
+    async def test_enroll_with_a_room_sets_device_cookie(self, client, room):
+        response = await client.get(
+            f"/kiosk/enroll?secret={settings.kiosk_enroll_secret}&room={room.id}"
+        )
+
         assert response.status_code == 303
-        assert auth.is_kiosk_device(client.cookies.get(auth.DEVICE_COOKIE))
+        token = client.cookies.get(auth.DEVICE_COOKIE)
+        assert auth.is_kiosk_device(token)
+        assert auth.device_room_id(token) == room.id
+
+    async def test_unknown_room_does_not_enroll(self, client, room):
+        """Опечатка в номере не должна давать планшет без помещения."""
+        response = await client.get(
+            f"/kiosk/enroll?secret={settings.kiosk_enroll_secret}&room=999"
+        )
+
+        assert response.status_code == 200
+        assert auth.DEVICE_COOKIE not in client.cookies
 
     async def test_pin_is_refused_on_foreign_device(self, client, printers, make_user):
         """Правило 11: с ноутбука PIN ввести негде."""
@@ -125,18 +162,22 @@ class TestKioskRoutes:
 
         assert response.status_code == 403
 
-    async def test_action_leaves_no_session_behind(self, client, printers, make_user):
+    async def test_action_leaves_no_session_behind(self, client, room, printers, make_user):
         """PIN подписывает одно действие и не переносится на следующее."""
         await make_user(pin="4242")
-        await client.get(f"/kiosk/enroll?secret={settings.kiosk_enroll_secret}")
+        await client.get(
+            f"/kiosk/enroll?secret={settings.kiosk_enroll_secret}&room={room.id}"
+        )
 
         await client.post(f"/occupy/{printers[0].id}", data={"pin": "4242", "minutes": "60"})
 
         assert set(client.cookies) == {auth.DEVICE_COOKIE}
 
-    async def test_wrong_pin_is_rejected_then_locked_out(self, client, printers, make_user):
+    async def test_wrong_pin_is_rejected_then_locked_out(self, client, room, printers, make_user):
         await make_user(pin="4242")
-        await client.get(f"/kiosk/enroll?secret={settings.kiosk_enroll_secret}")
+        await client.get(
+            f"/kiosk/enroll?secret={settings.kiosk_enroll_secret}&room={room.id}"
+        )
         machine_id = printers[0].id
 
         for _ in range(5):
@@ -150,8 +191,10 @@ class TestKioskRoutes:
 
 
 class TestAdminAndService:
-    async def test_logout_clears_admin_but_keeps_kiosk(self, client):
-        await client.get(f"/kiosk/enroll?secret={settings.kiosk_enroll_secret}")
+    async def test_logout_clears_admin_but_keeps_kiosk(self, client, room):
+        await client.get(
+            f"/kiosk/enroll?secret={settings.kiosk_enroll_secret}&room={room.id}"
+        )
         await client.post("/admin/login", data={"secret": settings.admin_secret})
 
         await client.get("/logout")

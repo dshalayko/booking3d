@@ -1,0 +1,66 @@
+{# Оболочка админки: постоянное меню слева, содержимое справа карточками.
+
+   Меню собирается из реестра разделов (`ADMIN_SECTIONS`, см. app/admin/__init__.py),
+   а не пишется здесь руками: раздел, который есть в коде, но забыт в меню, — это
+   страница, о которой никто не узнает. Группы («сейчас» и «настройка») задают
+   разделы сами; порядок внутри группы — порядок реестра.
+
+   Какой пункт активен, говорит сам раздел: его кладёт в контекст `core.render`
+   (`section`). Из него же берутся заголовок страницы и подпись вкладки.
+
+   Страница раздела наследует этот шаблон и заполняет `admin`; заголовок берётся
+   из раздела, но его можно перебить блоком `heading`. #}
+{% extends "base.html" %}
+{% from "admin/_icons.html" import icon %}
+{% block body_class %}admin-page{% endblock %}
+
+{% block title %}{{ section.heading or section.title }}{% endblock %}
+
+{% block content %}
+<div class="ad">
+  <aside class="ad-side">
+    <a class="ad-brand" href="/admin">
+      <span class="ad-brand-mark">{{ icon("door") }}</span>
+      <span>
+        <span class="ad-brand-name">{{ t.app_short_title }}</span>
+        <span class="ad-brand-sub">{{ t.admin_title }}</span>
+      </span>
+    </a>
+
+    {% for group, title in [(ADMIN_GROUP_NOW, t.admin_nav_now),
+                            (ADMIN_GROUP_SETUP, t.admin_nav_setup)] %}
+      <nav class="ad-group">
+        <p class="ad-group-title">{{ title }}</p>
+        {% for item in ADMIN_SECTIONS if item.group == group %}
+          <a class="ad-nav{% if item.slug == section.slug %} ad-nav-on{% endif %}"
+             href="{{ item.path }}">
+            {{ icon(item.icon) }}<span>{{ item.title }}</span>
+          </a>
+        {% endfor %}
+      </nav>
+    {% endfor %}
+
+    {# Доска — не раздел админки, а другой экран системы: у неё нет ни своей
+       страницы здесь, ни места в реестре. Отдельной группой, чтобы её не
+       путали с разделами панели. #}
+    <nav class="ad-group">
+      <p class="ad-group-title">{{ t.admin_nav_screens }}</p>
+      <a class="ad-nav" href="/">{{ icon("screen") }}<span>{{ t.admin_to_board }}</span></a>
+    </nav>
+
+    <p class="ad-side-note">{{ t.admin_side_note }}</p>
+  </aside>
+
+  <main class="ad-main">
+    <header class="ad-top">
+      <h1>{% block heading %}{{ section.heading or section.title }}{% endblock %}</h1>
+      <div class="ad-top-actions">{% block topbar %}{% endblock %}</div>
+    </header>
+
+    <div class="ad-body">
+      {% if flash %}<div class="banner banner-ok">{{ flash }}</div>{% endif %}
+      {% block admin %}{% endblock %}
+    </div>
+  </main>
+</div>
+{% endblock %}

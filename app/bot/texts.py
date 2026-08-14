@@ -9,6 +9,7 @@
 делать. Отсюда же тексты берёт планировщик на шаге 7.
 """
 
+from dataclasses import dataclass
 from datetime import datetime
 
 from app import texts as t
@@ -91,18 +92,41 @@ def busy_word(kind: str) -> str:
     return t.MACHINE_BUSY_WORD.get(kind, t.MACHINE_KIND_ONE.get(kind, kind))
 
 
+def done_word(kind: str) -> str:
+    """Что значит «работа кончилась, но не свободно» — у принтера и у комнаты."""
+    return t.MACHINE_DONE_WORD.get(kind, MachineStatus.DONE_WAIT)
+
+
 def status(board: Board) -> str:
-    """Состояние парка секциями по типам — как на экране в мастерской."""
-    if not board.groups:
+    """Состояние парка блоками по помещениям — как на экранах в них самих.
+
+    Внутри помещения — секции по типам, но только если типов больше одного: в
+    переговорной подзаголовок «Переговорная» повторял бы имя комнаты.
+
+    Пустая строка стоит между всеми частями — и между помещениями, и между
+    секциями внутри них. Разделителя двух уровней у Telegram нет, поэтому
+    границу помещения держит не отбивка, а сама строка заголовка: значок типа и
+    жирное имя видны среди светлых курсивных подзаголовков.
+    """
+    if not board.rooms:
         return t.BOT_STATUS_PARK_EMPTY
 
     blocks = []
-    for group in board.groups:
-        title = t.MACHINE_KIND_TITLE.get(group.kind, group.kind)
-        lines = [t.BOT_STATUS_SECTION.format(title=title)]
-        lines.extend(_machine_lines(group, board))
-        lines.append(_queue_line(group))
-        blocks.append("\n".join(lines))
+    for room in board.rooms:
+        parts = [
+            t.BOT_STATUS_ROOM.format(
+                mark=t.ROOM_KIND_MARK.get(room.kind, ""), name=room.name
+            )
+        ]
+        for group in room.groups:
+            lines = []
+            if not room.single_group:
+                title = t.MACHINE_KIND_TITLE.get(group.kind, group.kind)
+                lines.append(t.BOT_STATUS_SECTION.format(title=title))
+            lines.extend(_machine_lines(group, board))
+            lines.append(_queue_line(group))
+            parts.append("\n".join(lines))
+        blocks.append("\n\n".join(parts))
 
     return "\n\n".join(blocks)
 
@@ -125,6 +149,8 @@ def _machine_lines(group, board: Board) -> list[str]:
 
         if machine.status == MachineStatus.PRINTING:
             word = busy_word(machine.kind)
+        elif machine.status == MachineStatus.DONE_WAIT:
+            word = done_word(machine.kind)
         else:
             word = t.BOT_STATUS_WORDS.get(machine.status, machine.status)
         lines.append(t.BOT_STATUS_LINE.format(mark=mark, machine=machine.name, word=word))
@@ -157,32 +183,78 @@ def _queue_line(group) -> str:
     return t.BOT_STATUS_QUEUE.format(people=people)
 
 
-def my_state(machine_name: str | None, eta_at: datetime | None, now: datetime,
-             position: int | None, queue_kind: str | None, offered_machine: str | None,
-             offer_until: datetime | None, booking_machine: str | None = None,
-             booking_starts_at: datetime | None = None,
-             booking_ends_at: datetime | None = None) -> str:
-    parts = []
-    if machine_name and eta_at:
-        parts.append(
-            t.BOT_MY_BUSY.format(machine=machine_name, left=left_until(eta_at, now))
+@dataclass(frozen=True)
+class MyWork:
+    """Активная работа человека — по одной на помещение (правило 2)."""
+
+    machine: str
+    room: str
+    eta_at: datetime
+
+
+@dataclass(frozen=True)
+class MyBooking:
+    machine: str
+    room: str
+    starts_at: datetime
+    ends_at: datetime
+
+
+@dataclass(frozen=True)
+class MyQueue:
+    """Место в очереди. Если приглашение уже пришло, у него есть машина и срок."""
+
+    room: str
+    kind: str
+    position: int
+    offered_machine: str | None = None
+    offer_until: datetime | None = None
+
+
+def my_state(
+    now: datetime,
+    works: list[MyWork],
+    bookings: list[MyBooking],
+    queues: list[MyQueue],
+) -> str:
+    """Всё, что за человеком числится, — списками, а не по одному.
+
+    Списками, потому что лимиты считаются в помещении: занятый принтер в
+    мастерской и бронь переговорной существуют одновременно, и показать что-то
+    одно значило бы соврать про остальное.
+    """
+    parts = [
+        t.BOT_MY_BUSY.format(
+            machine=work.machine, room=work.room, left=left_until(work.eta_at, now)
         )
-    if booking_machine:
-        parts.append(
-            t.BOT_MY_BOOKING.format(
-                machine=booking_machine,
-                start=when(booking_starts_at),
-                end=hhmm(booking_ends_at),
+        for work in works
+    ]
+    parts += [
+        t.BOT_MY_BOOKING.format(
+            machine=booking.machine,
+            room=booking.room,
+            start=when(booking.starts_at),
+            end=hhmm(booking.ends_at),
+        )
+        for booking in bookings
+    ]
+    for place in queues:
+        if place.offered_machine:
+            parts.append(
+                t.BOT_MY_OFFERED.format(
+                    machine=place.offered_machine,
+                    room=place.room,
+                    time=hhmm(place.offer_until),
+                )
             )
-        )
-    if offered_machine:
-        parts.append(
-            t.BOT_MY_OFFERED.format(machine=offered_machine, time=hhmm(offer_until))
-        )
-    elif position and queue_kind:
-        parts.append(
-            t.BOT_MY_IN_QUEUE.format(position=position, kind=kind_word(queue_kind))
-        )
+        else:
+            parts.append(
+                t.BOT_MY_IN_QUEUE.format(
+                    position=place.position,
+                    kind=kind_word(place.kind),
+                    room=place.room,
+                )
+            )
 
     if not parts:
         parts.append(t.BOT_MY_NOTHING)
@@ -197,18 +269,47 @@ def park_empty() -> str:
 
 
 def queue_pick_kind(kinds: list[str]) -> str:
-    """Очередей несколько — какую именно, спрашиваем командами по типу."""
+    """Очередей несколько, но все в одном помещении — спрашиваем командами."""
     options = "\n".join(
-        t.BOT_QUEUE_PICK_OPTION.format(
+        t.BOT_QUEUE_PICK_KIND.format(
             command=f"/queue_{kind}", title=t.MACHINE_KIND_TITLE.get(kind, kind)
         )
         for kind in kinds
     )
-    return t.BOT_QUEUE_PICK.format(options=options)
+    return t.BOT_QUEUE_PICK_KINDS.format(options=options)
 
 
-def queue_joined(position: int, kind: str) -> str:
-    return t.BOT_QUEUE_JOINED.format(position=position, kind=kind_word(kind))
+def queue_pick_room(options: list[tuple[str, str]]) -> str:
+    """Очереди в разных помещениях: командой их не перечислить.
+
+    Команда вида `/queue_<номер помещения>` была бы адресом строки в базе, а не
+    словом человеческого языка, поэтому выбор отправляем на экран — там
+    помещения названы своими именами.
+    """
+    lines = "\n".join(
+        t.BOT_QUEUE_PICK_OPTION.format(
+            room=room, title=t.MACHINE_KIND_TITLE.get(kind, kind)
+        )
+        for room, kind in options
+    )
+    return t.BOT_QUEUE_PICK.format(options=lines)
+
+
+def queue_leave_pick(options: list[tuple[str, str]]) -> str:
+    """Человек стоит в нескольких очередях — из какой выходить, решает он."""
+    lines = "\n".join(
+        t.BOT_QUEUE_PICK_OPTION.format(
+            room=room, title=t.MACHINE_KIND_TITLE.get(kind, kind)
+        )
+        for room, kind in options
+    )
+    return t.BOT_QUEUE_LEAVE_PICK.format(options=lines)
+
+
+def queue_joined(position: int, kind: str, room: str) -> str:
+    return t.BOT_QUEUE_JOINED.format(
+        position=position, kind=kind_word(kind), room=room
+    )
 
 
 def queue_already(position: int) -> str:
@@ -219,8 +320,15 @@ def queue_left() -> str:
     return t.BOT_QUEUE_LEFT
 
 
-def offer(machine_name: str, expires_at: datetime) -> str:
-    return t.BOT_OFFER.format(machine=machine_name, time=hhmm(expires_at))
+def not_in_queue() -> str:
+    """Тот же текст, что у доменного отказа: ответ один, а пути к нему два."""
+    return t.ERR_NOT_IN_QUEUE
+
+
+def offer(machine_name: str, room_name: str, expires_at: datetime) -> str:
+    return t.BOT_OFFER.format(
+        machine=machine_name, room=room_name, time=hhmm(expires_at)
+    )
 
 
 def offer_expired(machine_name: str) -> str:
@@ -234,9 +342,11 @@ def offer_night_hint() -> str:
 # --- брони -------------------------------------------------------------------
 
 
-def booked(machine_name: str, starts_at: datetime, ends_at: datetime) -> str:
+def booked(
+    machine_name: str, room_name: str, starts_at: datetime, ends_at: datetime
+) -> str:
     return t.BOT_BOOKED.format(
-        machine=machine_name, start=when(starts_at), end=hhmm(ends_at)
+        machine=machine_name, room=room_name, start=when(starts_at), end=hhmm(ends_at)
     )
 
 
@@ -297,25 +407,44 @@ def released_by_other(machine_name: str, actor_name: str) -> str:
     return t.BOT_RELEASED_BY_OTHER.format(machine=machine_name, name=actor_name)
 
 
-def almost_done(machine_name: str, minutes: int) -> str:
-    return t.BOT_ALMOST_DONE.format(machine=machine_name, left=humanize(minutes))
+# Что делать в конце работы, зависит от типа: у принтера это деталь на столе, у
+# переговорной — выйти из комнаты. Отсюда `kind` в каждом из напоминаний.
 
 
-def finished(machine_name: str) -> str:
-    return t.BOT_FINISHED.format(machine=machine_name)
+def almost_done(machine_name: str, kind: str, minutes: int) -> str:
+    return t.BOT_ALMOST_DONE.format(
+        machine=machine_name,
+        left=humanize(minutes),
+        hint=t.MACHINE_ALMOST_DONE_HINT.get(kind, ""),
+    )
 
 
-def check_machine(machine_name: str, owner_name: str) -> str:
-    return t.BOT_CHECK_MACHINE.format(machine=machine_name, name=owner_name)
+def finished(machine_name: str, kind: str) -> str:
+    return t.BOT_FINISHED.format(
+        machine=machine_name, hint=t.MACHINE_FINISHED_HINT.get(kind, "")
+    )
 
 
-def unclaimed_owner(machine_name: str, minutes: int) -> str:
-    return t.BOT_UNCLAIMED_OWNER.format(machine=machine_name, ago=humanize(minutes))
+def check_machine(machine_name: str, kind: str, owner_name: str) -> str:
+    return t.BOT_CHECK_MACHINE.format(
+        machine=machine_name, name=owner_name, hint=t.MACHINE_CHECK_HINT.get(kind, "")
+    )
 
 
-def unclaimed_queue(machine_name: str, owner_name: str, minutes: int) -> str:
+def unclaimed_owner(machine_name: str, kind: str, minutes: int) -> str:
+    return t.BOT_UNCLAIMED_OWNER.format(
+        machine=machine_name,
+        ago=humanize(minutes),
+        hint=t.MACHINE_UNCLAIMED_OWNER_HINT.get(kind, ""),
+    )
+
+
+def unclaimed_queue(machine_name: str, kind: str, owner_name: str, minutes: int) -> str:
     return t.BOT_UNCLAIMED_QUEUE.format(
-        machine=machine_name, name=owner_name, ago=humanize(minutes)
+        machine=machine_name,
+        name=owner_name,
+        ago=humanize(minutes),
+        hint=t.MACHINE_UNCLAIMED_QUEUE_HINT.get(kind, ""),
     )
 
 
@@ -332,6 +461,15 @@ def removed_from_queue() -> str:
 
 def nothing_to_free() -> str:
     return t.BOT_NOTHING_TO_FREE
+
+
+def free_pick(options: list[tuple[str, str]]) -> str:
+    """Занято сразу в нескольких помещениях — какую машину освободить, решает он."""
+    lines = "\n".join(
+        t.BOT_QUEUE_PICK_OPTION.format(room=room, title=machine)
+        for room, machine in options
+    )
+    return t.BOT_FREE_PICK.format(options=lines)
 
 
 def not_registered() -> str:

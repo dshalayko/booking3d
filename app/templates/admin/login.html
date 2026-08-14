@@ -1,9 +1,13 @@
+{# Форма входа — единственная страница панели без оболочки: меню разделов тому,
+   кто ещё не вошёл, показывать нечего. #}
 {% extends "base.html" %}
+{% from "admin/_icons.html" import icon %}
 {% block title %}{{ t.admin_login_title }}{% endblock %}
 
 {% block content %}
 <main class="sheet sheet-center">
-  <form class="confirm" method="post" action="/admin/login">
+  <form class="ad-login" method="post" action="/admin/login">
+    <span class="ad-brand-mark">{{ icon("door") }}</span>
     <h1>{{ t.admin_title }}</h1>
     <p class="confirm-hint">{{ t.admin_login_hint }} <code>ADMIN_SECRET</code>.</p>
     <input class="text-input" type="password" name="secret" autocomplete="off" autofocus>

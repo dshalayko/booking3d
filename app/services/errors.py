@@ -13,6 +13,30 @@ class InvalidDuration(DomainError):
     """Длительность работы вне допустимых границ."""
 
 
+class RoomNotFound(DomainError):
+    """Помещения с таким номером нет."""
+
+
+class RoomNameTaken(DomainError):
+    """Имя уже носит другое помещение."""
+
+
+class RoomNameInvalid(DomainError):
+    """Имя помещения пустое или длиннее, чем влезает в строку таблицы."""
+
+
+class RoomKindUnknown(DomainError):
+    """Тип помещения не из `RoomKind`."""
+
+
+class RoomNotEmpty(DomainError):
+    """В помещении ещё стоит оборудование — удалять его вместе с комнатой нельзя."""
+
+
+class MachineKindNotInRoom(DomainError):
+    """Такую единицу в помещении этого типа не заводят: принтер — не переговорная."""
+
+
 class MachineNotAvailable(DomainError):
     """Машина занята, сломана или иначе недоступна."""
 
@@ -83,6 +107,23 @@ class NotInQueue(DomainError):
 
 class OfferNotActive(DomainError):
     """Предложение уже неактуально или окно ещё не истекло."""
+
+
+class ChatIdInvalid(DomainError):
+    """Telegram chat id — целое положительное число."""
+
+
+class ChatIdTaken(DomainError):
+    """Этот Telegram уже привязан к другому человеку."""
+
+
+class LastAdmin(DomainError):
+    """Последнего админа не удаляем: от его имени пишется каждое действие
+    панели, и без него админка закрылась бы сама на себя."""
+
+
+class UserNotFound(DomainError):
+    """Человека с таким номером нет."""
 
 
 class NotAdmin(DomainError):

@@ -2,9 +2,9 @@
 
 Правила отсюда (PLAN.md):
   1. одна активная сессия на машину;
-  2. одна активная сессия на человека;
+  2. одна активная сессия на человека в помещении;
   7. пока очередь непуста, занять свободную машину может только адресат
-     предложения (и админ) — в пределах своего типа;
+     предложения (и админ) — в пределах своего помещения и типа;
   8. таймер не освобождает машину автоматически — по истечении `eta_at`
      она уходит в `done_wait`, а не в `free`;
   9. активную работу снимает только владелец или админ; готовую деталь из
@@ -30,17 +30,19 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app import texts as t
 from app.enums import (
     ACTIVE_SESSION_STATUSES,
+    ROOM_KIND_MACHINE_KINDS,
     MachineKind,
     MachineStatus,
     QueueStatus,
     SessionStatus,
 )
 from app.models import Machine, MachineSession, QueueEntry, Reservation, User
-from app.services import queue, reservations, schedule
+from app.services import queue, reservations, rooms, schedule
 from app.services.errors import (
     InvalidDuration,
     MachineBooked,
     MachineHasHistory,
+    MachineKindNotInRoom,
     MachineKindUnknown,
     MachineNameInvalid,
     MachineNameTaken,
@@ -64,6 +66,7 @@ class OccupyResult:
     session_id: int
     machine_id: int
     machine_name: str
+    room_id: int
     eta_at: datetime
     from_offer: bool
     from_reservation: bool = False
@@ -84,6 +87,9 @@ class DoneWaitResult:
     machine_id: int
     machine_name: str
     machine_kind: str
+    # Помещение нужно тому, кто разошлёт подсказку «сходи проверь»: очередь, до
+    # которой она относится, — это пара (помещение, тип). См. services/reminders.py.
+    room_id: int
     session_id: int
     owner_user_id: int
 
@@ -98,14 +104,20 @@ class BrokenResult:
 
 @dataclass(frozen=True)
 class Usage:
-    """Сколько следов машина оставила в журнале."""
+    """Сколько следов машина оставила в журнале.
+
+    Брони считаются наравне с работами: на строку машины ссылаются и они, и
+    удаление машины с бронью на завтра упало бы на внешнем ключе — то есть
+    пятисотой вместо внятного отказа.
+    """
 
     sessions: int
     offers: int
+    bookings: int
 
     @property
     def empty(self) -> bool:
-        return not self.sessions and not self.offers
+        return not self.sessions and not self.offers and not self.bookings
 
 
 def _utcnow() -> datetime:
@@ -143,13 +155,16 @@ async def occupy(
     if reservation is None:
         offer = await _check_queue_allows(db, user, machine)
 
-    if await _active_session_of_user(db, user.id) is not None:
+    # Правило 2 считается в пределах помещения: занятый принтер в мастерской не
+    # мешает занять переговорную, а второй принтер рядом с первым — мешает.
+    if await _active_session_of_user(db, user.id, machine.room_id) is not None:
         raise UserBusy(t.ERR_USER_BUSY)
 
     # eta_at считается обычным сложением: работа идёт и ночью, ночная пауза
     # относится только к окну подтверждения предложения из очереди.
     session = MachineSession(
         machine_id=machine.id,
+        room_id=machine.room_id,
         user_id=user.id,
         started_at=now,
         eta_at=now + timedelta(minutes=duration_minutes),
@@ -177,6 +192,7 @@ async def occupy(
         session_id=session.id,
         machine_id=machine.id,
         machine_name=machine.name,
+        room_id=machine.room_id,
         eta_at=session.eta_at,
         from_offer=offer is not None,
         from_reservation=reservation is not None,
@@ -272,6 +288,7 @@ async def mark_done_wait(
         machine_id=machine.id,
         machine_name=machine.name,
         machine_kind=machine.kind,
+        room_id=machine.room_id,
         session_id=session.id,
         owner_user_id=session.user_id,
     )
@@ -345,24 +362,44 @@ async def clear_broken(
 # --- состав парка ------------------------------------------------------------
 
 
-async def list_machines(db: AsyncSession, kind: str | None = None) -> list[Machine]:
+async def get(db: AsyncSession, machine_id: int) -> Machine:
+    """Машина по номеру или отказ «нет такой». Публичная пара к `_get_machine`:
+    имя машины нужно и экранам, а не только правилам внутри модуля."""
+    return await _get_machine(db, machine_id)
+
+
+async def list_machines(
+    db: AsyncSession, room_id: int | None = None, kind: str | None = None
+) -> list[Machine]:
     """Парк в порядке id: сначала тот, кого завели раньше.
 
     Сортировка не по имени намеренно — на стене машины стоят в том же порядке,
     в каком их заводили, и «P2S #10» между «#1» и «#2» сбивал бы взгляд.
     """
     query = select(Machine).order_by(Machine.id)
+    if room_id is not None:
+        query = query.where(Machine.room_id == room_id)
     if kind is not None:
         query = query.where(Machine.kind == kind)
     return list((await db.scalars(query)).all())
 
 
-async def create(db: AsyncSession, admin: User, name: str, kind: str) -> Machine:
-    """Завести машину. Тип обязателен и потом не меняется.
+async def create(
+    db: AsyncSession, admin: User, room_id: int, name: str, kind: str
+) -> Machine:
+    """Завести машину в помещении. Тип обязателен и потом не меняется.
 
     Смены типа нет и не планируется: на строку уже ссылается история, а
     «принтер, который вдруг стал гравировщиком» превратил бы прошлые печати в
     гравировки. Ошиблись при заведении — удалите, пока история пуста.
+
+    Помещения машина тоже не меняет — по той же причине: `sessions`, `queue` и
+    `reservations` держат его копией (см. app/models.py), и переезд задним числом
+    переписал бы прошлое. Уехавшую машину выводят в обслуживание, а на новом
+    месте заводят заново.
+
+    Тип должен подходить помещению (`ROOM_KIND_MACHINE_KINDS`): принтер в
+    переговорной сделал бы из её расписания расписание печати.
     """
     if not admin.is_admin:
         raise NotAdmin(t.ERR_ADMIN_ONLY)
@@ -370,9 +407,17 @@ async def create(db: AsyncSession, admin: User, name: str, kind: str) -> Machine
     name = _valid_name(name)
     if kind not in tuple(MachineKind):
         raise MachineKindUnknown(t.ERR_MACHINE_KIND_UNKNOWN.format(kind=kind))
+
+    room = await rooms.get(db, room_id)
+    if kind not in ROOM_KIND_MACHINE_KINDS.get(room.kind, ()):
+        raise MachineKindNotInRoom(
+            t.ERR_MACHINE_KIND_NOT_IN_ROOM.format(
+                kind=t.MACHINE_KIND_ONE.get(kind, kind), room=room.name
+            )
+        )
     await _ensure_name_free(db, name)
 
-    machine = Machine(name=name, kind=kind, status=MachineStatus.FREE)
+    machine = Machine(room_id=room.id, name=name, kind=kind, status=MachineStatus.FREE)
     db.add(machine)
     try:
         await db.flush()
@@ -407,7 +452,7 @@ async def rename(db: AsyncSession, admin: User, machine_id: int, name: str) -> s
 
 
 async def usage(db: AsyncSession, machine_id: int) -> Usage:
-    """Сколько сессий и приглашений ссылается на машину."""
+    """Сколько работ, приглашений и брон ссылается на машину."""
     sessions = await db.scalar(
         select(func.count())
         .select_from(MachineSession)
@@ -418,16 +463,19 @@ async def usage(db: AsyncSession, machine_id: int) -> Usage:
         .select_from(QueueEntry)
         .where(QueueEntry.offered_machine_id == machine_id)
     )
-    return Usage(sessions=sessions or 0, offers=offers or 0)
+    bookings = await db.scalar(
+        select(func.count()).select_from(Reservation).where(Reservation.machine_id == machine_id)
+    )
+    return Usage(sessions=sessions or 0, offers=offers or 0, bookings=bookings or 0)
 
 
 async def remove(db: AsyncSession, admin: User, machine_id: int) -> str:
-    """Удалить машину — только пустую, без единой работы и приглашения.
+    """Удалить машину — только пустую, без единой работы, брони и приглашения.
 
-    Машину с историей не удаляем: на неё ссылаются `sessions` и `queue`, и
-    удаление либо упало бы на внешнем ключе, либо оторвало журнал от машины.
-    Уехавшая машина с историей выводится в обслуживание — она останется на
-    доске, но занять её будет нельзя. Возвращает имя удалённой.
+    Машину с историей не удаляем: на неё ссылаются `sessions`, `queue` и
+    `reservations`, и удаление либо упало бы на внешнем ключе, либо оторвало
+    журнал от машины. Уехавшая машина с историей выводится в обслуживание — она
+    останется на доске, но занять её будет нельзя. Возвращает имя удалённой.
     """
     if not admin.is_admin:
         raise NotAdmin(t.ERR_ADMIN_ONLY)
@@ -437,7 +485,10 @@ async def remove(db: AsyncSession, admin: User, machine_id: int) -> str:
     if not counts.empty:
         raise MachineHasHistory(
             t.ERR_MACHINE_HAS_HISTORY.format(
-                machine=machine.name, sessions=counts.sessions, offers=counts.offers
+                machine=machine.name,
+                sessions=counts.sessions,
+                offers=counts.offers,
+                bookings=counts.bookings,
             )
         )
 
@@ -470,9 +521,9 @@ async def _check_queue_allows(db: AsyncSession, user: User, machine: Machine):
 
     Подошедший к киоску всегда быстрее того, кто едет из дома, поэтому пока
     очередь непуста, свободную машину занимает только адресат предложения.
-    Проверяется в пределах типа: люди, ждущие гравировщик, не должны мешать
-    занять освободившийся принтер. Возвращает предложение этого человека, если
-    оно есть.
+    Проверяется в пределах помещения и типа: люди, ждущие гравировщик — или
+    принтер в другом корпусе, — не должны мешать занять освободившийся принтер
+    здесь. Возвращает предложение этого человека, если оно есть.
     """
     offer = await queue.offer_for_machine(db, machine.id)
     if offer is not None:
@@ -482,7 +533,10 @@ async def _check_queue_allows(db: AsyncSession, user: User, machine: Machine):
             return None
         raise MachineReserved(t.ERR_MACHINE_RESERVED.format(machine=machine.name))
 
-    if await queue.has_active_entries(db, kind=machine.kind) and not user.is_admin:
+    waiting = await queue.has_active_entries(
+        db, room_id=machine.room_id, kind=machine.kind
+    )
+    if waiting and not user.is_admin:
         raise MachineReserved(t.ERR_QUEUE_WAIT_YOUR_TURN)
 
     return None
@@ -557,10 +611,13 @@ async def _active_session_of_machine(db: AsyncSession, machine_id: int) -> Machi
     )
 
 
-async def _active_session_of_user(db: AsyncSession, user_id: int) -> MachineSession | None:
+async def _active_session_of_user(
+    db: AsyncSession, user_id: int, room_id: int
+) -> MachineSession | None:
     return await db.scalar(
         select(MachineSession).where(
             MachineSession.user_id == user_id,
+            MachineSession.room_id == room_id,
             MachineSession.status.in_(ACTIVE_SESSION_STATUSES),
         )
     )

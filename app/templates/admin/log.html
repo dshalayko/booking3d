@@ -1,0 +1,15 @@
+{# Журнал: только чтение. Собирается из таблиц (services/activity.py), своей
+   записи у него нет — и кнопок поэтому нет тоже. #}
+{% extends "admin/base.html" %}
+
+{% block admin %}
+  <section class="ad-card">
+    <ol class="admin-log">
+      {% for event in events %}
+        <li><span class="admin-dim">{{ event.local_time }}</span> {{ event.text }}</li>
+      {% else %}
+        <li class="admin-dim">{{ t.admin_no_events }}</li>
+      {% endfor %}
+    </ol>
+  </section>
+{% endblock %}

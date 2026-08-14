@@ -120,7 +120,7 @@ class TestStatus:
     async def test_status_lists_free_printers(self, db, printers):
         answer = await commands.status(db)
 
-        assert "P2S #1" in answer and "свободен" in answer
+        assert "P2S #1" in answer and "свободно" in answer
         assert "Очередь пуста" in answer
 
     async def test_status_shows_who_prints_and_how_long(self, db, printers, make_user):
@@ -133,18 +133,18 @@ class TestStatus:
         assert "Иван П." in answer
         assert "осталось ~2 ч" in answer
 
-    async def test_status_shows_queue_with_invitation(self, db, printers, make_user):
+    async def test_status_shows_queue_with_invitation(self, db, room, printers, make_user):
         owner = await make_user()
         other = await make_user()
         waiting = await make_user(name="Анна")
         await machines_svc.occupy(db, owner, printers[0].id, 60)
         await machines_svc.occupy(db, other, printers[1].id, 60)
-        await queue_svc.join(db, waiting.id, MachineKind.PRINTER)
+        await queue_svc.join(db, waiting.id, room.id, MachineKind.PRINTER)
         await machines_svc.release(db, owner, printers[0].id)
 
         answer = await commands.status(db)
 
-        assert "придержан за Анна" in answer
+        assert "придержано за Анна" in answer
         assert "(приглашён)" in answer
 
     async def test_status_shows_broken_printer_with_note(self, db, printers, make_user):
@@ -270,7 +270,7 @@ class TestQueueCommands:
 
         answer = await commands.queue_join(db, CHAT)
 
-        assert "уже занят" in answer
+        assert "уже заняли что-то в этом помещении" in answer
 
     async def test_joining_when_printer_is_free_sends_offer(self, db, printers, outbox):
         await register(db)
@@ -279,7 +279,7 @@ class TestQueueCommands:
 
         assert len(outbox) == 1
         assert outbox[0][0] == CHAT
-        assert "свободен" in outbox[0][1]
+        assert "освободилось" in outbox[0][1]
 
 
 class TestFree:
@@ -292,7 +292,7 @@ class TestFree:
 
         answer = await commands.free(db, CHAT)
 
-        assert "освобождён" in answer
+        assert "освобождено" in answer
         db.expire_all()
         assert (await db.get(Machine, machine_id)).status == MachineStatus.FREE
 
@@ -301,7 +301,9 @@ class TestFree:
 
         assert "не числится" in await commands.free(db, CHAT)
 
-    async def test_free_notifies_only_the_first_in_queue(self, db, printers, make_user, outbox):
+    async def test_free_notifies_only_the_first_in_queue(
+        self, db, room, printers, make_user, outbox
+    ):
         """Правило 4 в уведомлениях: рассылки всем быть не должно."""
         await register(db)
         owner = await user_of(db, CHAT)
@@ -310,8 +312,8 @@ class TestFree:
         second = await make_user()
         await machines_svc.occupy(db, owner, printers[0].id, 60)
         await machines_svc.occupy(db, second_owner, printers[1].id, 60)
-        await queue_svc.join(db, first.id, MachineKind.PRINTER)
-        await queue_svc.join(db, second.id, MachineKind.PRINTER)
+        await queue_svc.join(db, first.id, room.id, MachineKind.PRINTER)
+        await queue_svc.join(db, second.id, room.id, MachineKind.PRINTER)
         await db.commit()
         outbox.clear()
 
@@ -371,7 +373,7 @@ class TestKindsInBot:
         assert "печатает" not in answer
 
     async def test_queue_without_kind_works_while_the_park_is_uniform(
-        self, db, printers, make_user
+        self, db, room, printers, make_user
     ):
         await register(db)
         user = await user_of(db, CHAT)
@@ -381,9 +383,11 @@ class TestKindsInBot:
         answer = await commands.queue_join(db, user.tg_chat_id)
 
         assert "в очереди на принтер" in answer
-        assert await queue_svc.position_of(db, user.id) == 1
+        assert await queue_svc.position_of(db, user.id, room.id) == 1
 
-    async def test_queue_without_kind_asks_which_one(self, db, printers, engravers, make_user):
+    async def test_queue_without_kind_asks_which_one(
+        self, db, room, printers, engravers, make_user
+    ):
         """Угаданное место в чужой очереди человек заметит через часы молчания."""
         await register(db)
         user = await user_of(db, CHAT)
@@ -391,7 +395,7 @@ class TestKindsInBot:
         answer = await commands.queue_join(db, user.tg_chat_id)
 
         assert "/queue_printer" in answer and "/queue_engraver" in answer
-        assert await queue_svc.position_of(db, user.id) is None
+        assert await queue_svc.position_of(db, user.id, room.id) is None
 
     async def test_queue_with_kind_joins_that_line(self, db, printers, engravers, make_user):
         await register(db)
@@ -410,13 +414,13 @@ class TestKindsInBot:
 
         assert "нет ни одной машины" in answer
 
-    async def test_my_state_names_the_line(self, db, printers, engravers, make_user):
+    async def test_my_state_names_the_line(self, db, room, printers, engravers, make_user):
         await register(db)
         user = await user_of(db, CHAT)
         await machines_svc.occupy(db, await make_user(), engravers[0].id, 60)
-        await queue_svc.join(db, user.id, MachineKind.ENGRAVER)
+        await queue_svc.join(db, user.id, room.id, MachineKind.ENGRAVER)
 
-        assert "в очереди на гравировщик" in await commands.my(db, user.tg_chat_id)
+        assert "Очередь на гравировщик" in await commands.my(db, user.tg_chat_id)
 
 
 async def register(db, chat_id: int = CHAT, login: str = "i_petrov") -> str:

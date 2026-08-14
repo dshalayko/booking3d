@@ -95,21 +95,31 @@ async def _bootstrap(
 
 @router.get("", response_class=HTMLResponse, include_in_schema=False)
 @router.get("/", response_class=HTMLResponse)
-async def entry(
-    request: Request, db: Db, next: str = "", flash: str = "", all: bool = False
-) -> Response:
+async def entry(request: Request, db: Db, next: str = "", flash: str = "") -> Response:
     """Точка входа и главный экран приложения.
 
-    С живой сессией показывает доску — сюда же возвращают все действия. Без
-    сессии показывает бутстрап, который проверит подпись и вернёт обратно.
-
-    `?all=1` — парк целиком для того, у кого машина уже занята: по умолчанию его
-    доска сжата до своей машины (screens.board_context).
+    С живой сессией показывает «моё» — занятую машину и очередь, в которой человек
+    стоит, по всем помещениям сразу. Сюда же возвращают все действия. Если своего
+    ничего нет, сжимать нечего, и открывается доска первого помещения: экрана
+    «все помещения» в системе нет, у каждой комнаты свой адрес. Без сессии —
+    бутстрап, который проверит подпись и вернёт обратно.
     """
     person = await viewer(request, db)
-    if person is not None and not next:
-        return await screens.board_page(request, db, APP, flash, viewer=person, show_all=all)
-    return await _bootstrap(request, db, _safe_next(next or f"{SAFE_NEXT_PREFIX}/"))
+    if person is None or next:
+        return await _bootstrap(request, db, _safe_next(next or f"{SAFE_NEXT_PREFIX}/"))
+
+    context = await screens.board_context(db, viewer=person)
+    if not context["rooms"]:
+        room_id = await screens.default_room_id(db)
+        return await screens.board_page(request, db, APP, room_id, flash, viewer=person)
+    return await screens.mine_page(request, db, APP, flash, viewer=person)
+
+
+@router.get("/room/{room_id}", response_class=HTMLResponse)
+async def room_board(request: Request, db: Db, room_id: int, flash: str = "") -> Response:
+    return await screens.board_page(
+        request, db, APP, room_id, flash, viewer=await viewer(request, db)
+    )
 
 
 @router.post("/session")
@@ -153,11 +163,16 @@ async def open_session(
 
 
 @router.get("/partials/board", response_class=HTMLResponse)
-async def board_partial(request: Request, db: Db, all: bool = False) -> Response:
-    """`all` дублирует адрес страницы: иначе через 10 секунд опрос вернул бы
-    сжатую доску поверх раскрытой (см. `data-poll` в kiosk.html)."""
+async def mine_partial(request: Request, db: Db) -> Response:
+    """Живая часть экрана «моё». Адрес свой у каждого вида доски: иначе через
+    десять секунд опрос вернул бы одно поверх другого (`data-poll` в kiosk.html)."""
+    return await screens.mine_partial(request, db, APP, viewer=await viewer(request, db))
+
+
+@router.get("/partials/board/{room_id}", response_class=HTMLResponse)
+async def board_partial(request: Request, db: Db, room_id: int) -> Response:
     return await screens.board_partial(
-        request, db, APP, viewer=await viewer(request, db), show_all=all
+        request, db, APP, room_id, viewer=await viewer(request, db)
     )
 
 
@@ -191,36 +206,38 @@ async def release_action(request: Request, db: Db, machine_id: int) -> Response:
 # --- очередь -----------------------------------------------------------------
 
 
-@router.get("/queue/join/{kind}", response_class=HTMLResponse)
-async def queue_join_form(request: Request, db: Db, kind: str) -> Response:
-    return await screens.queue_join_page(request, db, APP, kind)
+@router.get("/queue/join/{room_id}/{kind}", response_class=HTMLResponse)
+async def queue_join_form(request: Request, db: Db, room_id: int, kind: str) -> Response:
+    return await screens.queue_join_page(request, db, APP, room_id, kind)
 
 
-@router.post("/queue/join/{kind}")
-async def queue_join_action(request: Request, db: Db, kind: str) -> Response:
+@router.post("/queue/join/{room_id}/{kind}")
+async def queue_join_action(request: Request, db: Db, room_id: int, kind: str) -> Response:
     user = await actor(request, db)
-    return await screens.do_queue_join(db, APP, user, kind)
+    return await screens.do_queue_join(db, APP, user, room_id, kind)
 
 
-@router.get("/queue/leave", response_class=HTMLResponse)
-async def queue_leave_form(request: Request) -> Response:
-    return await screens.queue_leave_page(request, APP)
+@router.get("/queue/leave/{room_id}", response_class=HTMLResponse)
+async def queue_leave_form(request: Request, db: Db, room_id: int) -> Response:
+    return await screens.queue_leave_page(request, db, APP, room_id)
 
 
-@router.post("/queue/leave")
-async def queue_leave_action(request: Request, db: Db) -> Response:
+@router.post("/queue/leave/{room_id}")
+async def queue_leave_action(request: Request, db: Db, room_id: int) -> Response:
     user = await actor(request, db)
-    return await screens.do_queue_leave(db, APP, user)
+    return await screens.do_queue_leave(db, APP, user, room_id)
 
 
 # --- расписание и брони ------------------------------------------------------
 
 
-@router.get("/schedule/{kind}", response_class=HTMLResponse)
-async def schedule_screen(request: Request, db: Db, kind: str, date: str = "") -> Response:
+@router.get("/schedule/{room_id}/{kind}", response_class=HTMLResponse)
+async def schedule_screen(
+    request: Request, db: Db, room_id: int, kind: str, date: str = ""
+) -> Response:
     """Здесь свои брони подсвечены: в отличие от киоска, известно, кто смотрит."""
     return await screens.schedule_page(
-        request, db, APP, kind, date, viewer=await viewer(request, db)
+        request, db, APP, room_id, kind, date, viewer=await viewer(request, db)
     )
 
 

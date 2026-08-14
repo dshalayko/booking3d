@@ -7,13 +7,16 @@
    Адреса действий идут через `base`: пусто у киоска, `/app` у Mini App. #}
 {% extends "base.html" %}
 {% set auto_return = true %}
-{% set title_word = MACHINE_KIND_TITLE.get(grid.kind, grid.kind) %}
+{# Заголовок — имя помещения: типов оборудования в нём может быть несколько, а
+   расписание всегда про одно, и «Расписание: Принтеры» без комнаты не говорит,
+   в какой мастерской эти принтеры стоят. #}
+{% set title_word = grid.room.name %}
 {% block title %}{{ t.schedule_title.format(title=title_word) }}{% endblock %}
 
 {% block content %}
 <main class="sheet sheet-wide">
   <header class="sheet-head">
-    <a class="btn btn-small btn-ghost" href="{{ base }}/">{{ t.back }}</a>
+    <a class="btn btn-small btn-ghost" href="{{ base }}/room/{{ grid.room.id }}">{{ t.back }}</a>
     <h1>{{ t.schedule_heading.format(title=title_word) }}</h1>
     {% if base %}
       <a class="btn btn-small" href="{{ base }}/my">{{ t.schedule_my_bookings }}</a>
@@ -23,7 +26,7 @@
   <nav class="days" aria-label="{{ t.schedule_day_label }}">
     {% for option in grid.days %}
       <a class="day{% if option.day == grid.day %} day-on{% endif %}"
-         href="{{ base }}/schedule/{{ grid.kind }}?date={{ option.iso }}">
+         href="{{ base }}/schedule/{{ grid.room.id }}/{{ grid.kind }}?date={{ option.iso }}">
         <span class="day-weekday">{{ option.weekday }}</span>
         <span class="day-number">{{ option.label }}</span>
       </a>

@@ -1,0 +1,37 @@
+{# Часы работы — по карточке на помещение. От них зависит и сетка расписания, и
+   то, какие часы вообще можно забронировать (см. services/workhours.py). #}
+{% extends "admin/base.html" %}
+
+{% block admin %}
+  <div class="ad-cards">
+    {% for row in rows %}
+      <section class="ad-card">
+        <div class="ad-card-head">
+          <h2>{{ row.room.name }}</h2>
+          <span class="ad-card-note">{{ t.admin_hours_current.format(hours=row.hours.text()) }}</span>
+        </div>
+        <form class="admin-form" method="post" action="/admin/hours/{{ row.room.id }}">
+          <label class="admin-dim" for="opens_at_{{ row.room.id }}">{{ t.admin_hours_opens }}</label>
+          <input class="text-input text-input-time" type="time" id="opens_at_{{ row.room.id }}"
+                 name="opens_at" value="{{ row.hours.opens_at.strftime('%H:%M') }}" step="60" required>
+          <label class="admin-dim" for="closes_at_{{ row.room.id }}">{{ t.admin_hours_closes }}</label>
+          <input class="text-input text-input-time" type="time" id="closes_at_{{ row.room.id }}"
+                 name="closes_at" value="{{ row.hours.closes_at.strftime('%H:%M') }}" step="60" required>
+          <button class="btn btn-small btn-primary" type="submit">
+            {{ t.admin_hours_submit }}
+          </button>
+        </form>
+      </section>
+    {% else %}
+      <section class="ad-card">
+        <div class="ad-card-head"><h2>{{ t.admin_hours_title }}</h2></div>
+        <p class="admin-dim">{{ t.admin_hours_none }}</p>
+        <a class="btn btn-small btn-primary" href="/admin/rooms">{{ t.admin_tab_rooms }}</a>
+      </section>
+    {% endfor %}
+  </div>
+
+  {% if rows %}
+    <p class="admin-dim admin-hint">{{ t.admin_hours_hint }}</p>
+  {% endif %}
+{% endblock %}
