@@ -2,8 +2,11 @@ import re
 from datetime import datetime, timedelta
 
 import pytest
+from aiogram.enums import ChatType
+from aiogram.exceptions import TelegramBadRequest
 from sqlalchemy import select
 
+from app.bot import bot as bot_module
 from app.bot import commands, notify, texts
 from app.config import settings
 from app.enums import MachineKind, MachineStatus
@@ -43,8 +46,8 @@ class TestRegistration:
 
         answer = await commands.register(db, CHAT, "i_petrov")
 
-        assert "i_petrov" in answer
-        user = await auth.user_by_pin(db, _pin_from(answer))
+        assert answer.pin and "i_petrov" in answer.text
+        user = await auth.user_by_pin(db, _pin_from(answer.text))
         assert user.tg_chat_id == CHAT
         assert user.name == "i_petrov"
 
@@ -54,7 +57,7 @@ class TestRegistration:
     async def test_junk_instead_of_login_gets_no_pin(self, db, value):
         answer = await commands.register(db, CHAT, value)
 
-        assert "не похоже" in answer
+        assert "не похоже" in answer.text and not answer.pin
         assert await user_of(db, CHAT) is None
 
     @pytest.mark.parametrize(
@@ -71,25 +74,25 @@ class TestRegistration:
 
         answer = await commands.register(db, OTHER_CHAT, "I_PETROV")
 
-        assert "уже занят" in answer
+        assert "уже занят" in answer.text and not answer.pin
         assert await user_of(db, OTHER_CHAT) is None
 
     async def test_unregistered_text_is_read_as_login(self, db):
         answer = await commands.text_message(db, CHAT, "i_petrov")
 
-        assert _pin_from(answer)
+        assert answer.pin and _pin_from(answer.text)
         assert (await user_of(db, CHAT)).name == "i_petrov"
 
     async def test_unregistered_command_is_not_read_as_login(self, db):
         answer = await commands.text_message(db, CHAT, "/whatever")
 
-        assert "start" in answer
+        assert "start" in answer.text and not answer.pin
         assert await user_of(db, CHAT) is None
 
     async def test_registered_text_gets_help(self, db):
         await register(db)
 
-        assert await commands.text_message(db, CHAT, "привет") == texts.HELP
+        assert await commands.text_message(db, CHAT, "привет") == commands.Reply(texts.HELP)
 
     async def test_start_twice_does_not_reset_pin(self, db):
         pin = _pin_from(await register(db))
@@ -102,18 +105,57 @@ class TestRegistration:
     async def test_new_pin_kills_the_old_one(self, db):
         old = _pin_from(await register(db))
 
-        new = _pin_from(await commands.new_pin(db, CHAT))
+        new = _pin_from((await commands.new_pin(db, CHAT)).text)
 
         assert new != old
         assert (await auth.user_by_pin(db, new)).tg_chat_id == CHAT
         with pytest.raises(AuthFailed):
             await auth.user_by_pin(db, old)
 
-    @pytest.mark.parametrize(
-        "command", [commands.my, commands.queue_join, commands.free, commands.new_pin]
-    )
+    @pytest.mark.parametrize("command", [commands.my, commands.queue_join, commands.free])
     async def test_commands_ask_unknown_people_to_register(self, db, command):
         assert "start" in await command(db, 999999)
+
+    async def test_new_pin_asks_unknown_people_to_register(self, db):
+        answer = await commands.new_pin(db, 999999)
+
+        assert "start" in answer.text and not answer.pin
+
+
+class TestPinnedMessage:
+    """Проводка закрепления: сообщение с PIN-ом висит наверху чата."""
+
+    async def test_message_with_pin_is_pinned(self):
+        message = FakeMessage()
+
+        await bot_module._answer(message, commands.Reply("PIN: 1234", pin=True))
+
+        assert message.sent[-1].pinned
+        # Прошлый PIN откреплён, иначе наверху чата их окажется два.
+        assert message.chat.unpinned == 1
+
+    async def test_message_without_pin_is_left_alone(self):
+        message = FakeMessage()
+
+        await bot_module._answer(message, commands.Reply("Очередь пуста"))
+
+        assert not message.sent[-1].pinned
+        assert message.chat.unpinned == 0
+
+    async def test_pin_is_not_pinned_in_a_group(self):
+        """В группе бот не администратор, а PIN там и так у всех на виду."""
+        message = FakeMessage(chat_type=ChatType.GROUP)
+
+        await bot_module._answer(message, commands.Reply("PIN: 1234", pin=True))
+
+        assert not message.sent[-1].pinned
+
+    async def test_failed_pin_does_not_lose_the_message(self):
+        message = FakeMessage(pin_fails=True)
+
+        await bot_module._answer(message, commands.Reply("PIN: 1234", pin=True))
+
+        assert message.sent[-1].text == "PIN: 1234"
 
 
 class TestStatus:
@@ -426,7 +468,42 @@ class TestKindsInBot:
 async def register(db, chat_id: int = CHAT, login: str = "i_petrov") -> str:
     """Оба шага регистрации: /start, потом логин ответным сообщением."""
     await commands.start(db, chat_id)
-    return await commands.register(db, chat_id, login)
+    return (await commands.register(db, chat_id, login)).text
+
+
+class FakeChat:
+    """Чат вместо телеграмовского: считает, сколько раз с него снимали пины."""
+
+    def __init__(self, chat_type: str) -> None:
+        self.type = chat_type
+        self.unpinned = 0
+
+    async def unpin_all_messages(self) -> None:
+        self.unpinned += 1
+
+
+class FakeSent:
+    def __init__(self, chat: FakeChat, text: str, pin_fails: bool) -> None:
+        self.chat = chat
+        self.text = text
+        self.pinned = False
+        self._pin_fails = pin_fails
+
+    async def pin(self, disable_notification: bool = False) -> None:
+        if self._pin_fails:
+            raise TelegramBadRequest(method=None, message="not enough rights")
+        self.pinned = True
+
+
+class FakeMessage:
+    def __init__(self, chat_type: str = ChatType.PRIVATE, pin_fails: bool = False) -> None:
+        self.chat = FakeChat(chat_type)
+        self.sent: list[FakeSent] = []
+        self._pin_fails = pin_fails
+
+    async def answer(self, text: str) -> FakeSent:
+        self.sent.append(FakeSent(self.chat, text, self._pin_fails))
+        return self.sent[-1]
 
 
 async def user_of(db, chat_id: int) -> User | None:

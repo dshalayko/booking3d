@@ -281,6 +281,7 @@ DB_PASSWORD=<openssl rand -hex 24>
 DATABASE_URL=postgresql+psycopg://booking:<тот же пароль>@db:5432/booking
 
 TG_BOT_TOKEN=<токен от BotFather>
+TG_BOT_USERNAME=<имя бота без собаки — из него QR на планшете>
 
 SESSION_SECRET=<openssl rand -hex 32>
 KIOSK_SECRET=<openssl rand -hex 32>

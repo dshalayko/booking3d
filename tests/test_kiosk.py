@@ -3,8 +3,9 @@ from datetime import UTC, datetime, timedelta
 import pytest
 from sqlalchemy import select
 
-from app import assets
+from app import assets, qr
 from app.api.kiosk import duration_options
+from app.api.render import templates
 from app.config import Settings, settings
 from app.enums import MachineKind, MachineStatus, ReservationStatus
 from app.models import Machine, QueueEntry, Reservation
@@ -211,6 +212,46 @@ class TestOccupy:
 
         assert response.status_code == 409
         assert "придержано" in response.text.lower()
+
+
+class TestPinHelp:
+    """Кнопка с QR под клавиатурой: адрес бота с планшета на стене не набрать."""
+
+    @pytest.fixture
+    def bot_named(self, monkeypatch: pytest.MonkeyPatch):
+        """Имя бота в .env — так же, как оно попадает в шаблоны при старте."""
+        monkeypatch.setattr(settings, "tg_bot_username", "@booking3d_bot")
+        monkeypatch.setitem(templates.env.globals, "bot_username", qr.bot_username())
+        monkeypatch.setitem(templates.env.globals, "bot_qr", qr.bot_qr_svg())
+
+    def test_link_drops_the_at_sign(self, bot_named):
+        assert qr.bot_url() == "https://t.me/booking3d_bot"
+
+    def test_no_qr_without_username(self, monkeypatch: pytest.MonkeyPatch):
+        monkeypatch.setattr(settings, "tg_bot_username", "")
+
+        assert qr.bot_url() == ""
+        assert qr.bot_qr_svg() == ""
+
+    async def test_keypad_shows_qr_button(self, client, room, printers, bot_named):
+        await enroll(client, room)
+
+        response = await client.get(f"/occupy/{printers[0].id}")
+
+        assert "Как получить PIN" in response.text
+        assert "@booking3d_bot" in response.text
+        # Код уезжает разметкой, а не ссылкой на картинку: киоск рисуется и без
+        # сети, а внешних запросов на его страницах нет ни одного.
+        assert 'class="qr"' in response.text
+        assert "http" not in response.text.split('class="qr"')[1].split("</svg>")[0]
+
+    async def test_hint_stays_without_username(self, client, room, printers):
+        await enroll(client, room)
+
+        response = await client.get(f"/occupy/{printers[0].id}")
+
+        assert "PIN выдаёт бот по команде /start" in response.text
+        assert "data-pin-help" not in response.text
 
 
 class TestOpenAccess:

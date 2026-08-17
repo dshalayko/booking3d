@@ -36,6 +36,7 @@ from sqlalchemy.ext.asyncio import (
 )
 
 from app.api.deps import get_db
+from app.api.render import templates
 from app.config import settings
 from app.enums import MachineKind, MachineStatus, RoomKind
 from app.main import app
@@ -70,6 +71,12 @@ def fixed_settings(monkeypatch: pytest.MonkeyPatch) -> None:
     # `miniapp_open_access` проверка подписи Telegram не выполняется вовсе, и
     # весь test_miniapp.py зеленел бы, ничего не проверяя.
     monkeypatch.setattr(settings, "miniapp_open_access", False)
+    # QR под клавиатурой собирается на старте из `TG_BOT_USERNAME` (app/qr.py).
+    # Без пина чужой .env решал бы, что стоит под клавиатурой — кнопка с кодом
+    # или прежняя строчка про /start. Тест на саму кнопку включает имя явно.
+    monkeypatch.setattr(settings, "tg_bot_username", "")
+    monkeypatch.setitem(templates.env.globals, "bot_username", "")
+    monkeypatch.setitem(templates.env.globals, "bot_qr", "")
     monkeypatch.setattr(settings, "tz", "Europe/Nicosia")
     monkeypatch.setattr(settings, "zone", TEST_ZONE)
     monkeypatch.setattr(settings, "night_start", time(23, 0))

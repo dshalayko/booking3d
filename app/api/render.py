@@ -19,7 +19,7 @@ from datetime import datetime
 
 from fastapi.templating import Jinja2Templates
 
-from app import assets
+from app import assets, qr
 from app import texts as t
 from app.config import settings
 from app.enums import ROOM_KIND_MACHINE_KINDS, MachineKind, RoomKind
@@ -77,6 +77,10 @@ templates.env.globals["ROOM_KIND_MACHINE_KINDS"] = ROOM_KIND_MACHINE_KINDS
 # Версия отданного браузеру: страница сверяет её с заголовком опроса и, когда
 # на сервере появилось новое, перезагружает себя сама (см. app/assets.py).
 templates.env.globals["asset_version"] = assets.VERSION
+# QR на бота под клавиатурой PIN (app/qr.py). Считается один раз: имя бота
+# берётся из .env и под работающим приложением не меняется.
+templates.env.globals["bot_username"] = qr.bot_username()
+templates.env.globals["bot_qr"] = qr.bot_qr_svg()
 templates.env.globals["base"] = ""
 templates.env.globals["needs_pin"] = True
 templates.env.globals["telegram_sdk"] = False

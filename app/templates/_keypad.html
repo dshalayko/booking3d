@@ -11,5 +11,31 @@
     <button type="button" class="key" data-key="0">0</button>
     <button type="button" class="key" data-key="back">⌫</button>
   </div>
-  <p class="keypad-hint">{{ t.keypad_hint }}</p>
+  {# Адрес бота с чужого экрана не набрать, поэтому вместо строчки про /start —
+     кнопка с QR. SVG рисует сервер (app/qr.py), из сети не приходит ничего.
+     Без имени бота в .env показывать нечего, и остаётся прежняя подсказка. #}
+  {% if bot_qr %}
+    <button type="button" class="btn btn-small btn-outline keypad-help" data-pin-help>
+      {# Значок кода: по нему видно, что откроется, ещё до чтения надписи. #}
+      <svg class="keypad-help-icon" viewBox="0 0 24 24" aria-hidden="true">
+        <path fill="currentColor" d="M3 3h8v8H3V3zm2 2v4h4V5H5zm8-2h8v8h-8V3zm2 2v4h4V5h-4zM3 13h8v8H3v-8zm2 2v4h4v-4H5zm8-2h3v3h-3v-3zm5 0h3v3h-3v-3zm-5 5h3v3h-3v-3zm5 0h3v3h-3v-3z"/>
+      </svg>
+      <span>{{ t.pin_help_open }}</span>
+    </button>
+    <dialog class="pin-help" data-pin-help-dialog>
+      <div class="pin-help-inner">
+        <h2 class="pin-help-title">{{ t.pin_help_title }}</h2>
+        <div class="pin-help-card">
+          {{ bot_qr | safe }}
+          <p class="pin-help-handle">@{{ bot_username }}</p>
+        </div>
+        <p class="pin-help-body">{{ t.pin_help_body }}</p>
+        <button type="button" class="btn pin-help-close" data-pin-help-close>
+          {{ t.pin_help_close }}
+        </button>
+      </div>
+    </dialog>
+  {% else %}
+    <p class="keypad-hint">{{ t.keypad_hint }}</p>
+  {% endif %}
 </div>

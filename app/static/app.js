@@ -147,6 +147,34 @@
     draw();
   });
 
+  // --- «Как получить PIN» --------------------------------------------------
+  // Кнопка под клавиатурой показывает QR на бота (разметка в _keypad.html).
+  // Нативный <dialog>: он сам затемняет фон и закрывается по Esc. Где его нет
+  // (Safari до 15.4), остаётся атрибут `open` — карточка появится в потоке
+  // страницы, без затемнения, но с тем же кодом и той же кнопкой закрытия.
+
+  document.querySelectorAll("[data-pin-help]").forEach(function (button) {
+    var dialog = button.parentNode.querySelector("[data-pin-help-dialog]");
+    if (!dialog) return;
+
+    function close() {
+      if (dialog.close) dialog.close();
+      else dialog.removeAttribute("open");
+    }
+
+    button.addEventListener("click", function () {
+      if (dialog.showModal) dialog.showModal();
+      else dialog.setAttribute("open", "");
+    });
+
+    dialog.addEventListener("click", function (event) {
+      // Клик мимо карточки закрывает: на планшете это первое, что пробуют,
+      // а Esc с сенсорного экрана не нажать. Цель клика по затемнению — сам
+      // <dialog>: карточка внутри него отдельным элементом.
+      if (event.target === dialog || event.target.closest("[data-pin-help-close]")) close();
+    });
+  });
+
   // Не отправлять форму с недовведённым PIN — иначе человек получит отказ
   // и решит, что система сломалась.
   document.querySelectorAll("form[data-guard]").forEach(function (form) {

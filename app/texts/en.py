@@ -281,7 +281,8 @@ BOT_WELCOME = (
     "✅ You're all set — signed up as <b>{login}</b>.\n\n"
     "Your PIN: <b>{pin}</b>\n"
     "You'll need it to book machines from the tablet in the room.\n"
-    "Write it down — I won't show it again, I can only issue a new one via /pin.\n\n"
+    "I've pinned this message to the top of the chat so the PIN stays at hand. "
+    "I won't show it again, I can only issue a new one via /pin.\n\n"
     "{help}"
 )
 
@@ -291,7 +292,11 @@ BOT_ALREADY_REGISTERED = (
     "{help}"
 )
 
-BOT_PIN_CHANGED = "🔑 Your new PIN: <b>{pin}</b>\n\nThe old one stops working now."
+BOT_PIN_CHANGED = (
+    "🔑 Your new PIN: <b>{pin}</b>\n\n"
+    "The old one stops working now. This message is pinned at the top of the chat "
+    "in place of the previous one."
+)
 
 BOT_NAME_CHANGED = (
     "✏️ An admin fixed your login.\n\n"
@@ -774,7 +779,16 @@ UI = {
     # _keypad.html
     "keypad_label": "PIN",
     "keypad_clear": "Clear",
+    # The line under the keypad stays for deployments that left the bot's
+    # username out of .env — there's no QR to show then (see app/qr.py).
     "keypad_hint": "Send /start to the bot to get a PIN",
+    "pin_help_open": "How to get a PIN",
+    "pin_help_title": "The bot hands out PINs",
+    "pin_help_body": (
+        "Point your phone's camera at the code and send /start to the bot — "
+        "it asks for your corporate login and replies with a PIN."
+    ),
+    "pin_help_close": "Got it",
     # confirm.html / occupy.html
     "cancel": "Cancel",
     # On a screen where nothing has started, "Cancel" lies — there's nothing to cancel.

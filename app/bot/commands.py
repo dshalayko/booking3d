@@ -24,6 +24,20 @@ from app.services.errors import AlreadyInQueue, DomainError, NotInQueue
 from app.services.users import normalize_login
 
 
+@dataclass(frozen=True)
+class Reply:
+    """Текст ответа и признак «в нём выдан PIN».
+
+    Признак нужен проводке: сообщение с PIN-ом она закрепляет наверху чата,
+    чтобы четыре цифры не утонули в переписке. Искать PIN в готовом тексте
+    регулярным выражением значило бы держать формат фразы в двух местах —
+    поэтому о PIN-е говорит тот, кто его выдал.
+    """
+
+    text: str
+    pin: bool = False
+
+
 async def start(db: AsyncSession, chat_id: int) -> str:
     """Первый шаг регистрации: спрашиваем логин.
 
@@ -37,47 +51,47 @@ async def start(db: AsyncSession, chat_id: int) -> str:
     return texts.ask_login()
 
 
-async def register(db: AsyncSession, chat_id: int, value: str) -> str:
+async def register(db: AsyncSession, chat_id: int, value: str) -> Reply:
     """Второй шаг: логин пришёл обычным сообщением, выдаём PIN."""
     user = await _user(db, chat_id)
     if user is not None:
-        return texts.already_registered(user.name)
+        return Reply(texts.already_registered(user.name))
 
     login = normalize_login(value)
     if login is None:
-        return texts.bad_login()
+        return Reply(texts.bad_login())
 
     taken = await db.scalar(select(User.id).where(User.name == login))
     if taken is not None:
-        return texts.login_taken(login)
+        return Reply(texts.login_taken(login))
 
     pin = await auth.pick_free_pin(db)
     db.add(User(tg_chat_id=chat_id, name=login, pin_digest=auth.pin_digest(pin)))
     await db.commit()
-    return texts.welcome(login, pin)
+    return Reply(texts.welcome(login, pin), pin=True)
 
 
-async def text_message(db: AsyncSession, chat_id: int, value: str) -> str:
+async def text_message(db: AsyncSession, chat_id: int, value: str) -> Reply:
     """Обычный текст без команды.
 
     Незарегистрированному отвечает шаг регистрации: состояние диалога хранить
     не нужно — «нет пользователя» и есть состояние «ждём логин».
     """
     if await _user(db, chat_id) is not None:
-        return texts.HELP
+        return Reply(texts.HELP)
     if (value or "").strip().startswith("/"):
-        return texts.not_registered()
+        return Reply(texts.not_registered())
     return await register(db, chat_id, value)
 
 
-async def new_pin(db: AsyncSession, chat_id: int) -> str:
+async def new_pin(db: AsyncSession, chat_id: int) -> Reply:
     user = await _user(db, chat_id)
     if user is None:
-        return texts.not_registered()
+        return Reply(texts.not_registered())
 
     pin = await auth.assign_pin(db, user)
     await db.commit()
-    return texts.pin_changed(pin)
+    return Reply(texts.pin_changed(pin), pin=True)
 
 
 def app_url() -> str | None:

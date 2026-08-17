@@ -104,7 +104,7 @@
           {# Брони — второй способ получить машину, и вход в них должен быть виден
              на главном экране, а не только в боте. #}
           {% if group.machines %}
-            <a class="btn btn-schedule" href="{{ base }}/schedule/{{ room.id }}/{{ group.kind }}">
+            <a class="btn btn-outline btn-schedule" href="{{ base }}/schedule/{{ room.id }}/{{ group.kind }}">
               {{ t.board_schedule_cta }}
             </a>
           {% endif %}

@@ -13,7 +13,8 @@ import logging
 
 from aiogram import Bot, Dispatcher
 from aiogram.client.default import DefaultBotProperties
-from aiogram.enums import ParseMode
+from aiogram.enums import ChatType, ParseMode
+from aiogram.exceptions import TelegramAPIError
 from aiogram.filters import Command, CommandObject, CommandStart
 from aiogram.types import (
     BotCommand,
@@ -121,14 +122,35 @@ async def handle_free(message: Message) -> None:
 @dispatcher.message(Command("pin"))
 async def handle_pin(message: Message) -> None:
     async with SessionLocal() as db:
-        await message.answer(await commands.new_pin(db, message.chat.id))
+        await _answer(message, await commands.new_pin(db, message.chat.id))
 
 
 @dispatcher.message()
 async def handle_anything_else(message: Message) -> None:
     """Второй шаг регистрации живёт здесь: логин приходит обычным сообщением."""
     async with SessionLocal() as db:
-        await message.answer(await commands.text_message(db, message.chat.id, message.text or ""))
+        await _answer(message, await commands.text_message(db, message.chat.id, message.text or ""))
+
+
+async def _answer(message: Message, reply: commands.Reply) -> None:
+    """Ответить и, если в ответе выдан PIN, закрепить его наверху чата.
+
+    Иначе четыре цифры уезжают вверх за первым же уведомлением об очереди, и
+    человек идёт за новым PIN-ом вместо того, чтобы занять принтер. Закреплять
+    в личном чате бот может без всяких прав — в отличие от групп, где для этого
+    нужно быть администратором; поэтому в группе даже не пробуем.
+    """
+    sent = await message.answer(reply.text)
+    if not reply.pin or message.chat.type != ChatType.PRIVATE:
+        return
+    try:
+        # Сначала снимаем прошлый пин: старый PIN уже не работает, а наверху
+        # чата висел бы наравне с новым. Открепить одно сообщение в личном чате
+        # нельзя — только всё сразу.
+        await sent.chat.unpin_all_messages()
+        await sent.pin(disable_notification=True)
+    except TelegramAPIError:  # закрепление — удобство, из-за него бот не падает
+        logger.exception("не удалось закрепить сообщение с PIN-ом")
 
 
 def build_bot() -> Bot:

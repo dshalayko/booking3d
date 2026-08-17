@@ -13,7 +13,14 @@
   --wait: #f1c40f;
   --broken: #7f8c8d;
   --accent: #3b82f6;
+  /* Оранжевый — только у входа в расписание: своих статусов у него нет, и
+     спутать его с «готово» (--wait) или «занято» (--busy) неоткуда. */
+  --plan: #fb923c;
   --radius: 18px;
+  /* Те же два цвета тройками: их подмешивают в rgba() кнопки с контуром, а
+     rgba(var(--accent)) с готовым #hex не соберётся. */
+  --accent-rgb: 59, 130, 246;
+  --plan-rgb: 251, 146, 60;
 }
 
 /* manipulation убирает у Safari двойной тап как жест зума: на стене в него
@@ -414,6 +421,15 @@ body {
 .btn:active { transform: scale(.98); }
 .btn-primary { background: var(--accent); }
 .btn-ghost { background: rgba(255, 255, 255, .06); color: var(--muted); }
+/* Второстепенное действие рядом с главной кнопкой: цветной контур с приглушённой
+   заливкой. Серая кнопка на тёмном фоне читается как подпись, а сплошная
+   заливка спорила бы с «Занять» и «Встать в очередь» над ней. Цвет задаёт сама
+   кнопка через `--outline-rgb`: «Расписание» на доске — оранжевая, «Как
+   получить PIN» под клавиатурой — синяя. */
+.btn-outline {
+  background: rgba(var(--outline-rgb, var(--accent-rgb)), .14);
+  box-shadow: inset 0 0 0 2px rgba(var(--outline-rgb, var(--accent-rgb)), .55);
+}
 .btn-small { min-height: 52px; padding: 10px 18px; font-size: 19px; }
 .btn-wide { width: 100%; }
 /* Главная кнопка секции. Стоит в одной строке с заголовком типа: секций может
@@ -478,6 +494,68 @@ body {
 }
 .key:active { background: rgba(255, 255, 255, .16); }
 .keypad-hint { margin: 0; font-size: 18px; color: var(--muted); }
+
+/* --- «Как получить PIN» ---
+   Кнопка на месте прежней подсказки, и выглядит она кнопкой: ссылку под
+   клавиатурой на стене не замечают, а мимо подчёркнутой строчки ещё и
+   промахиваются пальцем. Полоса во всю ширину клавиатуры, рамка цветом кнопок —
+   так видно, что нажимать, не читая. */
+
+.keypad-help {
+  flex-direction: row;
+  gap: 12px;
+  width: 100%;
+  color: var(--text);
+  cursor: pointer;
+}
+.keypad-help-icon { flex: 0 0 auto; width: 28px; height: 28px; color: var(--accent); }
+
+/* `display: none` в закрытом состоянии — не только ради красоты: браузер без
+   поддержки <dialog> иначе показал бы карточку прямо в форме. */
+.pin-help:not([open]) { display: none; }
+.pin-help {
+  margin: auto;
+  padding: 0;
+  border: none;
+  background: none;
+  color: var(--text);
+  overflow: visible;
+}
+.pin-help::backdrop { background: rgba(0, 0, 0, .72); }
+.pin-help-inner {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 20px;
+  max-width: 460px;
+  padding: 28px;
+  border-radius: 24px;
+  background: var(--card);
+  box-shadow: 0 24px 64px rgba(0, 0, 0, .5);
+  text-align: center;
+}
+.pin-help-title { margin: 0; font-size: 30px; font-weight: 700; }
+/* Карточка кода белая при любой теме: чёрное на белом — единственное сочетание,
+   которое читает камера любого телефона с любого угла. */
+.pin-help-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  padding: 20px;
+  border-radius: 20px;
+  background: #fff;
+}
+.pin-help-card .qr { display: block; width: 280px; height: 280px; }
+.pin-help-handle {
+  margin: 0;
+  font-size: 22px;
+  font-weight: 700;
+  letter-spacing: 1px;
+  color: #12141a;
+}
+.pin-help-body { margin: 0; font-size: 20px; line-height: 1.4; color: var(--muted); }
+.pin-help-close { width: 100%; min-height: 64px; font-size: 24px; }
 
 /* --- длительности и подтверждение --- */
 
@@ -610,7 +688,9 @@ body {
 .booking .btn { align-self: flex-start; }
 .my-links { display: flex; flex-wrap: wrap; gap: 10px; margin-top: auto; }
 .tile-booked-from { color: var(--wait); }
-.btn-schedule { width: 100%; min-height: 56px; font-size: 20px; }
+/* Оранжевая: бронь на будущее — не то же самое, что занять машину сейчас, и на
+   доске это должно быть видно цветом, а не только надписью. */
+.btn-schedule { width: 100%; min-height: 56px; font-size: 20px; --outline-rgb: var(--plan-rgb); color: var(--plan); }
 
 .error { text-align: center; max-width: 560px; display: flex; flex-direction: column; gap: 20px; }
 .error-mark {
@@ -1056,6 +1136,17 @@ body.admin-page { padding: 0; gap: 0; }
   .keypad-grid { gap: 8px; }
   .key { min-height: 52px; font-size: 22px; }
   .keypad-hint { font-size: 12px; }
+  .keypad-help { min-height: 40px; gap: 8px; padding: 8px 12px; font-size: 14px; }
+  .keypad-help-icon { width: 18px; height: 18px; }
+  .pin-help-inner { gap: 12px; padding: 16px; border-radius: 18px; }
+  .pin-help-title { font-size: 18px; }
+  .pin-help-card { gap: 8px; padding: 12px; border-radius: 14px; }
+  /* Код упирается в ширину экрана, но не растёт выше половины его высоты:
+     камере хватает и меньшего, а кнопка «Понятно» должна остаться видна. */
+  .pin-help-card .qr { width: min(64vw, 46vh); height: min(64vw, 46vh); }
+  .pin-help-handle { font-size: 14px; }
+  .pin-help-body { font-size: 13px; }
+  .pin-help-close { min-height: 44px; font-size: 16px; }
 
   /* --- расписание --- */
 
