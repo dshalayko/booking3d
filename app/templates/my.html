@@ -3,6 +3,11 @@
 {% block title %}{{ t.my_title }}{% endblock %}
 
 {% block content %}
+{# Сюда приводит бронирование — плашка говорит, что оно записалось. #}
+{% if flash %}
+  <div class="banner banner-ok" data-autohide="6">{{ flash }}</div>
+{% endif %}
+
 <main class="sheet">
   <header class="sheet-head">
     <a class="btn btn-small btn-ghost" href="{{ base }}/">{{ t.back }}</a>

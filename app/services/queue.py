@@ -43,6 +43,7 @@ from app.enums import (
 from app.models import Machine, MachineSession, QueueEntry, Reservation
 from app.services import rooms as rooms_svc
 from app.services.errors import (
+    AlreadyBooked,
     AlreadyInQueue,
     MachineKindNotInRoom,
     MachineKindUnknown,
@@ -128,6 +129,20 @@ async def join(
     )
     if active_session is not None:
         raise UserBusy(t.ERR_USER_BUSY_FREE_FIRST)
+
+    # Бронь — то же дело, что работа: час на эту машину человеку уже обещан, и
+    # место в очереди сверх него — это вторая заявка на тот же парк. Запросом по
+    # `Reservation` напрямую, а не через services/reservations.py: тот зовёт
+    # очередь сам (`offer_free_machines`), и обратный импорт замкнул бы кольцо.
+    booked = await db.scalar(
+        select(Reservation.id).where(
+            Reservation.user_id == user_id,
+            Reservation.room_id == room_id,
+            Reservation.status.in_(ACTIVE_RESERVATION_STATUSES),
+        )
+    )
+    if booked is not None:
+        raise AlreadyBooked(t.ERR_QUEUE_WHILE_BOOKED)
 
     existing = await _active_entry(db, user_id, room_id)
     if existing is not None:
@@ -343,6 +358,25 @@ async def position_of(db: AsyncSession, user_id: int, room_id: int) -> int | Non
         await active_entries(db, room_id=room_id, kind=entry.kind), start=1
     ):
         if item.user_id == user_id:
+            return index
+    return None
+
+
+async def position_in(
+    db: AsyncSession, user_id: int, room_id: int, kind: str
+) -> int | None:
+    """Номер человека в этой самой очереди — (помещение, тип). None — его тут нет.
+
+    От `position_of` отличается тем, что тип задан снаружи, а не взят из его
+    ожидания. Правило 2 держит одно ожидание на помещение, но расписание всегда
+    открыто на конкретном оборудовании, и про ожидание гравировщика на сетке
+    принтеров оно должно молчать: «вы в очереди» над сеткой принтеров — это
+    обещание машины, которую человек не ждал.
+    """
+    for index, entry in enumerate(
+        await active_entries(db, room_id=room_id, kind=kind), start=1
+    ):
+        if entry.user_id == user_id:
             return index
     return None
 

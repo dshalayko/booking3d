@@ -15,6 +15,7 @@ from app.admin import router as admin_router
 from app.api import auth as auth_routes
 from app.api import kiosk as kiosk_routes
 from app.api import miniapp as miniapp_routes
+from app.api import screens
 from app.api.render import templates
 from app.bot import notify
 from app.bot.bot import attach_notifier, build_bot, start_polling
@@ -193,10 +194,20 @@ def _wants_html(request: Request) -> bool:
 
 
 def _error_response(request: Request, message: str, code: int) -> Response:
-    """На киоске ошибка — это экран с крупным текстом, а не JSON."""
+    """На киоске ошибка — это экран с крупным текстом, а не JSON.
+
+    Клиент берётся из адреса (api/screens.py, `client_for`): «Понятно» ведёт
+    домой, а дом у планшета, у телефона и у панели разный. Без этого экран
+    ошибки в Mini App уводил на доску киоска — и обратно в приложение человек
+    попадал только через перезапуск Telegram.
+    """
     if _wants_html(request):
+        client = screens.client_for(request.url.path)
         return templates.TemplateResponse(
-            request, "error.html", {"message": message}, status_code=code
+            request,
+            "error.html",
+            {"message": message, **client.context},
+            status_code=code,
         )
     return JSONResponse({"error": message}, status_code=code)
 

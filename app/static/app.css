@@ -613,6 +613,23 @@ body {
 
 .grid-hint { margin: 0; font-size: 18px; color: var(--muted); }
 
+/* Своё место в очереди над сеткой. Карточкой, а не строкой подсказки: это не
+   пояснение к экрану, а состояние человека, и оно должно читаться раньше часов.
+   Кнопка выхода внутри — выйти из очереди можно оттуда же, где про неё узнал. */
+.grid-queue {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin: 0;
+  padding: 12px 16px;
+  border-radius: var(--radius);
+  background: rgba(var(--accent-rgb), 0.12);
+  border: 1px solid rgba(var(--accent-rgb), 0.35);
+  font-size: 18px;
+}
+
 .grid { display: flex; flex-direction: column; gap: 4px; }
 /* Первая колонка — часы, дальше по колонке на машину. Число приезжает из
    шаблона: CSS не умеет считать детей. */
@@ -1166,6 +1183,7 @@ body.admin-page { padding: 0; gap: 0; }
   .day-number { font-size: 15px; }
 
   .grid-hint { font-size: 12px; }
+  .grid-queue { padding: 8px 10px; gap: 8px; font-size: 13px; }
   .grid { gap: 3px; }
   /* Колонка часов ужимается до «08:00» и отдаёт остальное машинам: в клетку
      нужно попасть пальцем, а часы только читают. */

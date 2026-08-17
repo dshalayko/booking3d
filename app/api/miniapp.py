@@ -233,11 +233,12 @@ async def queue_leave_action(request: Request, db: Db, room_id: int) -> Response
 
 @router.get("/schedule/{room_id}/{kind}", response_class=HTMLResponse)
 async def schedule_screen(
-    request: Request, db: Db, room_id: int, kind: str, date: str = ""
+    request: Request, db: Db, room_id: int, kind: str, date: str = "", flash: str = ""
 ) -> Response:
-    """Здесь свои брони подсвечены: в отличие от киоска, известно, кто смотрит."""
+    """Здесь свои брони подсвечены и видно своё место в очереди: в отличие от
+    киоска, известно, кто смотрит. Сюда же приводит «встать в очередь»."""
     return await screens.schedule_page(
-        request, db, APP, room_id, kind, date, viewer=await viewer(request, db)
+        request, db, APP, room_id, kind, date, viewer=await viewer(request, db), flash=flash
     )
 
 
@@ -270,12 +271,15 @@ async def booking_cancel_action(request: Request, db: Db, reservation_id: int) -
 
 
 @router.get("/my", response_class=HTMLResponse)
-async def my_screen(request: Request, db: Db) -> Response:
-    """Мои брони. Без сессии — бутстрап, который вернёт сюда же."""
+async def my_screen(request: Request, db: Db, flash: str = "") -> Response:
+    """Мои брони. Без сессии — бутстрап, который вернёт сюда же.
+
+    Сюда же уходит человек после бронирования, отсюда же брони и отменяют.
+    """
     person = await viewer(request, db)
     if person is None:
         return await _bootstrap(request, db, f"{SAFE_NEXT_PREFIX}/my")
-    return await screens.my_page(request, db, APP, person)
+    return await screens.my_page(request, db, APP, person, flash)
 
 
 async def _test_person(db: AsyncSession, user_id: int | None) -> User | None:

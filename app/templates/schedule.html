@@ -14,6 +14,10 @@
 {% block title %}{{ t.schedule_title.format(title=title_word) }}{% endblock %}
 
 {% block content %}
+{% if flash %}
+  <div class="banner banner-ok" data-autohide="6">{{ flash }}</div>
+{% endif %}
+
 <main class="sheet sheet-wide">
   <header class="sheet-head">
     <a class="btn btn-small btn-ghost" href="{{ base }}/room/{{ grid.room.id }}">{{ t.back }}</a>
@@ -22,6 +26,23 @@
       <a class="btn btn-small" href="{{ base }}/my">{{ t.schedule_my_bookings }}</a>
     {% endif %}
   </header>
+
+  {# Своё место в очереди — над сеткой. Сюда приводит «встать в очередь», и без
+     этой строки человек не видит, что он уже ждёт: кнопка очереди осталась на
+     доске, и он идёт нажимать её второй раз — в отказ «вы уже в очереди».
+     Очередь и бронь тут рядом не случайно: это два ответа на один вопрос, и
+     выбирать между «как освободится» и «к четвергу к утру» человек должен,
+     видя оба. Показывается только там, где известно, кто смотрит, — на стене
+     номер был бы чужой. #}
+  {% if queue_place %}
+    <p class="grid-queue">
+      {{ t.schedule_queue.format(
+           kind=MACHINE_KIND_TITLE.get(grid.kind, grid.kind), position=queue_place) }}
+      <a class="btn btn-small" href="{{ base }}/queue/leave/{{ grid.room.id }}">
+        {{ t.queue_leave }}
+      </a>
+    </p>
+  {% endif %}
 
   <nav class="days" aria-label="{{ t.schedule_day_label }}">
     {% for option in grid.days %}

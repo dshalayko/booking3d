@@ -7,7 +7,10 @@
   <div class="error">
     <p class="error-mark">!</p>
     <p class="error-text">{{ message }}</p>
-    <a class="btn btn-primary btn-wide" href="/">{{ t.error_ok }}</a>
+    {# Домой — к своему клиенту: у планшета это доска на стене, у Mini App —
+       `/app/`, который заодно переоформит истёкшую сессию, у панели — её
+       сводка. Куда именно, решает адрес ошибки (api/screens.py, `client_for`). #}
+    <a class="btn btn-primary btn-wide" href="{{ base }}/">{{ t.error_ok }}</a>
   </div>
 </main>
 {% endblock %}

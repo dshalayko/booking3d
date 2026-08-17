@@ -39,6 +39,7 @@ from app.enums import (
 from app.models import Machine, MachineSession, QueueEntry, Reservation, User
 from app.services import queue, reservations, rooms, schedule
 from app.services.errors import (
+    AlreadyBooked,
     InvalidDuration,
     MachineBooked,
     MachineHasHistory,
@@ -159,6 +160,16 @@ async def occupy(
     # мешает занять переговорную, а второй принтер рядом с первым — мешает.
     if await _active_session_of_user(db, user.id, machine.room_id) is not None:
         raise UserBusy(t.ERR_USER_BUSY)
+
+    # Правило 13 с этой стороны: у человека с бронью в помещении одно дело —
+    # эта самая бронь. Своя забронированная машина не в счёт: её занимают и по
+    # правилу 12 (пришёл в своё окно), и просто раньше времени, если она стоит
+    # свободная, — это то же самое дело, а не второе. Чужая — уже второе, и
+    # тогда один человек держит станок сейчас и час на будущее.
+    if reservation is None:
+        booking = await reservations.active_of_user(db, user.id, machine.room_id)
+        if booking is not None and booking.machine_id != machine.id:
+            raise AlreadyBooked(t.ERR_OCCUPY_WHILE_BOOKED)
 
     # eta_at считается обычным сложением: работа идёт и ночью, ночная пауза
     # относится только к окну подтверждения предложения из очереди.

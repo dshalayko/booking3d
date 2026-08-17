@@ -281,6 +281,52 @@ class TestScreens:
         assert booking is not None
         assert booking.starts_at == start
 
+    async def test_booking_lands_on_my_bookings(self, client, printers, make_user):
+        """Забронировав, человек должен увидеть, что время записано, и какое.
+
+        На стене такого экрана нет — список чужих брон там не место, и планшет
+        по-прежнему возвращается к доске.
+        """
+        user = await make_user()
+        await open_app(client, user)
+
+        response = await client.post(
+            f"/app/book/{printers[0].id}",
+            data={"start": tomorrow_at().isoformat(), "minutes": "60"},
+        )
+
+        assert response.headers["location"] == "/app/my?flash=booked"
+        listing = await client.get("/app/my", params={"flash": "booked"})
+        assert "P2S #1" in listing.text
+        assert "banner-ok" in listing.text
+
+    async def test_cancelling_returns_to_the_main_screen(
+        self, client, db, printers, make_user
+    ):
+        """И закрывает бронь в базе, а не только на экране.
+
+        Отмена, которая доехала до экрана, но не до строки, — это следующий
+        отказ «у вас уже есть бронь» на ровном месте, и человеку неоткуда узнать,
+        откуда она взялась.
+        """
+        user = await make_user()
+        # Номер помещения и человека — до `expire_all`: у отвязанной от сессии
+        # строки обращение к полю полезло бы в базу вне асинхронного контекста.
+        user_id = user.id
+        booking = await reservations_svc.book(db, user, printers[0].id, tomorrow_at(), 60)
+        await db.commit()
+        await open_app(client, user)
+
+        response = await client.post(f"/app/booking/{booking.reservation_id}/cancel")
+
+        assert response.headers["location"] == "/app/?flash=booking_cancelled"
+        db.expire_all()
+        stored = await db.get(Reservation, booking.reservation_id)
+        assert stored.status == ReservationStatus.CANCELLED
+        assert stored.resolved_at is not None
+        # И лимит правила 13 свободен сразу же, без всякой паузы.
+        assert await reservations_svc.active_of_user(db, user_id) is None
+
     async def test_schedule_highlights_my_booking(self, client, room, db, printers, make_user):
         user = await make_user(name="Аня")
         await reservations_svc.book(db, user, printers[0].id, tomorrow_at(), 60)
@@ -342,6 +388,13 @@ class TestScreens:
         assert stored.status == ReservationStatus.BOOKED
 
     async def test_queue_from_the_phone(self, client, room, db, printers, make_user):
+        """Встал в очередь — остаётся у расписания, и видно, что он в ней.
+
+        Очередь и бронь — два ответа на «мне нужна машина», и в очередь встают
+        ровно тогда, когда всё занято, то есть когда второй ответ нужнее всего.
+        Место в очереди подписано над сеткой, иначе человек пойдёт вставать в неё
+        второй раз — кнопка-то осталась на доске.
+        """
         busy = await make_user()
         waiting = await make_user()
         await machines_svc.occupy(db, busy, printers[0].id, 60)
@@ -353,6 +406,33 @@ class TestScreens:
 
         assert response.status_code == 303
         assert await queue_svc.position_of(db, waiting.id, room.id) == 1
+        assert (
+            response.headers["location"]
+            == f"/app/schedule/{room.id}/{MachineKind.PRINTER}?flash=queued"
+        )
+
+        grid = await client.get(
+            f"/app/schedule/{room.id}/{MachineKind.PRINTER}", params={"flash": "queued"}
+        )
+        assert "grid-queue" in grid.text
+        assert "номер 1" in grid.text
+        assert f"/app/queue/leave/{room.id}" in grid.text
+
+    async def test_queue_place_belongs_to_its_own_equipment(
+        self, client, room, db, printers, engravers, make_user
+    ):
+        """Ожидание гравировщика на сетке принтеров — обещание чужой машины."""
+        waiting = await make_user()
+        await machines_svc.occupy(db, await make_user(), engravers[0].id, 60)
+        await queue_svc.join(db, waiting.id, room.id, MachineKind.ENGRAVER)
+        await db.commit()
+        await open_app(client, waiting)
+
+        printers_grid = await client.get(f"/app/schedule/{room.id}/{MachineKind.PRINTER}")
+        engravers_grid = await client.get(f"/app/schedule/{room.id}/{MachineKind.ENGRAVER}")
+
+        assert "grid-queue" not in printers_grid.text
+        assert "grid-queue" in engravers_grid.text
 
     async def test_app_pages_do_not_auto_return(self, client, printers, make_user):
         """Планшет общий и возвращается к доске сам; телефон — личный."""
@@ -364,6 +444,64 @@ class TestScreens:
 
         assert "data-autoreturn" not in app_page.text
         assert "data-autoreturn" in kiosk_page.text
+
+    async def test_cancel_screen_does_not_offer_a_second_cancel(
+        self, client, db, printers, make_user
+    ):
+        """«Отмена» рядом с «Отменить бронь» нажимают вместо неё — и не отменяют.
+
+        Уход с экрана и отмена брони — разные вещи, и называться одинаково они не
+        могут: человек жмёт верхнюю кнопку, бронь остаётся, а следом он упирается
+        в «у вас уже есть бронь» и не понимает, откуда она. PIN там тоже не
+        упоминается: клавиатуры на этом экране нет, и упоминание читается как
+        «чего-то не хватает, поэтому и не отменяется».
+        """
+        user = await make_user()
+        booking = await reservations_svc.book(db, user, printers[0].id, tomorrow_at(), 60)
+        await db.commit()
+        await open_app(client, user)
+
+        page = (await client.get(f"/app/booking/{booking.reservation_id}/cancel")).text
+
+        assert "Отменить бронь" in page
+        assert "Назад" in page
+        assert "Отмена" not in page
+        assert "PIN" not in page
+
+    async def test_error_screen_stays_in_the_app(self, client, db, printers, make_user):
+        """Иначе выход с экрана ошибки — перезапуск Telegram.
+
+        Кнопка «Понятно» вела на `/`, то есть на доску киоска с клавиатурой PIN:
+        телефону её всё равно не примут (правило 11), а обратно в приложение
+        оттуда нет ни одной ссылки. Авто-возврат туда же через минуту — тем более.
+        """
+        owner = await make_user()
+        stranger = await make_user()
+        booking = await reservations_svc.book(db, owner, printers[0].id, tomorrow_at(), 60)
+        await db.commit()
+        await open_app(client, stranger)
+
+        response = await client.post(
+            f"/app/booking/{booking.reservation_id}/cancel",
+            headers={"accept": "text/html"},
+        )
+
+        assert response.status_code == 403
+        assert 'href="/app/"' in response.text
+        assert 'href="/"' not in response.text
+        assert "data-autoreturn" not in response.text
+
+    async def test_kiosk_error_screen_still_goes_to_the_board(self, client, printers):
+        """А на стене — наоборот: экран ошибки обязан сам вернуться к доске."""
+        machines_id = printers[0].id
+
+        response = await client.get(
+            f"/book/{machines_id}", params={"start": "не время"}, headers={"accept": "text/html"}
+        )
+
+        assert response.status_code == 400
+        assert 'href="/"' in response.text
+        assert "data-autoreturn" in response.text
 
     async def test_kiosk_pages_have_no_external_script(self, client, room, printers):
         """Экран на стене должен читаться при мёртвом интернете."""

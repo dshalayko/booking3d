@@ -1,9 +1,9 @@
 """Экраны и действия — один набор на киоск и на Mini App.
 
 Планшет на стене и телефон в Telegram показывают одно и то же: список помещений,
-доску помещения, расписание, формы занятия и брони. Отличаются они ровно двумя
-вещами, и обе описаны в `Client`: префикс адресов и нужен ли PIN. Всё остальное —
-этот модуль.
+доску помещения, расписание, формы занятия и брони. Отличаются они тремя вещами,
+и все три описаны в `Client`: префикс адресов, нужен ли PIN и известно ли, кто
+смотрит. Всё остальное — этот модуль.
 
 Помещение есть в адресе почти каждого экрана: доска, расписание и очередь у
 каждого свои. Планшет своё помещение знает (оно записано в его device-cookie,
@@ -62,6 +62,15 @@ class Client:
     # рисует системную кнопку «назад» и отдаёт подпись открытия. Внутри Telegram
     # это уместно, на стене — лишний внешний запрос.
     telegram_sdk: bool = False
+    # Известно ли, кто смотрит. В Mini App — да (подпись Telegram), на стене —
+    # нет: планшет общий, и личность там живёт ровно один POST с PIN.
+    #
+    # От этого зависит, куда человек уходит после действия. На личном экране его
+    # оставляют там, где виден результат: свои брони после бронирования, своё
+    # место в очереди после ожидания. На общем экране обоих этих страниц нет —
+    # «мои брони» показали бы чужой список, а «вы в очереди» назвало бы чужой
+    # номер, — и планшет возвращается к доске, как и всегда.
+    personal: bool = False
 
     @property
     def context(self) -> dict:
@@ -71,14 +80,40 @@ class Client:
             "telegram_sdk": self.telegram_sdk,
         }
 
-    def done(self, flash: str) -> RedirectResponse:
+    def done(self, flash: str, path: str = "/") -> RedirectResponse:
+        """Куда уходит человек после действия.
+
+        По умолчанию — на главный экран: там видно, что изменилось, и оттуда
+        начинается любое следующее действие. `path` нужен действиям, у которых
+        результат живёт на своей странице, — см. `do_book`.
+        """
         return RedirectResponse(
-            f"{self.base}/?flash={flash}", status_code=status.HTTP_303_SEE_OTHER
+            f"{self.base}{path}?flash={flash}", status_code=status.HTTP_303_SEE_OTHER
         )
 
 
 KIOSK = Client(base="", needs_pin=True)
-APP = Client(base="/app", needs_pin=False, telegram_sdk=True)
+APP = Client(base="/app", needs_pin=False, telegram_sdk=True, personal=True)
+# Админка своим экраном ошибки не занимается — его рисует main.py. Клиента ей
+# хватает ради одного: кнопка «Понятно» должна вести обратно в панель.
+ADMIN = Client(base="/admin", needs_pin=False)
+
+
+def client_for(path: str) -> Client:
+    """Чей это адрес — планшета, телефона или панели.
+
+    Нужно экрану ошибки: он рисуется в обработчике (main.py), вне любого из
+    экранов ниже, и без этого доставался бы киосковым по умолчанию — с адресами
+    на `/` и с авто-возвратом туда же (api/render.py, глобальные Jinja). Внутри
+    Telegram это тупик: `/` — это доска на стене с клавиатурой PIN, которого
+    телефону всё равно не примут (правило 11), и выйти из неё можно только
+    закрыв и открыв приложение заново из чата.
+    """
+    if path == APP.base or path.startswith(f"{APP.base}/"):
+        return APP
+    if path == ADMIN.base or path.startswith(f"{ADMIN.base}/"):
+        return ADMIN
+    return KIOSK
 
 
 # --- вспомогательное ---------------------------------------------------------
@@ -384,7 +419,15 @@ async def do_queue_join(
     result = await queue_svc.join(db, user.id, room_id, kind)
     await db.commit()
     await notify.announce_offers(db, result.offers)
-    return client.done("queued")
+    # Встав в очередь, человек остаётся у расписания этого же оборудования, а не
+    # уходит на главную. Очередь и бронь — два ответа на один вопрос «мне нужна
+    # машина»: первая про «как освободится», вторая про «к четвергу к утру». В
+    # очередь встают как раз тогда, когда всё занято, — и это ровно тот момент,
+    # когда второй ответ нужнее всего. Что человек уже стоит в очереди, сетка
+    # говорит плашкой (см. `schedule_page`), иначе он вставал бы туда дважды.
+    return client.done(
+        "queued", f"/schedule/{room_id}/{kind}" if client.personal else "/"
+    )
 
 
 async def queue_leave_page(
@@ -425,8 +468,15 @@ async def schedule_page(
     kind: str,
     day_value: str = "",
     viewer: User | None = None,
+    flash: str = "",
 ) -> Response:
-    """Расписание одного типа в одном помещении: часы — свои у каждой комнаты."""
+    """Расписание одного типа в одном помещении: часы — свои у каждой комнаты.
+
+    Сюда же приводит «встать в очередь» (`do_queue_join`), поэтому экран знает
+    про ожидание: место в очереди рисуется плашкой над сеткой. Без неё человек,
+    которого только что сюда привели, не видит, что он уже ждёт, и встаёт второй
+    раз — в отказ «вы уже в очереди».
+    """
     valid_kind(kind)
     room = await _room(db, room_id)
     now = datetime.now(UTC)
@@ -440,8 +490,20 @@ async def schedule_page(
         now=now,
         viewer_id=viewer.id if viewer else None,
     )
+    # Только там, где известно, кто смотрит: на стене «вы в очереди» — это про
+    # кого угодно, и номер в нём чужой.
+    place = (
+        None if viewer is None else await queue_svc.position_in(db, viewer.id, room.id, kind)
+    )
     return templates.TemplateResponse(
-        request, "schedule.html", {"grid": grid, **client.context}
+        request,
+        "schedule.html",
+        {
+            "grid": grid,
+            "queue_place": place,
+            "flash": t.FLASH_KIOSK.get(flash),
+            **client.context,
+        },
     )
 
 
@@ -518,7 +580,11 @@ async def do_book(
             result.ends_at,
         ),
     )
-    return client.done("booked")
+    # Забронировав, человек уходит к своим бронам, а не на главный экран: он
+    # только что назначил себе время, и первое, что нужно увидеть, — что оно
+    # действительно записано и какое именно. Оттуда же его и отменяют. На стене
+    # такого экрана нет — планшет общий, и список чужих брон на нём не место.
+    return client.done("booked", "/my" if client.personal else "/")
 
 
 async def booking_cancel_page(
@@ -531,7 +597,7 @@ async def booking_cancel_page(
         "confirm.html",
         {
             "title": t.UI["my_cancel"],
-            "hint": t.UI["book_cancel_hint"],
+            "hint": t.UI["book_cancel_hint" if client.needs_pin else "book_cancel_hint_app"],
             "subject": t.UI["admin_booking_row"].format(
                 machine=machine.name if machine else "",
                 start=when(booking.starts_at),
@@ -561,9 +627,13 @@ async def do_booking_cancel(
 
 
 async def my_page(
-    request: Request, db: AsyncSession, client: Client, user: User
+    request: Request, db: AsyncSession, client: Client, user: User, flash: str = ""
 ) -> Response:
-    """Свои брони. Экран есть только там, где известно, кто смотрит."""
+    """Свои брони. Экран есть только там, где известно, кто смотрит.
+
+    Сюда же приводит бронирование, поэтому экран умеет показать плашку: без неё
+    человек попадает на список и не понимает, случилось ли что-то только что.
+    """
     return templates.TemplateResponse(
         request,
         "my.html",
@@ -571,6 +641,7 @@ async def my_page(
             "person": user,
             "bookings": await reservations_svc.of_user(db, user.id),
             "links": await schedule_links(db),
+            "flash": t.FLASH_KIOSK.get(flash),
             **client.context,
         },
     )

@@ -438,6 +438,24 @@ class TestScheduleScreen:
 
         assert response.status_code == 200
 
+    async def test_place_in_queue_is_not_shown_on_the_wall(
+        self, client, room, db, printers, make_user
+    ):
+        """«Вы в очереди, номер 1» на общем планшете — это про кого угодно.
+
+        В Mini App эта строка есть: там известно, кто смотрит, и туда же приводит
+        «встать в очередь» (см. test_miniapp.py).
+        """
+        waiting = await make_user()
+        for printer in printers:
+            await machines_svc.occupy(db, await make_user(), printer.id, 60)
+        await queue_svc.join(db, waiting.id, room.id, MachineKind.PRINTER)
+        await db.commit()
+
+        response = await client.get(f"/schedule/{room.id}/{MachineKind.PRINTER}")
+
+        assert "grid-queue" not in response.text
+
     async def test_board_links_to_schedule(self, client, room, printers):
         response = await client.get(f"/room/{room.id}")
 

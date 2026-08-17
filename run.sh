@@ -73,8 +73,9 @@ cmd_dev() {
     "$VENV/bin/alembic" upgrade head
     "$PY" -m app.cli seed_printers
     echo
-    say "киоск:   http://127.0.0.1:$PORT/"
-    say "админка: http://127.0.0.1:$PORT/admin/login"
+    say "киоск:    http://127.0.0.1:$PORT/"
+    say "Mini App: http://127.0.0.1:$PORT/app/"
+    say "админка:  http://127.0.0.1:$PORT/admin/login"
     say "если форма PIN не появляется — ./run.sh urls и открой ссылку регистрации киоска"
     echo
     exec "$VENV/bin/uvicorn" app.main:app --reload --port "$PORT"
@@ -101,6 +102,11 @@ cmd_check() { cmd_lint && cmd_test; }
 cmd_urls() {
     ensure_env
     echo "киоск:               http://127.0.0.1:$PORT/"
+    # Телефона и Telegram для проверки Mini App не нужно: при MINIAPP_OPEN_ACCESS
+    # вместо подписи открытия страница показывает список людей — заходи любым.
+    # С выключенным флагом там будет «откройте приложение из бота», и это не
+    # поломка, а сама проверка подписи.
+    echo "Mini App:            http://127.0.0.1:$PORT/app/ (вход списком: MINIAPP_OPEN_ACCESS=$(secret_from_env MINIAPP_OPEN_ACCESS))"
     # Ссылка спрашивает помещение: планшет привязывается к одной комнате.
     echo "регистрация планшета: http://127.0.0.1:$PORT/kiosk/enroll?secret=$(secret_from_env KIOSK_ENROLL_SECRET)"
     echo "админка:             http://127.0.0.1:$PORT/admin/login"

@@ -7,7 +7,10 @@
 Правила отсюда (PLAN.md):
   12. в своё окно машину занимает только тот, кто её забронировал, — это право
       сильнее очереди (правило 7);
-  13. одна активная бронь на человека в помещении;
+  13. одно дело на человека в помещении: работа, место в очереди или бронь.
+      Бронь одна, и поверх занятой машины её не выдают; обратная сторона правила
+      живёт в services/machines.py и services/queue.py. Своя забронированная
+      машина из запрета выключена — занять её можно и раньше своего часа;
   14. бронь не сгорает, пока машина занята чужой работой: отсчёт неявки идёт
       только со свободной машины;
   15. начать бронь можно только в рабочие часы помещения — у каждого свои
@@ -56,6 +59,7 @@ from app.services.errors import (
     ReservationForbidden,
     ReservationNotFound,
     ReservationOverlap,
+    UserBusy,
 )
 
 # Состояния клетки расписания: уезжают в CSS-класс и в текст подписи.
@@ -201,6 +205,24 @@ async def book(
     # бронь принтера, это разные комнаты и разные дела.
     if await active_of_user(db, user.id, machine.room_id) is not None:
         raise AlreadyBooked(t.ERR_ALREADY_BOOKED)
+
+    # И то же правило 13 со стороны работы: занятая машина — это уже одно дело в
+    # помещении, и бронь поверх неё дала бы одному человеку и станок сейчас, и
+    # час на будущее. Парк маленький, и это ровно та монополия, ради которой
+    # правило 2 не пускает занявшего ещё и в очередь.
+    #
+    # Запросом здесь, а не вызовом services/machines.py: тот спрашивает у брон,
+    # до какого часа машину можно занять, и обратный импорт замкнул бы кольцо
+    # (см. преамбулу модуля). Цена — четыре строки, как и у `_lock_machine`.
+    working = await db.scalar(
+        select(MachineSession.id).where(
+            MachineSession.user_id == user.id,
+            MachineSession.room_id == machine.room_id,
+            MachineSession.status.in_(ACTIVE_SESSION_STATUSES),
+        )
+    )
+    if working is not None:
+        raise UserBusy(t.ERR_USER_BUSY_FREE_FIRST)
 
     await _ensure_window_free(db, machine, starts_at, ends_at)
 

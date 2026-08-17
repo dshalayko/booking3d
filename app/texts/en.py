@@ -573,6 +573,14 @@ ERR_RESERVATION_BUSY = "{machine} is working until {time} — pick a later time"
 ERR_ALREADY_BOOKED = (
     "You already have a booking in this room. Cancel it to book another slot"
 )
+# A booking is one thing in a room, just like work and a place in line (rules 2
+# and 13). The machine you booked yourself is outside the ban: you take it both
+# in your own hour and earlier, if it stands free — that is the same thing, not
+# a second one.
+ERR_OCCUPY_WHILE_BOOKED = (
+    "You've got a booking in this room: take the machine you booked, or cancel the booking"
+)
+ERR_QUEUE_WHILE_BOOKED = "You've got a booking in this room — no need to wait in line"
 ERR_RESERVATION_NOT_FOUND = "No such booking, or it is already closed"
 ERR_RESERVATION_FORBIDDEN = "Only an admin can cancel someone else's booking"
 ERR_RESERVATION_WINDOW_OPEN = "The booking slot hasn't run out yet"
@@ -815,6 +823,9 @@ UI = {
     "schedule_hint": "Tap a free hour — that's when your booking starts",
     "schedule_work_hours": "Open {hours}",
     "schedule_my_bookings": "My bookings",
+    # Joining the line lands here: the place in line is written above the grid so
+    # that nobody goes and joins it a second time.
+    "schedule_queue": "You're in line for {kind}, number {position}",
     # book.html
     "book_title": "Book {machine}",
     "book_heading": "{machine} — book ahead",
@@ -829,6 +840,11 @@ UI = {
     "book_cancel_hint": (
         "The hour frees up and goes to the line. "
         "You can only cancel your own booking — your PIN is needed."
+    ),
+    # Same in the Mini App: there is no keypad on that screen, and a mention of
+    # the PIN there reads as "something is missing, that's why nothing happens".
+    "book_cancel_hint_app": (
+        "The hour frees up and goes to the line. You can only cancel your own booking."
     ),
     "book_booked_until": "Booked until {time}",
     # my.html

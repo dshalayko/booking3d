@@ -5,7 +5,7 @@
 // Версию поднимать при правках app.js и app.css. Это по-прежнему единственный
 // способ обновить планшет сразу; забытый номер больше не оставляет старую копию
 // навсегда, но стоит одного лишнего показа старого экрана — см. `fetch` ниже.
-var CACHE = "booking-v12";
+var CACHE = "booking-v13";
 var SHELL = ["/offline", "/static/app.css", "/static/app.js"];
 
 self.addEventListener("install", function (event) {
