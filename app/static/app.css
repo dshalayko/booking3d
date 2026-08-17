@@ -106,7 +106,11 @@ body {
   --queue-font: 22px;
 }
 
-@media (max-width: 1100px) {
+/* Мельче — не только в узком окне, но и в низком: у настенных планшетов
+   1024×600 и 800×600 высоты меньше, чем ширины, и именно она кончается первой.
+   Крупный набор не помещался, а скролла на стене нет (`overflow: hidden`) —
+   нижняя карточка просто обрезалась. */
+@media (max-width: 1100px), (max-height: 700px) {
   #board {
     --tile-pad: 16px 18px;
     --tile-name: 24px;
@@ -120,6 +124,34 @@ body {
     --queue-pad: 12px 16px;
     --queue-font: 19px;
   }
+}
+
+/* Низкий экран (тот же 1024×600, лежащий на боку): в высоту не влезала уже сама
+   плитка — очередь внутри карточки с единственной машиной оказывалась ниже её
+   нижнего края, и кнопка «выйти» пропадала совсем. Ужимается всё, что мерится
+   по вертикали: кнопки и главная строка статуса. Ширина здесь ни при чём —
+   отдельный блок, а не ещё одна ветка предыдущего. */
+@media (max-height: 640px) {
+  #board {
+    --tile-pad: 12px 16px;
+    --tile-name: 20px;
+    --tile-status: 26px;
+    --tile-owner: 18px;
+    --tile-time: 16px;
+    --tile-note: 15px;
+    --tile-btn: 52px;
+    --hero-height: 72px;
+    --hero-font: 26px;
+    --queue-pad: 10px 14px;
+    --queue-font: 17px;
+  }
+  .btn-sub { font-size: 16px; }
+  .btn-schedule { min-height: 46px; font-size: 18px; }
+  .tile { gap: 2px; }
+  .tile .btn { margin-top: 6px; }
+  .queue-column { margin-top: 8px; padding-top: 8px; gap: 6px; }
+  .queue-column .queue-list { gap: 6px; }
+  .queue-pos { width: 26px; height: 26px; font-size: 15px; }
 }
 
 .board-empty { margin: auto; font-size: 26px; color: var(--muted); text-align: center; }
@@ -144,7 +176,7 @@ body {
 .room-note { margin: 0; font-size: 20px; color: var(--muted); }
 .room-groups { flex: 1; display: flex; gap: 20px; min-height: 0; }
 
-@media (max-width: 1100px) {
+@media (max-width: 1100px), (max-height: 700px) {
   .room-name { font-size: 24px; }
   .room-note { font-size: 17px; }
 }
@@ -298,7 +330,10 @@ body {
   flex-wrap: wrap;
   font-size: var(--queue-font);
 }
-.queue-list li { display: flex; align-items: center; gap: 8px; }
+/* Человек очереди — всегда одна строка: номер, имя и пометка «ваша очередь»
+   переносились по словам, и обрезанный по высоте столбик резал такую строку
+   пополам — на экране оставался кусок буквы. */
+.queue-list li { display: flex; align-items: center; gap: 8px; min-width: 0; white-space: nowrap; overflow: hidden; }
 .queue-pos {
   display: inline-flex;
   align-items: center;
@@ -327,10 +362,33 @@ body {
   flex-direction: column;
   align-items: stretch;
   gap: 10px;
+  /* Перенос достался от строчной `.queue`, и в столбике он значит другое: когда
+     плитка ниже своего содержимого (низкий экран, много машин в ряду), лишнее
+     уезжает не вниз, а во второй столбец — то есть кнопка «выйти» вылетает за
+     край карточки и обрезается. Столбику перенос не нужен: очередь и так
+     ограничена высотой плитки. */
+  flex-wrap: nowrap;
 }
-.queue-column .queue-list { flex: 0 0 auto; flex-direction: column; gap: 10px; }
+/* Список сжимается, кнопка — нет. Когда очередь длиннее, чем остаток плитки
+   (низкий экран, шесть человек), обрезается хвост списка: он всё равно
+   продолжается за краем, и первым в нём стоит тот, кому машина достанется.
+   Кнопка «выйти» пропадать не должна — без неё из очереди не выйти вообще. */
+.queue-column .queue-list {
+  flex: 0 1 auto;
+  min-height: 0;
+  overflow: hidden;
+  flex-direction: column;
+  /* Перенос — тоже наследство строчной раскладки: с ограниченной высотой
+     очередь уходила во второй столбец вбок и обрезалась по буквам. */
+  flex-wrap: nowrap;
+  gap: 10px;
+}
+/* Сам список сжимается, строки в нём — нет: иначе вместо «обрезан хвост
+   очереди» получалось три сплющенных строки по паре пикселей, в которых не
+   читается ни одна. Верхние видны целиком, нижние уходят за край. */
+.queue-column .queue-list li { flex: 0 0 auto; }
 .queue-column .queue-empty { flex: 0 0 auto; }
-.queue-column .btn { margin-top: auto; }
+.queue-column .btn { margin-top: auto; flex: 0 0 auto; }
 
 /* --- кнопки --- */
 
@@ -854,8 +912,17 @@ body.admin-page { padding: 0; gap: 0; }
 
    Здесь же снимается запрет на скролл: он стоит ради планшета на стене, где
    всё обязано помещаться в экран. На узком экране содержимое не помещается
-   физически, и «не скроллить» означало бы обрезать имена машин. */
-@media (max-width: 900px) {
+   физически, и «не скроллить» означало бы обрезать имена машин.
+
+   Одной ширины для этого мало. Планшет на стене бывает и альбомным, и узким
+   сразу (800×600, 1024×600): по ширине он попадал сюда, секции вставали
+   столбиком — и доска переставала помещаться в высоту, уводя вторую секцию за
+   нижний край. Ширины там хватало ровно на то, ради чего колонки и придуманы.
+   Поэтому условие теперь про форму экрана, а не только про ширину: столбик —
+   это портрет либо лежащий телефон (высота в пол-ладони), а лежащий планшет
+   остаётся с колонками. */
+@media (max-width: 900px) and (orientation: portrait),
+       (max-width: 900px) and (max-height: 500px) {
   body { overflow: auto; }
   #board { gap: 14px; overflow: visible; }
   /* Секции типов встают друг под другом: рядом они помещаются только на стене.

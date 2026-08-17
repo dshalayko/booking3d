@@ -3,7 +3,14 @@
 <html lang="{{ t.lang }}">
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  {# `minimum-scale=1` — против пинча наружу. Он уменьшает не раскладку, а
+     видимую область: доска остаётся свёрстанной по-прежнему, но уезжает в угол
+     экрана, а вокруг остаётся её собственный фон. На стене это состояние
+     необратимо — планшет висит, свести пальцы обратно догадывается не каждый, а
+     сама страница из зума не выходит: доска обновляется запросом, а не
+     перезагрузкой. Увеличить (пинч внутрь) по-прежнему можно — запрещать это
+     значило бы отнять единственный способ прочитать мелкое. #}
+  <meta name="viewport" content="width=device-width, initial-scale=1, minimum-scale=1, viewport-fit=cover">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <meta name="apple-mobile-web-app-title" content="{{ t.app_short_title }}">
