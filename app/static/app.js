@@ -33,14 +33,46 @@
     if (banner) banner.hidden = !isOffline;
   }
 
+  // --- обновление после деплоя ---------------------------------------------
+  // Планшет на стене — это вкладка, открытая неделями: новые стили и скрипт
+  // сами по себе до неё не доезжают, а ходить к каждому экрану ногами — это
+  // ровно то, чего не делают. Поэтому у отданного браузеру есть номер версии
+  // (app/assets.py): он приходит с каждым ответом сервера, и разошёлся с тем, с
+  // которым страница загрузилась, — значит на сервере уже новое.
+
+  var version = document.body.dataset.version || "";
+  var updating = false;
+
+  function update() {
+    if (updating) return;
+    updating = true;
+    // Кэш service worker'а чистим до перезагрузки: иначе страница поднимется
+    // уже новая, а стили возьмёт из старой копии — и обновление съест само
+    // себя, потому что версия-то уже совпала.
+    var cleared = window.caches
+      ? caches.keys().then(function (keys) {
+          return Promise.all(keys.map(function (key) { return caches.delete(key); }));
+        })
+      : Promise.resolve();
+    cleared.catch(function () {}).then(function () { location.reload(); });
+  }
+
   function poll() {
     if (!board) return;
     fetch(board.dataset.poll, { headers: { "X-Requested-With": "poll" } })
       .then(function (response) {
         if (!response.ok) throw new Error(response.status);
+        var fresh = response.headers.get("X-App-Version");
+        // Палец на кнопке — перезагрузку отложим до следующего опроса, как и
+        // перерисовку ниже: человек в этот момент что-то нажимает.
+        if (version && fresh && fresh !== version && !document.querySelector(".btn:active")) {
+          update();
+          return null;
+        }
         return response.text();
       })
       .then(function (html) {
+        if (html === null) return;  // страница уже перезагружается
         // Не перерисовываем, пока человек держит палец на кнопке.
         if (!document.querySelector(".btn:active")) board.innerHTML = html;
         failures = 0;

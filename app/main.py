@@ -9,6 +9,7 @@ from fastapi.responses import JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy import text
 
+from app import assets
 from app import texts as t
 from app.admin import router as admin_router
 from app.api import auth as auth_routes
@@ -166,6 +167,20 @@ async def lifespan(_: FastAPI) -> AsyncIterator[None]:
 
 
 app = FastAPI(title=t.API_TITLE, lifespan=lifespan)
+
+
+# Версия отданного браузеру — на каждом ответе. Планшет на стене сверяет её при
+# опросе доски (раз в 10 секунд) и, увидев чужую, перезагружает себя сам:
+# иначе после деплоя к каждому экрану нужно идти ногами. Заголовок вешается
+# здесь, а не в обработчике доски, чтобы не забыть его на следующем экране,
+# который начнёт опрашивать сервер.
+@app.middleware("http")
+async def stamp_version(request: Request, call_next) -> Response:
+    response = await call_next(request)
+    response.headers["X-App-Version"] = assets.VERSION
+    return response
+
+
 app.mount("/static", StaticFiles(directory="app/static"), name="static")
 app.include_router(auth_routes.router)
 app.include_router(miniapp_routes.router)

@@ -19,6 +19,7 @@ from datetime import datetime
 
 from fastapi.templating import Jinja2Templates
 
+from app import assets
 from app import texts as t
 from app.config import settings
 from app.enums import ROOM_KIND_MACHINE_KINDS, MachineKind, RoomKind
@@ -73,6 +74,9 @@ templates.env.globals["ROOM_KIND_MACHINE_KINDS"] = ROOM_KIND_MACHINE_KINDS
 # Клиент по умолчанию — киоск; Mini App переопределяет эти значения в контексте
 # (см. api/screens.py, `Client`). Глобальные значения нужны экранам, которые
 # рисуются вне обоих клиентов: ошибка из main.py, офлайн-заглушка, админка.
+# Версия отданного браузеру: страница сверяет её с заголовком опроса и, когда
+# на сервере появилось новое, перезагружает себя сама (см. app/assets.py).
+templates.env.globals["asset_version"] = assets.VERSION
 templates.env.globals["base"] = ""
 templates.env.globals["needs_pin"] = True
 templates.env.globals["telegram_sdk"] = False

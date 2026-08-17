@@ -28,6 +28,7 @@
    (`needs_pin` = false) телефон личный, и уводить человека с экрана нельзя. #}
 <body class="{% block body_class %}{% endblock %}"
       data-texts="{{ t_js | tojson | forceescape }}"
+      data-version="{{ asset_version }}"
       {%- if auto_return|default(false) and needs_pin %} data-autoreturn="60"{% endif %}>
   <div id="offline-banner" class="banner banner-offline" hidden>
     {{ t.offline_banner }}

@@ -3,6 +3,7 @@ from datetime import UTC, datetime, timedelta
 import pytest
 from sqlalchemy import select
 
+from app import assets
 from app.api.kiosk import duration_options
 from app.config import Settings, settings
 from app.enums import MachineKind, MachineStatus, ReservationStatus
@@ -561,6 +562,32 @@ class TestStaticAndOffline:
         assert (await client.get("/static/manifest.webmanifest")).status_code == 200
         assert (await client.get("/static/app.css")).status_code == 200
         assert (await client.get("/static/app.js")).status_code == 200
+
+
+class TestSelfUpdate:
+    """Планшет на стене должен обновляться после деплоя сам, а не пешком."""
+
+    async def test_page_carries_the_version_it_was_built_with(self, client, room):
+        response = await client.get(f"/room/{room.id}")
+
+        assert f'data-version="{assets.VERSION}"' in response.text
+
+    async def test_poll_answers_with_the_current_version(self, client, room, printers):
+        """Именно по этому заголовку страница и узнаёт, что сервер обновился."""
+        response = await client.get(f"/partials/board/{room.id}")
+
+        assert response.headers["X-App-Version"] == assets.VERSION
+
+    def test_version_follows_the_files_not_the_restart(self, tmp_path, monkeypatch):
+        page = tmp_path / "app.css"
+        page.write_text("body { color: red }")
+        monkeypatch.setattr(assets, "WATCHED", (tmp_path,))
+
+        before = assets.digest()
+        assert assets.digest() == before  # перезапуск без правок экраны не дёргает
+
+        page.write_text("body { color: blue }")
+        assert assets.digest() != before
 
 
 class TestDurations:
