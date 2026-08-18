@@ -37,11 +37,7 @@
           {% if not room.single_group %}
             <h2 class="group-title">{{ MACHINE_KIND_TITLE.get(group.kind, group.kind) }}</h2>
           {% endif %}
-          {# Доска сжата до своей машины (`focused`) — большой кнопки здесь нет:
-             у человека машина уже есть. Занять другую можно из помещения — по
-             ссылке в его заголовке. #}
           {% if read_only|default(false) %}
-          {% elif focused|default(false) %}
           {% elif free and group_can_book %}
             <a class="btn btn-hero" href="{{ base }}/occupy/{{ free.id }}">
               {{ t.board_occupy_cta.format(kind=MACHINE_KIND_ONE.get(group.kind, group.kind)) }}

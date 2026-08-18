@@ -62,13 +62,6 @@ class Client:
     # рисует системную кнопку «назад» и отдаёт подпись открытия. Внутри Telegram
     # это уместно, на стене — лишний внешний запрос.
     telegram_sdk: bool = False
-    # Известно ли, кто смотрит. В Mini App — да (подпись Telegram), на стене —
-    # нет: планшет общий, и личность там живёт ровно один POST с PIN.
-    #
-    # От этого зависит, куда человек уходит после действия. На личном экране его
-    # оставляют там, где видны свои брони. На общем экране такого списка нет —
-    # он показал бы чужие данные, поэтому планшет возвращается к доске.
-    personal: bool = False
 
     @property
     def context(self) -> dict:
@@ -78,20 +71,19 @@ class Client:
             "telegram_sdk": self.telegram_sdk,
         }
 
-    def done(self, flash: str, path: str = "/") -> RedirectResponse:
+    def done(self, flash: str) -> RedirectResponse:
         """Куда уходит человек после действия.
 
-        По умолчанию — на главный экран: там видно, что изменилось, и оттуда
-        начинается любое следующее действие. `path` нужен действиям, у которых
-        результат живёт на своей странице, — см. `do_book`.
+        Всегда на главный экран: в Mini App он показывает единый список своих
+        задач, на общем планшете — доску помещения.
         """
         return RedirectResponse(
-            f"{self.base}{path}?flash={flash}", status_code=status.HTTP_303_SEE_OTHER
+            f"{self.base}/?flash={flash}", status_code=status.HTTP_303_SEE_OTHER
         )
 
 
 KIOSK = Client(base="", needs_pin=True)
-APP = Client(base="/app", needs_pin=False, telegram_sdk=True, personal=True)
+APP = Client(base="/app", needs_pin=False, telegram_sdk=True)
 # Админка своим экраном ошибки не занимается — его рисует main.py. Клиента ей
 # хватает ради одного: кнопка «Понятно» должна вести обратно в панель.
 ADMIN = Client(base="/admin", needs_pin=False)
@@ -203,24 +195,11 @@ async def default_room_id(db: AsyncSession) -> int:
 
 async def board_context(
     db: AsyncSession,
-    room_id: int | None = None,
+    room_id: int,
     viewer: User | None = None,
 ) -> dict:
-    """Состояние для шаблона доски.
-
-    С `room_id` — одно помещение целиком: так доску видят планшет на стене и
-    телефон, открывший комнату. Без него — «моё»: парк сжимается до занятой
-    машины по всем помещениям сразу (services/board.py,
-    `personal`). Сжатый вид бывает только там, где известно, кто смотрит, то есть
-    в Mini App.
-    """
-    if room_id is not None:
-        state = await board_svc.build(db, room_id=room_id)
-        rooms = state.rooms
-    else:
-        state = await board_svc.build(db)
-        mine = None if viewer is None else board_svc.personal(state, viewer.id)
-        rooms = [] if mine is None else mine.rooms
+    """Состояние доски одного помещения."""
+    state = await board_svc.build(db, room_id=room_id)
 
     bookable_kinds = (
         set(MachineKind)
@@ -228,11 +207,8 @@ async def board_context(
         else await booking_policy.available_kinds(db, viewer.id)
     )
     return {
-        "rooms": rooms,
+        "rooms": state.rooms,
         "now": state.now,
-        # Сжата ли доска: от этого зависит, показывать ли большую кнопку
-        # «занять» — у человека машина уже есть, а вторую он берёт из помещения.
-        "focused": room_id is None,
         "can_book": bool(bookable_kinds),
         "bookable_kinds": bookable_kinds,
     }
@@ -268,26 +244,6 @@ async def board_partial(
     return templates.TemplateResponse(request, "_board.html", context)
 
 
-async def mine_page(
-    request: Request,
-    db: AsyncSession,
-    client: Client,
-    flash: str = "",
-    viewer: User | None = None,
-) -> Response:
-    """«Моё» — доска, сжатая до занятого, по всем помещениям.
-
-    Только для Mini App: на телефон заходят с вопросом «что с моей печатью», и
-    чужие машины в этот момент оттесняют ответ за край экрана. Имя комнаты в
-    заголовке — ссылка на её доску целиком.
-    """
-    context = await board_context(db, viewer=viewer)
-    context["flash"] = t.FLASH_KIOSK.get(flash)
-    context["poll"] = f"{client.base}/partials/board"
-    context.update(client.context)
-    return templates.TemplateResponse(request, "kiosk.html", context)
-
-
 async def status_page(
     request: Request,
     db: AsyncSession,
@@ -303,7 +259,6 @@ async def status_page(
     context = {
         "rooms": state.rooms,
         "now": state.now,
-        "focused": False,
         "can_book": False,
         "read_only": True,
         "show_room_names": len(state.rooms) > 1,
@@ -323,21 +278,12 @@ async def status_partial(request: Request, db: AsyncSession, client: Client) -> 
         {
             "rooms": state.rooms,
             "now": state.now,
-            "focused": False,
             "can_book": False,
             "read_only": True,
             "show_room_names": len(state.rooms) > 1,
             **client.context,
         },
     )
-
-
-async def mine_partial(
-    request: Request, db: AsyncSession, client: Client, viewer: User | None = None
-) -> Response:
-    context = await board_context(db, viewer=viewer)
-    context.update(client.context)
-    return templates.TemplateResponse(request, "_board.html", context)
 
 
 # --- занять / освободить -----------------------------------------------------
@@ -547,11 +493,9 @@ async def do_book(
             result.ends_at,
         ),
     )
-    # Забронировав, человек уходит к своим бронам, а не на главный экран: он
-    # только что назначил себе время, и первое, что нужно увидеть, — что оно
-    # действительно записано и какое именно. Оттуда же его и отменяют. На стене
-    # такого экрана нет — планшет общий, и список чужих брон на нём не место.
-    return client.done("booked", "/my" if client.personal else "/")
+    # Главный экран Mini App сам показывает единый список текущих работ и броней.
+    # На стене тот же адрес остаётся общей доской и не раскрывает чужие данные.
+    return client.done("booked")
 
 
 async def booking_cancel_page(

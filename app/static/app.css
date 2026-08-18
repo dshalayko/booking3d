@@ -86,9 +86,8 @@ body {
    горизонтали: так плитки всех машин комнаты оказываются в одном ряду, как когда
    парк был из одних принтеров, и взгляд не приходится вести сверху вниз.
 
-   На стене помещение почти всегда одно — планшет привязан к комнате (api/kiosk.py),
-   и вертикальный список из одного элемента ничего не стоит. Несколько помещений
-   разом бывает только в сжатом «моём» на телефоне.
+   На стене помещение одно — планшет привязан к комнате (api/kiosk.py). В Mini
+   App общая доска статусов может показать несколько помещений сразу.
 
    Размеры плитки — в переменных: узкая колонка сжимает их сильнее широкой.
    Порог по ширине, а не по числу секций: с четырьмя принтерами в одной секции
@@ -592,7 +591,6 @@ body {
 }
 .app-close { color: var(--text); }
 .app-loading { margin: auto; font-size: 22px; color: var(--muted); }
-.app-status-link { flex: 0 0 auto; }
 .status-head { flex: 0 0 auto; justify-content: space-between; }
 .status-room-name { margin: 0; font-size: 24px; }
 /* Тестовый вход: список людей вместо подписи Telegram. Жёлтым, чтобы включённый
@@ -1012,8 +1010,7 @@ body.admin-page { padding: 0; gap: 0; }
      `.btn-small`, иначе общий мобильный размер снова сплющит кнопку закрытия,
      ссылки расписания и переход к статусам. */
   .app-close-bar .app-close,
-  .my-links .btn-wide,
-  .app-status-link {
+  .my-links .btn-wide {
     min-height: 58px;
     padding: 14px 18px;
     font-size: 18px;
@@ -1092,41 +1089,6 @@ body.admin-page { padding: 0; gap: 0; }
     padding: 14px 16px;
     align-content: center;
     row-gap: 6px;
-  }
-
-  /* После «занять сейчас» доска сжимается до одной машины. Это отдельный
-     (`focused`) экран, поэтому правила полной доски выше его не затрагивают.
-     Единственная карточка занимает остаток экрана, сведения остаются сверху,
-     а главное действие — у нижнего края карточки. */
-  .miniapp-page.focused-page #board {
-    flex: 1;
-    min-height: 0;
-    --tile-name: 20px;
-    --tile-status: 20px;
-    --tile-owner: 17px;
-    --tile-time: 16px;
-  }
-  .miniapp-page.focused-page .room,
-  .miniapp-page.focused-page .room-groups,
-  .miniapp-page.focused-page .group,
-  .miniapp-page.focused-page .group-body,
-  .miniapp-page.focused-page .tiles {
-    flex: 1;
-    min-height: 0;
-  }
-  .miniapp-page.focused-page .tiles { grid-auto-rows: minmax(240px, 1fr); }
-  .miniapp-page.focused-page .tile {
-    min-height: 240px;
-    padding: 20px;
-    grid-template-rows: auto auto minmax(0, 1fr);
-    row-gap: 8px;
-  }
-  .miniapp-page.focused-page .tile .btn {
-    align-self: end;
-    width: 100%;
-    min-height: 58px;
-    margin-top: 14px;
-    font-size: 18px;
   }
 
   /* Экран просмотра статусов — исключение из компактной телефонной доски.

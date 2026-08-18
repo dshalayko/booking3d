@@ -33,9 +33,7 @@ class MachineView:
     name: str
     kind: str
     status: str
-    # Кто занял. Имя — для экрана, номер — чтобы отличить «мою» машину от чужой:
-    # имена не уникальны, и на них такое решение вешать нельзя.
-    owner_id: int | None
+    # Кто занял — для подписи на общей доске.
     owner_name: str | None
     eta_at: datetime | None
     done_since: datetime | None
@@ -165,7 +163,6 @@ async def build(
                 name=machine.name,
                 kind=machine.kind,
                 status=machine.status,
-                owner_id=session_row[0].user_id if session_row else None,
                 owner_name=session_row[1] if session_row else None,
                 eta_at=session_row[0].eta_at if session_row else None,
                 done_since=(
@@ -183,43 +180,13 @@ async def build(
 
     # Пустые помещения остаются в списке: заведённая комната, которой не видно
     # на экране, читается как «админка не сработала», а плитка с надписью «пока
-    # пусто» сама объясняет, чего в ней не хватает. Сжатая доска пустые комнаты
-    # отбрасывает сама (см. `personal`).
+    # пусто» сама объясняет, чего в ней не хватает.
     rooms = [
         _room_view(room, views)
         for room in all_rooms
         if room_id is None or room.id == room_id
     ]
     return Board(rooms=rooms, now=now)
-
-
-def personal(board: Board, user_id: int) -> Board | None:
-    """Та же доска, сжатая до занятых пользователем машин."""
-    rooms = []
-    for room in board.rooms:
-        groups = [
-            KindGroup(
-                kind=group.kind,
-                machines=[machine for machine in group.machines if machine.owner_id == user_id],
-            )
-            for group in room.groups
-            if any(machine.owner_id == user_id for machine in group.machines)
-        ]
-        if groups:
-            rooms.append(
-                RoomView(
-                    id=room.id,
-                    name=room.name,
-                    kind=room.kind,
-                    note=room.note,
-                    groups=groups,
-                )
-            )
-
-    if not rooms:
-        return None
-    return Board(rooms=rooms, now=board.now)
-
 
 def _room_view(
     room: Room,

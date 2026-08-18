@@ -35,7 +35,7 @@ from app.api.render import templates
 from app.api.screens import APP
 from app.config import settings
 from app.models import Machine, User
-from app.services import auth, telegram
+from app.services import auth, booking_policy, telegram
 from app.services import reservations as reservations_svc
 from app.services.errors import AppSessionRequired
 
@@ -79,8 +79,11 @@ async def _has_booking(db: AsyncSession, person: User | None) -> bool:
     )
 
 
-def _my_bookings() -> RedirectResponse:
-    return RedirectResponse(f"{SAFE_NEXT_PREFIX}/my", status_code=status.HTTP_303_SEE_OTHER)
+def _home(flash: str = "") -> RedirectResponse:
+    suffix = f"?flash={flash}" if flash else ""
+    return RedirectResponse(
+        f"{SAFE_NEXT_PREFIX}/{suffix}", status_code=status.HTTP_303_SEE_OTHER
+    )
 
 
 async def _bootstrap(
@@ -125,16 +128,14 @@ async def entry(request: Request, db: Db, next: str = "", flash: str = "") -> Re
     if person is None or next:
         return await _bootstrap(request, db, _safe_next(next or f"{SAFE_NEXT_PREFIX}/"))
 
-    # Пока бронь действует, Mini App становится экраном одной задачи: человек
-    # видит только свою бронь и может либо использовать, либо отменить её.
-    if await _has_booking(db, person):
+    # Текущая работа и календарная бронь показываются одним экраном. Раньше для
+    # занятия «сейчас» существовала отдельная сжатая доска, из-за чего одинаковая
+    # задача выглядела и управлялась по-разному в зависимости от пути входа.
+    if (await booking_policy.load(db, person.id)).total:
         return await screens.my_page(request, db, APP, person, flash)
 
-    context = await screens.board_context(db, viewer=person)
-    if not context["rooms"]:
-        room_id = await screens.default_room_id(db)
-        return await screens.board_page(request, db, APP, room_id, flash, viewer=person)
-    return await screens.mine_page(request, db, APP, flash, viewer=person)
+    room_id = await screens.default_room_id(db)
+    return await screens.board_page(request, db, APP, room_id, flash, viewer=person)
 
 
 @router.get("/room/{room_id}", response_class=HTMLResponse)
@@ -145,7 +146,7 @@ async def room_board(request: Request, db: Db, room_id: int, flash: str = "") ->
         and person is not None
         and not await reservations_svc.can_user_book(db, person.id)
     ):
-        return _my_bookings()
+        return _home()
     return await screens.board_page(
         request, db, APP, room_id, flash, viewer=person
     )
@@ -199,13 +200,6 @@ async def open_session(
 # --- доска -------------------------------------------------------------------
 
 
-@router.get("/partials/board", response_class=HTMLResponse)
-async def mine_partial(request: Request, db: Db) -> Response:
-    """Живая часть экрана «моё». Адрес свой у каждого вида доски: иначе через
-    десять секунд опрос вернул бы одно поверх другого (`data-poll` в kiosk.html)."""
-    return await screens.mine_partial(request, db, APP, viewer=await viewer(request, db))
-
-
 @router.get("/partials/board/{room_id}", response_class=HTMLResponse)
 async def board_partial(request: Request, db: Db, room_id: int) -> Response:
     return await screens.board_partial(
@@ -255,7 +249,7 @@ async def schedule_screen(
     """Здесь свои брони подсвечены: в отличие от киоска, известно, кто смотрит."""
     person = await viewer(request, db)
     if person is not None and not await reservations_svc.can_user_book(db, person.id, kind):
-        return _my_bookings()
+        return _home()
     return await screens.schedule_page(
         request, db, APP, room_id, kind, date, viewer=person, flash=flash
     )
@@ -270,7 +264,7 @@ async def book_form(request: Request, db: Db, machine_id: int, start: str = "") 
         and machine is not None
         and not await reservations_svc.can_user_book(db, person.id, machine.kind)
     ):
-        return _my_bookings()
+        return _home()
     return await screens.book_page(request, db, APP, machine_id, start)
 
 
@@ -287,7 +281,7 @@ async def book_action(
     if machine is not None and not await reservations_svc.can_user_book(
         db, user.id, machine.kind
     ):
-        return _my_bookings()
+        return _home()
     return await screens.do_book(db, APP, user, machine_id, start, minutes)
 
 
@@ -304,10 +298,7 @@ async def booking_cancel_action(request: Request, db: Db, reservation_id: int) -
 
 @router.get("/my", response_class=HTMLResponse)
 async def my_screen(request: Request, db: Db, flash: str = "") -> Response:
-    """Мои брони. Без сессии — бутстрап, который вернёт сюда же.
-
-    Сюда же уходит человек после бронирования, отсюда же брони и отменяют.
-    """
+    """Тот же единый экран «Моё» по прямой ссылке из расписания."""
     person = await viewer(request, db)
     if person is None:
         return await _bootstrap(request, db, f"{SAFE_NEXT_PREFIX}/my")

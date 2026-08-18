@@ -817,7 +817,7 @@ UI = {
     "schedule_empty": "Здесь пока нет оборудования этого типа",
     "schedule_hint": "Нажмите на свободный час — это начало брони",
     "schedule_work_hours": "Открыто {hours}",
-    "schedule_my_bookings": "Мои брони",
+    "schedule_my_bookings": "Мои работы и брони",
     "schedule_blocked": (
         "Новая бронь станет доступна, когда закончится текущее время, "
         "либо после отмены брони."
@@ -847,8 +847,8 @@ UI = {
     ),
     "book_booked_until": "Забронировано до {time}",
     # my.html
-    "my_title": "Мои брони",
-    "my_heading": "Мои брони",
+    "my_title": "Мои работы и брони",
+    "my_heading": "Мои работы и брони",
     "my_empty": "Брон пока нет. Откройте расписание и выберите свободный час.",
     "my_when": "{start} — {end}",
     "my_where": "{machine} · {room}",
@@ -991,7 +991,7 @@ UI = {
         "После этого расписание откроется."
     ),
     "app_nav_board": "Помещения",
-    "app_nav_my": "Мои брони",
+    "app_nav_my": "Мои работы и брони",
     "app_view_statuses": "Посмотреть статус принтеров",
     "app_status_heading": "Статус оборудования",
     # admin_rooms.html

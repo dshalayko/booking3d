@@ -315,8 +315,8 @@ class TestScreens:
             data={"start": tomorrow_at().isoformat(), "minutes": "60"},
         )
 
-        assert response.headers["location"] == "/app/my?flash=booked"
-        listing = await client.get("/app/my", params={"flash": "booked"})
+        assert response.headers["location"] == "/app/?flash=booked"
+        listing = await client.get("/app/", params={"flash": "booked"})
         assert "P2S #1" in listing.text
         assert "my-page" in listing.text
         assert "banner-ok" in listing.text
@@ -395,7 +395,7 @@ class TestScreens:
 
         assert f'/app/schedule/{room.id}/{MachineKind.PRINTER}' not in listing.text
         assert schedule.status_code == 303
-        assert schedule.headers["location"] == "/app/my"
+        assert schedule.headers["location"] == "/app/"
 
     async def test_active_booking_turns_app_into_own_booking_screen(
         self, client, db, room, printers, engravers, make_user
@@ -434,7 +434,7 @@ class TestScreens:
         assert printers[0].name in status.text
         assert printers[1].name in status.text
         assert engravers[0].name in status.text
-        assert 'href="/app/my"' in status.text
+        assert 'href="/app/"' in status.text
         assert 'data-poll="/app/partials/status"' in status.text
         assert "/app/occupy/" not in status.text
         assert "/app/release/" not in status.text
@@ -464,7 +464,7 @@ class TestScreens:
         ]
 
         assert all(response.status_code == 303 for response in responses)
-        assert all(response.headers["location"] == "/app/my" for response in responses)
+        assert all(response.headers["location"] == "/app/" for response in responses)
         assert len(await reservations_svc.of_user(db, user.id)) == 1
 
     async def test_extended_policy_keeps_more_booking_routes_open(
@@ -487,7 +487,7 @@ class TestScreens:
 
         assert schedule.status_code == 200
         assert second.status_code == 303
-        assert second.headers["location"].startswith("/app/my")
+        assert second.headers["location"].startswith("/app/")
         assert f"/app/schedule/{room.id}/{MachineKind.PRINTER}" in mine.text
         assert f"/app/schedule/{room.id}/{MachineKind.ENGRAVER}" in mine.text
 
@@ -530,7 +530,7 @@ class TestScreens:
         )
 
         assert response.status_code == 303
-        assert response.headers["location"] == "/app/my"
+        assert response.headers["location"] == "/app/"
 
     async def test_kiosk_schedule_highlights_nothing(self, client, room, db, printers, make_user):
         """На стене неизвестно, кто смотрит, — своих брон там нет."""
@@ -655,20 +655,12 @@ class TestScreens:
         assert "telegram.org" not in response.text
 
 
-class TestOwnBoard:
-    """«Моё» — доска, сжатая до занятой машины. Главный экран телефона.
+class TestUnifiedMyScreen:
+    """Текущая работа и календарная бронь используют один экран «Моё»."""
 
-    Известно, кто смотрит, и заходят с одним вопросом — «что с моей печатью».
-    Проверок больше, чем строк в шаблоне, потому что промахнуться тут можно
-    молча: доска, сжатая для чужого, скрывает от него весь парк, а забытый адрес
-    в опросе подменяет один вид другим через десять секунд.
-
-    Помещений в сжатой доске может быть несколько сразу: лимиты считаются в
-    комнате (правило 2), и занятый принтер в мастерской живёт рядом с
-    переговоркой, взятой на тот же час.
-    """
-
-    async def test_only_my_machine_is_shown(self, client, db, printers, engravers, make_user):
+    async def test_only_my_machine_is_shown(
+        self, client, db, room, printers, engravers, make_user
+    ):
         user = await make_user()
         await machines_svc.occupy(db, user, printers[0].id, 60)
         await db.commit()
@@ -676,12 +668,14 @@ class TestOwnBoard:
 
         page = (await client.get("/app/")).text
 
+        assert "my-page miniapp-page" in page
         assert "P2S #1" in page
+        assert room.name in page
         assert "P2S #2" not in page
         assert "Гравёр #1" not in page
 
     async def test_my_machine_keeps_its_action(self, client, db, printers, make_user):
-        """Сжатая доска — не витрина: освободить машину с неё по-прежнему можно."""
+        """Главный экран даёт завершить работу и открыть статусы."""
         user = await make_user()
         await machines_svc.occupy(db, user, printers[0].id, 60)
         await db.commit()
@@ -690,8 +684,8 @@ class TestOwnBoard:
         page = (await client.get("/app/")).text
 
         assert f'href="/app/release/{printers[0].id}"' in page
-        assert "focused-page miniapp-page" in page
-        # Занять вторую машину предлагать некуда: она есть.
+        assert "focused-page" not in page
+        assert t.UI["my_heading"] in page
         assert f'href="/app/occupy/{printers[1].id}"' not in page
         assert 'href="/app/status"' in page
 
@@ -722,32 +716,21 @@ class TestOwnBoard:
         # Опрос обязан спрашивать ту же доску, что открыта.
         assert f'data-poll="/app/partials/board/{room.id}"' in page
 
-    async def test_mine_has_no_redundant_room_link(
+    async def test_direct_my_link_uses_the_same_screen(
         self, client, room, db, printers, make_user
     ):
-        """Сжатая доска не тратит место на заголовок-ссылку помещения."""
         user = await make_user()
         await machines_svc.occupy(db, user, printers[0].id, 60)
         await db.commit()
         await open_app(client, user)
 
-        mine = (await client.get("/app/")).text
+        root = (await client.get("/app/")).text
+        direct = (await client.get("/app/my")).text
 
-        assert room.name not in mine
-        assert f'href="/app/room/{room.id}"' not in mine
-
-    async def test_polled_partial_is_narrowed_too(self, client, room, db, printers, make_user):
-        """Иначе доска сжата ровно до первого опроса — десять секунд."""
-        user = await make_user()
-        await machines_svc.occupy(db, user, printers[0].id, 60)
-        await db.commit()
-        await open_app(client, user)
-
-        narrowed = (await client.get("/app/partials/board")).text
-        whole = (await client.get(f"/app/partials/board/{room.id}")).text
-
-        assert "P2S #2" not in narrowed
-        assert "P2S #2" in whole
+        assert "my-page miniapp-page" in root
+        assert "my-page miniapp-page" in direct
+        assert room.name in root and room.name in direct
+        assert t.UI["app_view_statuses"] in root and t.UI["app_view_statuses"] in direct
 
     async def test_kiosk_board_is_never_narrowed(self, client, room, db, printers, make_user):
         """На стене неизвестно, кто смотрит, и парк помещения нужен весь."""

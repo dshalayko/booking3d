@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% block body_class %}{% if status_view|default(false) %}status-page{% elif focused|default(false) %}focused-page{% else %}board-page{% endif %}{% endblock %}
+{% block body_class %}{% if status_view|default(false) %}status-page{% else %}board-page{% endif %}{% endblock %}
 
 {% block content %}
   {% if flash %}
@@ -9,19 +9,12 @@
   {% if status_view|default(false) %}
     <header class="sheet-head status-head">
       <h1>{{ t.app_status_heading }}</h1>
-      <a class="btn btn-small btn-ghost" href="{{ base }}/my">{{ t.app_nav_my }}</a>
+      <a class="btn btn-small btn-ghost" href="{{ base }}/">{{ t.app_nav_my }}</a>
     </header>
-  {% elif telegram_sdk|default(false) and focused|default(false) %}
-    {# «Моё» после обычного занятия — не экран бронирований, поэтому ссылка из
-       my.html сюда не попадёт. Статусы всего парка нужны в обоих сценариях. #}
-    <a class="btn btn-small btn-wide app-status-link" href="{{ base }}/status">
-      {{ t.app_view_statuses }}
-    </a>
   {% endif %}
 
-  {# Адрес опроса приходит из обработчика (`poll`): у доски помещения он свой, у
-     сжатого «моего» — свой. Иначе через десять секунд на месте одного вида
-     оказался бы другой. #}
+  {# Адрес опроса приходит из обработчика (`poll`) и соответствует открытой
+     доске помещения или общему экрану статусов. #}
   <main id="board" data-poll="{{ poll }}" data-interval="10">
     {% include "_board.html" %}
   </main>
