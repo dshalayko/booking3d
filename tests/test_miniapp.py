@@ -311,6 +311,7 @@ class TestScreens:
         assert response.headers["location"] == "/app/my?flash=booked"
         listing = await client.get("/app/my", params={"flash": "booked"})
         assert "P2S #1" in listing.text
+        assert "my-page" in listing.text
         assert "banner-ok" in listing.text
 
     async def test_started_booking_stays_visible_until_work_is_released(

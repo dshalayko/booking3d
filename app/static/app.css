@@ -1027,6 +1027,30 @@ body.admin-page { padding: 0; gap: 0; }
     row-gap: 6px;
   }
 
+  /* Глобальный лимит оставляет на экране максимум одну бронь или одну текущую
+     работу. Поэтому карточка не изображает короткую строку списка, а занимает
+     свободную высоту; главное действие прижато к её нижнему краю. */
+  .my-page .bookings {
+    flex: 1;
+    min-height: 240px;
+  }
+  .my-page .booking {
+    flex: 1;
+    min-height: 240px;
+    padding: 20px;
+    gap: 12px;
+  }
+  .my-page .booking-machine { font-size: 22px; }
+  .my-page .booking-when { font-size: 17px; }
+  .my-page .booking .btn {
+    align-self: stretch;
+    width: 100%;
+    min-height: 56px;
+    margin-top: auto;
+    font-size: 17px;
+  }
+  .my-page .my-links { margin-top: 0; }
+
   /* --- экраны действий --- */
 
   .sheet { gap: 12px; }
