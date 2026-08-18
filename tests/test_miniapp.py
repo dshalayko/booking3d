@@ -23,10 +23,10 @@ from app import texts as t
 from app.config import settings
 from app.enums import MachineKind, MachineStatus, ReservationStatus
 from app.models import Machine, Reservation
+from app.services import booking_policy, telegram
 from app.services import machines as machines_svc
 from app.services import reservations as reservations_svc
 from app.services import schedule as schedule_svc
-from app.services import telegram
 from app.services.errors import BadInitData
 
 BOT_TOKEN = "123456:test-token"
@@ -365,6 +365,21 @@ class TestScreens:
         assert 'href="/app/status"' in listing.text
         assert t.UI["my_blocked"] not in listing.text
 
+    async def test_extended_policy_shows_all_current_jobs(
+        self, client, db, printers, make_user
+    ):
+        user = await make_user()
+        await booking_policy.save(db, True)
+        await machines_svc.occupy(db, user, printers[0].id, 120)
+        await machines_svc.occupy(db, user, printers[1].id, 120)
+        await db.commit()
+        await open_app(client, user)
+
+        listing = await client.get("/app/my")
+
+        assert printers[0].name in listing.text
+        assert printers[1].name in listing.text
+
     async def test_active_booking_hides_new_booking_links(
         self, client, db, room, printers, make_user
     ):
@@ -451,6 +466,30 @@ class TestScreens:
         assert all(response.status_code == 303 for response in responses)
         assert all(response.headers["location"] == "/app/my" for response in responses)
         assert len(await reservations_svc.of_user(db, user.id)) == 1
+
+    async def test_extended_policy_keeps_more_booking_routes_open(
+        self, client, db, room, printers, engravers, make_user
+    ):
+        user = await make_user()
+        await booking_policy.save(db, True)
+        await reservations_svc.book(db, user, printers[0].id, tomorrow_at(), 60)
+        await db.commit()
+        await open_app(client, user)
+
+        mine = await client.get("/app/my")
+        schedule = await client.get(
+            f"/app/schedule/{room.id}/{MachineKind.PRINTER}"
+        )
+        second = await client.post(
+            f"/app/book/{printers[1].id}",
+            data={"start": tomorrow_at(hour=12).isoformat(), "minutes": "60"},
+        )
+
+        assert schedule.status_code == 200
+        assert second.status_code == 303
+        assert second.headers["location"].startswith("/app/my")
+        assert f"/app/schedule/{room.id}/{MachineKind.PRINTER}" in mine.text
+        assert f"/app/schedule/{room.id}/{MachineKind.ENGRAVER}" in mine.text
 
     async def test_cancelling_returns_to_the_main_screen(
         self, client, db, printers, make_user

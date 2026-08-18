@@ -32,6 +32,7 @@ from app.config import settings
 from app.enums import MachineKind, MachineStatus
 from app.models import Machine, Room, User
 from app.services import board as board_svc
+from app.services import booking_policy
 from app.services import machines as machines_svc
 from app.services import reservations as reservations_svc
 from app.services import rooms as rooms_svc
@@ -221,17 +222,19 @@ async def board_context(
         mine = None if viewer is None else board_svc.personal(state, viewer.id)
         rooms = [] if mine is None else mine.rooms
 
+    bookable_kinds = (
+        set(MachineKind)
+        if viewer is None
+        else await booking_policy.available_kinds(db, viewer.id)
+    )
     return {
         "rooms": rooms,
         "now": state.now,
         # Сжата ли доска: от этого зависит, показывать ли большую кнопку
         # «занять» — у человека машина уже есть, а вторую он берёт из помещения.
         "focused": room_id is None,
-        "can_book": (
-            True
-            if viewer is None
-            else await reservations_svc.can_user_book(db, viewer.id)
-        ),
+        "can_book": bool(bookable_kinds),
+        "bookable_kinds": bookable_kinds,
     }
 
 
@@ -463,7 +466,7 @@ async def schedule_page(
             "can_book": (
                 True
                 if viewer is None
-                else await reservations_svc.can_user_book(db, viewer.id)
+                else await reservations_svc.can_user_book(db, viewer.id, kind)
             ),
             "flash": t.FLASH_KIOSK.get(flash),
             **client.context,
@@ -597,15 +600,16 @@ async def my_page(
     Сюда же приводит бронирование, поэтому экран умеет показать плашку: без неё
     человек попадает на список и не понимает, случилось ли что-то только что.
     """
-    can_book = await reservations_svc.can_user_book(db, user.id)
-    session = await machines_svc.active_session_of_user(db, user.id)
-    # Работа, начатая из календаря, уже отображается самой бронью через
-    # include_in_progress. Отдельной карточкой нужна только «занять сейчас».
-    current = None
-    if session is not None and session.reservation_id is None:
+    bookable_kinds = await booking_policy.available_kinds(db, user.id)
+    # Работы, начатые из календаря, уже отображаются своими бронями через
+    # include_in_progress. Отдельные карточки нужны только для «занять сейчас».
+    currents = []
+    for session in await machines_svc.active_sessions_of_user(db, user.id):
+        if session.reservation_id is not None:
+            continue
         machine = await _machine(db, session.machine_id)
         room = await _room(db, session.room_id)
-        current = (session, machine, room)
+        currents.append((session, machine, room))
     return templates.TemplateResponse(
         request,
         "my.html",
@@ -614,9 +618,13 @@ async def my_page(
             "bookings": await reservations_svc.of_user(
                 db, user.id, include_in_progress=True
             ),
-            "current": current,
-            "links": await schedule_links(db) if can_book else [],
-            "can_book": can_book,
+            "currents": currents,
+            "links": [
+                (room, kind)
+                for room, kind in await schedule_links(db)
+                if kind in bookable_kinds
+            ],
+            "can_book": bool(bookable_kinds),
             "flash": t.FLASH_KIOSK.get(flash),
             **client.context,
         },

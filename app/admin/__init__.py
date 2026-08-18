@@ -26,7 +26,7 @@ from fastapi import APIRouter, Request
 from fastapi.responses import HTMLResponse, Response
 
 from app.admin import core
-from app.admin.sections import bookings, hours, log, machines, people, rooms, summary
+from app.admin.sections import bookings, hours, log, machines, people, rooms, rules, summary
 from app.api.render import templates
 
 SECTIONS = [
@@ -37,6 +37,7 @@ SECTIONS = [
     rooms.SECTION,
     machines.SECTION,
     hours.SECTION,
+    rules.SECTION,
 ]
 
 # Меню рисуется из этого же списка: шаблон оболочки берёт его отсюда, а не из

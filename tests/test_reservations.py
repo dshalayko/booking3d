@@ -1,20 +1,22 @@
 """Брони на будущее.
 
-Проверки идут на настоящем Postgres, потому что два главных правила брон живут
-в ограничениях БД, а не в коде: непересечение окон держит EXCLUDE по `tstzrange`,
-одну бронь на человека — частичный уникальный индекс. На моках зеленело бы всё.
+Проверки идут на настоящем Postgres: непересечение окон держит EXCLUDE по
+`tstzrange`, а переключаемая пользовательская квота — блокировка строки User.
+На SQLite или моках обе защиты от гонок зеленели бы, ничего не проверяя.
 """
 
+import asyncio
 from datetime import UTC, datetime, timedelta
 
 import pytest
+from sqlalchemy import select
 
 from app.enums import MachineKind, MachineStatus, ReservationStatus
-from app.models import MachineSession, Reservation
+from app.models import Machine, MachineSession, Reservation, User
+from app.services import booking_policy, schedule
 from app.services import machines as machines_svc
 from app.services import reminders as reminders_svc
 from app.services import reservations as svc
-from app.services import schedule
 from app.services.errors import (
     AlreadyBooked,
     InvalidDuration,
@@ -25,6 +27,7 @@ from app.services.errors import (
     ReservationNotFound,
     ReservationOverlap,
     UserBusy,
+    UserLimitReached,
 )
 
 # Полдень будним днём: сетка выровнена по местному часу, поэтому все моменты в
@@ -89,6 +92,67 @@ class TestBook:
 
         with pytest.raises(AlreadyBooked):
             await svc.book(db, user, printers[1].id, tomorrow(4), 60, now=NOON)
+
+    async def test_extended_policy_allows_two_printers_and_one_engraver(
+        self, db, printers, engravers, make_user
+    ):
+        user = await make_user()
+        await booking_policy.save(db, True)
+
+        await svc.book(db, user, printers[0].id, tomorrow(), 60, now=NOON)
+        await svc.book(db, user, printers[1].id, tomorrow(), 60, now=NOON)
+        third = await svc.book(db, user, engravers[0].id, tomorrow(), 60, now=NOON)
+
+        assert third.machine_id == engravers[0].id
+
+    async def test_extended_policy_enforces_each_kind_limit(
+        self, db, printers, engravers, make_user
+    ):
+        user = await make_user()
+        await booking_policy.save(db, True)
+        await svc.book(db, user, printers[0].id, tomorrow(), 60, now=NOON)
+        await svc.book(db, user, printers[1].id, tomorrow(), 60, now=NOON)
+        await svc.book(db, user, engravers[0].id, tomorrow(), 60, now=NOON)
+
+        with pytest.raises(UserLimitReached):
+            await svc.book(db, user, printers[0].id, tomorrow(2), 60, now=NOON)
+        with pytest.raises(UserLimitReached):
+            await svc.book(db, user, engravers[0].id, tomorrow(2), 60, now=NOON)
+
+    async def test_concurrent_extended_bookings_keep_two_printer_limit(
+        self, db, room, printers, sessions, make_user
+    ):
+        user = await make_user()
+        third = Machine(
+            room_id=room.id,
+            name="P2S #3",
+            kind=MachineKind.PRINTER,
+            status=MachineStatus.FREE,
+        )
+        db.add(third)
+        await booking_policy.save(db, True)
+        await db.commit()
+
+        async def attempt(machine_id: int) -> str:
+            async with sessions() as session:
+                person = await session.get(User, user.id)
+                try:
+                    await svc.book(session, person, machine_id, tomorrow(), 60, now=NOON)
+                    await session.commit()
+                    return "ok"
+                except UserLimitReached:
+                    await session.rollback()
+                    return "limit"
+
+        outcomes = await asyncio.gather(
+            *(attempt(machine.id) for machine in [*printers, third])
+        )
+
+        assert sorted(outcomes) == ["limit", "ok", "ok"]
+        active = await db.scalars(
+            select(Reservation).where(Reservation.status == ReservationStatus.BOOKED)
+        )
+        assert len(active.all()) == 2
 
     async def test_booking_while_working_is_rejected(self, db, printers, make_user):
         """Одна задача на человека во всей системе: занятая машина — уже задача.

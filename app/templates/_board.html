@@ -31,6 +31,7 @@
     {% for group in room.groups %}
       {% set free = group.first_free %}
       {% set single = group.machines | length == 1 %}
+      {% set group_can_book = can_book|default(true) and (bookable_kinds is not defined or group.kind in bookable_kinds) %}
       <section class="group group-{{ group.kind }}" style="--machines: {{ group.machines | length or 1 }}">
         <header class="group-head">
           {% if not room.single_group %}
@@ -41,7 +42,7 @@
              ссылке в его заголовке. #}
           {% if read_only|default(false) %}
           {% elif focused|default(false) %}
-          {% elif free %}
+          {% elif free and group_can_book %}
             <a class="btn btn-hero" href="{{ base }}/occupy/{{ free.id }}">
               {{ t.board_occupy_cta.format(kind=MACHINE_KIND_ONE.get(group.kind, group.kind)) }}
               <span class="btn-sub">
@@ -51,7 +52,7 @@
           {% endif %}
           {# Брони — второй способ получить машину, и вход в них должен быть виден
              на главном экране, а не только в боте. #}
-          {% if not read_only|default(false) and group.machines and can_book|default(true) %}
+          {% if not read_only|default(false) and group.machines and group_can_book %}
             <a class="btn btn-outline btn-schedule" href="{{ base }}/schedule/{{ room.id }}/{{ group.kind }}">
               {{ t.board_schedule_cta }}
             </a>

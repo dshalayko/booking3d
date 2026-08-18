@@ -82,7 +82,7 @@ class ReservationOverlap(DomainError):
 
 
 class AlreadyBooked(DomainError):
-    """Правило 13: у человека уже есть бронь на будущее."""
+    """В обычном режиме у человека уже есть незакрытая задача."""
 
 
 class InvalidReservationTime(DomainError):
@@ -95,6 +95,10 @@ class WorkHoursInvalid(DomainError):
 
 class UserBusy(DomainError):
     """Правило 2: у человека уже есть активная сессия."""
+
+
+class UserLimitReached(DomainError):
+    """Расширенная квота выбранного типа оборудования уже исчерпана."""
 
 
 class AlreadyInQueue(DomainError):

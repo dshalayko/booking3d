@@ -835,6 +835,39 @@ body.admin-page { padding: 0; gap: 0; }
 .admin-form-column { flex-direction: column; align-items: stretch; gap: 6px; }
 .admin-form-column .btn { margin-top: 8px; }
 .admin-form-column .admin-dim { margin-top: 6px; }
+.admin-rule-form { flex-direction: column; align-items: flex-start; gap: 16px; }
+.admin-switch {
+  display: inline-flex;
+  align-items: center;
+  gap: 12px;
+  font-size: 16px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.admin-switch input { position: absolute; opacity: 0; pointer-events: none; }
+.admin-switch-track {
+  position: relative;
+  flex: 0 0 auto;
+  width: 52px;
+  height: 30px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, .14);
+  transition: background .15s ease;
+}
+.admin-switch-track::after {
+  content: "";
+  position: absolute;
+  top: 4px;
+  left: 4px;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: var(--text);
+  transition: transform .15s ease;
+}
+.admin-switch input:checked + .admin-switch-track { background: var(--accent); }
+.admin-switch input:checked + .admin-switch-track::after { transform: translateX(22px); }
+.admin-switch input:focus-visible + .admin-switch-track { outline: 2px solid var(--accent); outline-offset: 3px; }
 
 .admin-status {
   font-size: 13px;
@@ -1120,9 +1153,9 @@ body.admin-page { padding: 0; gap: 0; }
     row-gap: 6px;
   }
 
-  /* Глобальный лимит оставляет на экране максимум одну бронь или одну текущую
-     работу. Поэтому карточка не изображает короткую строку списка, а занимает
-     свободную высоту; главное действие прижато к её нижнему краю. */
+  /* В обычном режиме карточка одна и занимает свободную высоту. В расширенном
+     карточки делят контейнер; если минимальные высоты уже не помещаются, общая
+     мобильная прокрутка сохраняет доступ к каждому действию. */
   .my-page .bookings {
     flex: 1;
     min-height: 240px;

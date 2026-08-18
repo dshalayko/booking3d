@@ -347,8 +347,8 @@ BOT_STATUS_PARK_EMPTY = "There aren't any machines yet."
 
 # --- bot: my state -----------------------------------------------------------
 
-# You can have one of each of these per room (rules 2 and 13), so every line
-# names the room: "P2S #1" tells you where to go, "number 3 in line" doesn't.
+# A person can have several current items when the extended quota is enabled,
+# so every line names the room as well as the machine.
 
 BOT_MY_BUSY = (
     "🔴 You've got <b>{machine}</b> ({room}), ~{left} left.\nFree it up — /free"
@@ -443,10 +443,8 @@ BOT_NOTHING_TO_FREE = (
     "👌 You haven't got a machine booked.\n\nSee the machines — /status"
 )
 
-# Freeing up from the bot works, but only while a single thing is taken: a
-# person can hold one machine per room (rule 2), and guessing which one they
-# meant is not on — the wrong machine would go to the line with the part still
-# on the bed.
+# Freeing up from the bot works directly only while a single thing is taken.
+# With the extended quota, guessing which machine they meant is unsafe.
 BOT_FREE_PICK = (
     "🔴 You've got more than one thing taken — free the right one in the app "
     "(/book) or on the tablet:\n\n{options}"
@@ -590,6 +588,9 @@ ERR_USER_BUSY = "You already have an active job — finish it first"
 ERR_USER_BUSY_FREE_FIRST = (
     "You already have a job in progress — wait for its time to end or finish it"
 )
+ERR_USER_LIMIT_REACHED = (
+    "Limit reached: you may hold up to two printers and one engraver at once"
+)
 ERR_ALREADY_IN_QUEUE = "You're already in this room's line"
 ERR_NOT_IN_QUEUE = "You're not in this room's line"
 ERR_OFFER_NOT_ACTIVE = "That offer is no longer valid"
@@ -680,6 +681,7 @@ FLASH_ADMIN = {
     "person_removed": "Person deleted",
     "machine_purged": "The machine is gone, history and all",
     "room_purged": "The room is gone with everything in it",
+    "rules_saved": "Booking rules saved",
 }
 
 
@@ -900,6 +902,7 @@ UI = {
     "admin_tab_rooms": "Rooms",
     "admin_tab_machines": "Machines",
     "admin_tab_hours": "Opening hours",
+    "admin_tab_rules": "Booking rules",
     "admin_bookings": "Bookings",
     "admin_bookings_none": "No bookings",
     "admin_booking_row": "{machine}: {start} — {end}",
@@ -957,6 +960,18 @@ UI = {
     "admin_new_pin": "New PIN",
     "admin_events": "Recent activity",
     "admin_no_events": "Nothing has happened yet",
+    # Booking rules section
+    "admin_rules_multi_title": "Multiple machines per person",
+    "admin_rules_multi_label": "Allow the extended limit",
+    "admin_rules_multi_hint": (
+        "Off: a person may have only one active job or booking. On: up to two "
+        "printers and one engraver are allowed at once; running jobs and open "
+        "bookings count together. Meeting rooms keep the strict single-item "
+        "limit and cannot be combined with equipment."
+    ),
+    "admin_rules_on": "On: 2 printers + 1 engraver",
+    "admin_rules_off": "Off: one machine only",
+    "admin_rules_submit": "Save rule",
     # miniapp
     "app_loading": "Opening…",
     "app_close": "Close app",
@@ -996,9 +1011,9 @@ UI = {
     "admin_rooms_hours": "Hours: {hours}",
     "admin_rooms_kiosk": "Tablet address: {url}",
     "admin_rooms_hint": (
-        "A room is where the rules are drawn: it has its own line, its own "
-        "opening hours and its own \"one job and one booking per person\" limit. "
-        "The kind is fixed once created: jobs and bookings already point at this "
+        "A room groups its machines and has its own opening hours. User limits "
+        "apply across the system and are configured under Booking rules. The "
+        "kind is fixed once created: jobs and bookings already point at this "
         "room. A meeting room is bookable as itself — that entry is created with "
         "the room and renamed together with it. "
         "A workshop can be deleted once no machines are left in it; a meeting "

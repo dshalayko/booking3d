@@ -2,9 +2,10 @@
 
 Правила отсюда (PLAN.md):
   12. в своё окно машину занимает только тот, кто её забронировал;
-  13. одна активная работа или бронь на человека во всей системе.
-      Бронь одна, и поверх занятой машины её не выдают. Своя забронированная
-      машина из запрета выключена — занять её можно и раньше своего часа;
+  13. работа и бронь расходуют общую пользовательскую квоту. В обычном режиме
+      это одна задача во всей системе, в расширенном — два принтера и один
+      гравировщик. Своя забронированная машина из квоты не вычитается второй
+      раз — занять её можно и раньше своего часа;
   14. бронь не сгорает, пока машина занята чужой работой: отсчёт неявки идёт
       только со свободной машины;
   15. начать бронь можно только в рабочие часы помещения — у каждого свои
@@ -42,7 +43,7 @@ from app.enums import (
     SessionStatus,
 )
 from app.models import Machine, MachineSession, Reservation, Room, User
-from app.services import schedule
+from app.services import booking_policy, schedule
 from app.services import workhours as workhours_svc
 from app.services.errors import (
     AlreadyBooked,
@@ -53,6 +54,7 @@ from app.services.errors import (
     ReservationNotFound,
     ReservationOverlap,
     UserBusy,
+    UserLimitReached,
 )
 
 # Состояния клетки расписания: уезжают в CSS-класс и в текст подписи.
@@ -197,24 +199,12 @@ async def book(
     if not schedule.is_open_at(starts_at, hours):
         raise InvalidReservationTime(t.ERR_RESERVATION_WORK_HOURS.format(hours=hours.text()))
 
-    # Пока у человека есть бронь, вторую не выдаём — независимо от помещения и
-    # типа оборудования. Сначала текущую нужно использовать или отменить.
-    if await active_of_user(db, user.id) is not None:
-        raise AlreadyBooked(t.ERR_ALREADY_BOOKED)
-
-    # Пока текущая работа не закрыта, новую бронь не создаём. `done_wait` тоже
-    # активен: деталь ещё занимает стол и пользователь должен освободить машину.
-    #
-    # Запросом здесь, а не вызовом services/machines.py: тот спрашивает у брон,
-    # до какого часа машину можно занять, и обратный импорт замкнул бы кольцо
-    # (см. преамбулу модуля). Цена — четыре строки, как и у `_lock_machine`.
-    working = await db.scalar(
-        select(MachineSession.id).where(
-            MachineSession.user_id == user.id,
-            MachineSession.status.in_(ACTIVE_SESSION_STATUSES),
-        )
-    )
-    if working is not None:
+    allowed, load, multi = await booking_policy.can_book_machine(db, user.id, machine)
+    if not allowed:
+        if multi:
+            raise UserLimitReached(t.ERR_USER_LIMIT_REACHED)
+        if load.has_reservation:
+            raise AlreadyBooked(t.ERR_ALREADY_BOOKED)
         raise UserBusy(t.ERR_USER_BUSY_FREE_FIRST)
 
     await _ensure_window_free(db, machine, starts_at, ends_at)
@@ -348,17 +338,10 @@ async def active_of_user(db: AsyncSession, user_id: int) -> Reservation | None:
     return await db.scalar(query.order_by(Reservation.starts_at))
 
 
-async def can_user_book(db: AsyncSession, user_id: int) -> bool:
-    """Можно ли показывать пользователю действия создания новой брони."""
-    if await active_of_user(db, user_id) is not None:
-        return False
-    session = await db.scalar(
-        select(MachineSession.id).where(
-            MachineSession.user_id == user_id,
-            MachineSession.status.in_(ACTIVE_SESSION_STATUSES),
-        )
-    )
-    return session is None
+async def can_user_book(db: AsyncSession, user_id: int, kind: str | None = None) -> bool:
+    """Можно ли показывать создание брони вообще или для конкретного типа."""
+    available = await booking_policy.available_kinds(db, user_id)
+    return kind in available if kind is not None else bool(available)
 
 
 async def current_for_machine(
@@ -794,11 +777,8 @@ async def _ensure_window_free(
         )
 
 
-def _integrity_error(exc: IntegrityError, machine_name: str) -> Exception:
-    """Какое из ограничений сработало — по имени в диагностике psycopg."""
-    constraint = getattr(getattr(exc.orig, "diag", None), "constraint_name", "") or ""
-    if constraint == "one_active_reservation_per_user":
-        return AlreadyBooked(t.ERR_ALREADY_BOOKED)
+def _integrity_error(_exc: IntegrityError, machine_name: str) -> Exception:
+    """Преобразовать конфликт ограничения окна в понятную доменную ошибку."""
     return ReservationOverlap(t.ERR_RESERVATION_JUST_BOOKED.format(machine=machine_name))
 
 

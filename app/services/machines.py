@@ -2,7 +2,7 @@
 
 Правила отсюда (PLAN.md):
   1. одна активная сессия на машину;
-  2. одна активная сессия на человека во всей системе;
+  2. работы и брони человека расходуют переключаемую общую квоту;
   8. таймер не освобождает машину автоматически — по истечении `eta_at`
      она уходит в `done_wait`, а не в `free`;
   9. активную работу снимает только владелец или админ; готовую деталь из
@@ -34,7 +34,7 @@ from app.enums import (
     SessionStatus,
 )
 from app.models import Machine, MachineSession, QueueEntry, Reservation, User
-from app.services import reservations, rooms, schedule
+from app.services import booking_policy, reservations, rooms, schedule
 from app.services.errors import (
     AlreadyBooked,
     InvalidDuration,
@@ -48,6 +48,7 @@ from app.services.errors import (
     MachineReleaseForbidden,
     NotAdmin,
     UserBusy,
+    UserLimitReached,
 )
 
 # Границы длительности лежат в services/schedule.py: они одни и те же у «занять
@@ -144,20 +145,13 @@ async def occupy(
         raise MachineNotAvailable(t.ERR_MACHINE_BUSY.format(machine=machine.name))
 
     reservation = await _check_booking_allows(db, user, machine, duration_minutes, now)
-    # Работа одна во всей системе: физически одновременно пользоваться второй
-    # машиной или переговорной тот же человек не может.
-    if await active_session_of_user(db, user.id) is not None:
-        raise UserBusy(t.ERR_USER_BUSY)
-
-    # Правило 13 с этой стороны: у человека с бронью во всей системе одно дело —
-    # эта самая бронь. Своя забронированная машина не в счёт: её занимают и по
-    # правилу 12 (пришёл в своё окно), и просто раньше времени, если она стоит
-    # свободная, — это то же самое дело, а не второе. Чужая — уже второе, и
-    # тогда один человек держит станок сейчас и час на будущее.
-    if reservation is None:
-        booking = await reservations.active_of_user(db, user.id)
-        if booking is not None and booking.machine_id != machine.id:
-            raise AlreadyBooked(t.ERR_OCCUPY_WHILE_BOOKED)
+    allowed, load, multi = await booking_policy.can_start_machine(db, user.id, machine)
+    if not allowed:
+        if multi:
+            raise UserLimitReached(t.ERR_USER_LIMIT_REACHED)
+        if load.has_session:
+            raise UserBusy(t.ERR_USER_BUSY)
+        raise AlreadyBooked(t.ERR_OCCUPY_WHILE_BOOKED)
 
     # eta_at считается обычным сложением: работа может идти и ночью.
     session = MachineSession(
@@ -575,10 +569,22 @@ async def _active_session_of_machine(db: AsyncSession, machine_id: int) -> Machi
 
 
 async def active_session_of_user(db: AsyncSession, user_id: int) -> MachineSession | None:
-    """Текущая работа человека, включая ожидание снятия готовой детали."""
-    return await db.scalar(
-        select(MachineSession).where(
-            MachineSession.user_id == user_id,
-            MachineSession.status.in_(ACTIVE_SESSION_STATUSES),
-        )
+    """Первая текущая работа; совместимость для мест, ожидающих одну строку."""
+    sessions = await active_sessions_of_user(db, user_id)
+    return sessions[0] if sessions else None
+
+
+async def active_sessions_of_user(db: AsyncSession, user_id: int) -> list[MachineSession]:
+    """Все текущие работы человека, включая ожидание снятия детали."""
+    return list(
+        (
+            await db.scalars(
+                select(MachineSession)
+                .where(
+                    MachineSession.user_id == user_id,
+                    MachineSession.status.in_(ACTIVE_SESSION_STATUSES),
+                )
+                .order_by(MachineSession.started_at, MachineSession.id)
+            )
+        ).all()
     )

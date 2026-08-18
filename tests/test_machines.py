@@ -7,6 +7,7 @@ from sqlalchemy import select
 from app.config import Settings, load, settings
 from app.enums import MachineKind, MachineStatus, SessionStatus
 from app.models import Machine, MachineSession, QueueEntry, User
+from app.services import booking_policy
 from app.services import machines as svc
 from app.services import queue as queue_svc
 from app.services import reservations as reservations_svc
@@ -250,6 +251,21 @@ async def test_concurrent_occupy_of_two_machines_keeps_global_user_limit(
         select(MachineSession).where(MachineSession.status == SessionStatus.PRINTING)
     )
     assert len(active.all()) == 1
+
+
+async def test_extended_policy_allows_two_printers_and_an_engraver(
+    db, printers, engravers, make_user
+):
+    user = await make_user()
+    await booking_policy.save(db, True)
+
+    for machine in [*printers, engravers[0]]:
+        await svc.occupy(db, user, machine.id, 60, now=NOON)
+
+    active = await db.scalars(
+        select(MachineSession).where(MachineSession.status == SessionStatus.PRINTING)
+    )
+    assert len(active.all()) == 3
 
 
 class TestPrinterNames:

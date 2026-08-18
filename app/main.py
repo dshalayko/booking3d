@@ -59,6 +59,7 @@ from app.services.errors import (
     RoomNotFound,
     TooManyAttempts,
     UserBusy,
+    UserLimitReached,
     UserNotFound,
     WorkHoursInvalid,
 )
@@ -92,6 +93,7 @@ STATUS_BY_ERROR: dict[type[DomainError], int] = {
     ReservationForbidden: 403,
     InvalidReservationTime: 400,
     UserBusy: 409,
+    UserLimitReached: 409,
     AlreadyInQueue: 409,
     OfferNotActive: 409,
     PinTaken: 409,

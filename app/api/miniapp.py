@@ -34,7 +34,7 @@ from app.api.deps import Db, cookie_params
 from app.api.render import templates
 from app.api.screens import APP
 from app.config import settings
-from app.models import User
+from app.models import Machine, User
 from app.services import auth, telegram
 from app.services import reservations as reservations_svc
 from app.services.errors import AppSessionRequired
@@ -67,10 +67,10 @@ async def actor(request: Request, db: AsyncSession) -> User:
 
 
 async def _has_booking(db: AsyncSession, person: User | None) -> bool:
-    """Есть ли бронь, которую Mini App должен показывать вместо каталога.
+    """Есть ли бронь, которую Mini App должен показать в «Моих бронированиях».
 
-    В список входит и уже начатая по брони работа: после нажатия «Это я» нельзя
-    внезапно вернуть человеку каталог и дать обойти правило второй бронью.
+    В расширенном режиме этот экран не закрывает новые брони: ссылки остаются
+    для тех типов, по которым у человека ещё есть квота.
     """
     if person is None:
         return False
@@ -140,7 +140,11 @@ async def entry(request: Request, db: Db, next: str = "", flash: str = "") -> Re
 @router.get("/room/{room_id}", response_class=HTMLResponse)
 async def room_board(request: Request, db: Db, room_id: int, flash: str = "") -> Response:
     person = await viewer(request, db)
-    if await _has_booking(db, person):
+    if (
+        await _has_booking(db, person)
+        and person is not None
+        and not await reservations_svc.can_user_book(db, person.id)
+    ):
         return _my_bookings()
     return await screens.board_page(
         request, db, APP, room_id, flash, viewer=person
@@ -250,7 +254,7 @@ async def schedule_screen(
 ) -> Response:
     """Здесь свои брони подсвечены: в отличие от киоска, известно, кто смотрит."""
     person = await viewer(request, db)
-    if await _has_booking(db, person):
+    if person is not None and not await reservations_svc.can_user_book(db, person.id, kind):
         return _my_bookings()
     return await screens.schedule_page(
         request, db, APP, room_id, kind, date, viewer=person, flash=flash
@@ -259,7 +263,13 @@ async def schedule_screen(
 
 @router.get("/book/{machine_id}", response_class=HTMLResponse)
 async def book_form(request: Request, db: Db, machine_id: int, start: str = "") -> Response:
-    if await _has_booking(db, await viewer(request, db)):
+    person = await viewer(request, db)
+    machine = await db.get(Machine, machine_id)
+    if (
+        person is not None
+        and machine is not None
+        and not await reservations_svc.can_user_book(db, person.id, machine.kind)
+    ):
         return _my_bookings()
     return await screens.book_page(request, db, APP, machine_id, start)
 
@@ -273,7 +283,10 @@ async def book_action(
     minutes: int = Form(...),
 ) -> Response:
     user = await actor(request, db)
-    if await _has_booking(db, user):
+    machine = await db.get(Machine, machine_id)
+    if machine is not None and not await reservations_svc.can_user_book(
+        db, user.id, machine.kind
+    ):
         return _my_bookings()
     return await screens.do_book(db, APP, user, machine_id, start, minutes)
 

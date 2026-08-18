@@ -1,0 +1,26 @@
+{% extends "admin/base.html" %}
+
+{% block admin %}
+  <section class="ad-card ad-card-narrow">
+    <div class="ad-card-head">
+      <h2>{{ t.admin_rules_multi_title }}</h2>
+      <span class="ad-card-note">
+        {{ t.admin_rules_on if multi_machine_enabled else t.admin_rules_off }}
+      </span>
+    </div>
+
+    <p class="admin-dim admin-hint">{{ t.admin_rules_multi_hint }}</p>
+
+    <form class="admin-form admin-rule-form" method="post" action="/admin/rules">
+      <label class="admin-switch">
+        <input type="checkbox" name="multi_machine_enabled" value="on"
+               {% if multi_machine_enabled %}checked{% endif %}>
+        <span class="admin-switch-track" aria-hidden="true"></span>
+        <span>{{ t.admin_rules_multi_label }}</span>
+      </label>
+      <button class="btn btn-small btn-primary" type="submit">
+        {{ t.admin_rules_submit }}
+      </button>
+    </form>
+  </section>
+{% endblock %}

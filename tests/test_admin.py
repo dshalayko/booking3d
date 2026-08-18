@@ -13,7 +13,7 @@ from app.enums import (
 )
 from app.models import Machine, MachineSession, Reservation, Room, User
 from app.services import activity as activity_svc
-from app.services import auth
+from app.services import auth, booking_policy
 from app.services import machines as machines_svc
 from app.services import queue as queue_svc
 from app.services import reservations as reservations_svc
@@ -101,6 +101,31 @@ class TestPanel:
         response = await client.get("/admin/people")
 
         assert "Иван" in response.text
+
+
+class TestBookingRules:
+    async def test_admin_can_enable_and_disable_extended_limit(
+        self, client, db, printers, make_user
+    ):
+        await make_user(is_admin=True)
+        await login(client)
+
+        page = await client.get("/admin/rules")
+        assert page.status_code == 200
+        assert "Несколько машин на человека" in page.text
+        assert "checked" not in page.text
+
+        enabled = await client.post(
+            "/admin/rules", data={"multi_machine_enabled": "on"}
+        )
+        assert enabled.status_code == 303
+        assert enabled.headers["location"] == "/admin/rules?flash=rules_saved"
+        db.expire_all()
+        assert await booking_policy.enabled(db) is True
+
+        await client.post("/admin/rules", data={})
+        db.expire_all()
+        assert await booking_policy.enabled(db) is False
 
 class TestMachineActions:
     async def test_break_cancels_print_and_tells_the_owner(

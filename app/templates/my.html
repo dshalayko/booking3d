@@ -14,28 +14,31 @@
     <h1>{{ t.my_heading }}</h1>
   </header>
 
-  {% if current %}
-    {% set session, machine, room = current %}
-    <article class="booking booking-current">
-      <span class="booking-machine">
-        {{ t.my_where.format(machine=machine.name, room=room.name) }}
-      </span>
-      <span class="booking-when">{{ t.my_current }}</span>
-      <span class="booking-when" data-eta="{{ session.eta_at | iso }}">
-        {{ t.my_current_until.format(time=session.eta_at | hhmm) }}
-      </span>
-      <a class="btn btn-small" href="{{ base }}/release/{{ machine.id }}">
-        {{ t.my_finish }}
-      </a>
-    </article>
+  {% if currents %}
+    <div class="bookings">
+      {% for session, machine, room in currents %}
+        <article class="booking booking-current">
+          <span class="booking-machine">
+            {{ t.my_where.format(machine=machine.name, room=room.name) }}
+          </span>
+          <span class="booking-when">{{ t.my_current }}</span>
+          <span class="booking-when" data-eta="{{ session.eta_at | iso }}">
+            {{ t.my_current_until.format(time=session.eta_at | hhmm) }}
+          </span>
+          <a class="btn btn-small" href="{{ base }}/release/{{ machine.id }}">
+            {{ t.my_finish }}
+          </a>
+        </article>
+      {% endfor %}
+    </div>
   {% endif %}
 
   {% if bookings %}
     <ul class="bookings">
       {% for booking, machine, room in bookings %}
         <li class="booking">
-          {# Помещение рядом с машиной: брон теперь может быть несколько — по
-             одной на комнату (правило 13), — и «14:00» без комнаты не говорит,
+          {# Помещение рядом с машиной: броней может быть несколько по
+             расширенной квоте, и «14:00» без комнаты не говорит,
              куда идти. #}
           <span class="booking-machine">
             {{ t.my_where.format(machine=machine.name, room=room.name) }}
@@ -56,7 +59,7 @@
         </li>
       {% endfor %}
     </ul>
-  {% elif current %}
+  {% elif currents %}
   {% elif can_book %}
     <p class="board-empty">{{ t.my_empty }}</p>
   {% else %}
@@ -66,7 +69,7 @@
   {# Отсюда же — вход в расписание каждой пары «помещение — тип», которая реально
      есть в парке. #}
   <div class="my-links">
-    {% if bookings or current %}
+    {% if bookings or currents %}
       <a class="btn btn-small btn-wide" href="{{ base }}/status">
         {{ t.app_view_statuses }}
       </a>

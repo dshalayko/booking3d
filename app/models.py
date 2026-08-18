@@ -3,6 +3,7 @@ from datetime import datetime, time
 from sqlalchemy import (
     BigInteger,
     Boolean,
+    CheckConstraint,
     DateTime,
     ForeignKey,
     Index,
@@ -14,7 +15,7 @@ from sqlalchemy import (
 )
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
-from app.enums import MachineKind, MachineStatus, ReservationStatus, RoomKind
+from app.enums import MachineKind, MachineStatus, RoomKind
 
 
 class Base(DeclarativeBase):
@@ -24,12 +25,10 @@ class Base(DeclarativeBase):
 class Room(Base):
     """Помещение: мастерская с оборудованием или переговорная.
 
-    Появилось, когда система перестала быть системой одной комнаты. Помещение —
-    это не украшение экрана, а граница, внутри которой считаются правила:
-    очередь общая на машины одного типа *в этом помещении* (правило 3), и одна
-    работа, одно место в очереди и одна бронь на человека — тоже в пределах
-    помещения (правила 2 и 13). Иначе бронь переговорной запрещала бы печать, а
-    ожидающий принтер в одном корпусе получал бы приглашение в другой.
+    Появилось, когда система перестала быть системой одной комнаты. Помещение
+    группирует парк и задаёт его часы работы. Пользовательская квота оборудования
+    при этом считается во всей системе; переговорная остаётся отдельным строгим
+    сценарием и не совмещается с оборудованием.
 
     Часы работы у каждого помещения свои (правило 15): переговорная закрывается
     в шесть, а мастерская работает до ночи. См. `WorkHours`.
@@ -116,6 +115,29 @@ class WorkHours(Base):
         return f"<WorkHours room={self.room_id} {self.opens_at}–{self.closes_at}>"
 
 
+class BookingPolicy(Base):
+    """Изменяемый из админки лимит пользовательских работ и броней.
+
+    Строка всегда одна (`id = 1`). Отдельная таблица, а не переменная окружения:
+    переключатель должен применяться сразу, без SSH и перезапуска контейнера.
+    """
+
+    __tablename__ = "booking_policy"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    multi_machine_enabled: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, server_default=text("false")
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=func.now()
+    )
+
+    __table_args__ = (CheckConstraint("id = 1", name="booking_policy_singleton"),)
+
+    def __repr__(self) -> str:
+        return f"<BookingPolicy multi={self.multi_machine_enabled}>"
+
+
 class Machine(Base):
     """Единица парка: 3D-принтер, гравировщик или сама переговорная.
 
@@ -193,13 +215,10 @@ class MachineSession(Base):
             unique=True,
             postgresql_where=text("status IN ('printing', 'done_wait')"),
         ),
-        # Правило 2: одна активная работа на человека во всей системе.
-        Index(
-            "one_active_session_per_user",
-            "user_id",
-            unique=True,
-            postgresql_where=text("status IN ('printing', 'done_wait')"),
-        ),
+        Index("sessions_user_active", "user_id", "status"),
+        # Пользовательский лимит изменяемый, поэтому уникального индекса по
+        # user_id здесь больше нет. Гонки сериализуются блокировкой строки User,
+        # а одна активная работа на конкретной машине по-прежнему защищена БД.
     )
 
     def __repr__(self) -> str:
@@ -287,13 +306,10 @@ class Reservation(Base):
     started_notified_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
     __table_args__ = (
-        # Правило 13: одна бронь на человека во всей системе.
-        Index(
-            "one_active_reservation_per_user",
-            "user_id",
-            unique=True,
-            postgresql_where=text(f"status = '{ReservationStatus.BOOKED}'"),
-        ),
+        # Пользовательский лимит может быть переключён администратором и
+        # проверяется под блокировкой строки User. Пересечения одной машины
+        # независимо от режима по-прежнему запрещает reservations_no_overlap.
+        Index("reservations_user_active", "user_id", "status", "starts_at"),
         # Выборка «что забронировано на этой машине после такого-то часа» —
         # самая частая: она рисует расписание и урезает «занять сейчас».
         Index("reservations_machine_time", "machine_id", "starts_at"),
