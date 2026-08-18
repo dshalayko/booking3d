@@ -626,6 +626,7 @@ class TestOwnBoard:
         assert f'href="/app/release/{printers[0].id}"' in page
         # Занять вторую машину предлагать некуда: она есть.
         assert f'href="/app/occupy/{printers[1].id}"' not in page
+        assert 'href="/app/status"' in page
 
     async def test_with_nothing_of_mine_the_first_room_opens(
         self, client, room, printers, make_user

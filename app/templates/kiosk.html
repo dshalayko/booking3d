@@ -10,6 +10,12 @@
       <h1>{{ t.app_status_heading }}</h1>
       <a class="btn btn-small btn-ghost" href="{{ base }}/my">{{ t.app_nav_my }}</a>
     </header>
+  {% elif telegram_sdk|default(false) and focused|default(false) %}
+    {# «Моё» после обычного занятия — не экран бронирований, поэтому ссылка из
+       my.html сюда не попадёт. Статусы всего парка нужны в обоих сценариях. #}
+    <a class="btn btn-small btn-wide app-status-link" href="{{ base }}/status">
+      {{ t.app_view_statuses }}
+    </a>
   {% endif %}
 
   {# Адрес опроса приходит из обработчика (`poll`): у доски помещения он свой, у
