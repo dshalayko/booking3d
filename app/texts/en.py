@@ -819,7 +819,7 @@ UI = {
     "schedule_empty": "Nothing of this kind in this room yet",
     "schedule_hint": "Tap a free hour — that's when your booking starts",
     "schedule_work_hours": "Open {hours}",
-    "schedule_my_bookings": "My jobs & bookings",
+    "schedule_my_bookings": "My booking",
     "schedule_blocked": (
         "You can make another booking when the current time ends, "
         "or after you cancel the booking."
@@ -849,8 +849,8 @@ UI = {
     ),
     "book_booked_until": "Booked until {time}",
     # my.html
-    "my_title": "My jobs & bookings",
-    "my_heading": "My jobs & bookings",
+    "my_title": "My booking",
+    "my_heading": "My booking",
     "my_empty": "No bookings yet. Open the schedule and pick a free hour.",
     "my_when": "{start} — {end}",
     "my_where": "{machine} · {room}",
@@ -992,7 +992,7 @@ UI = {
         "The schedule opens after that."
     ),
     "app_nav_board": "Rooms",
-    "app_nav_my": "My jobs & bookings",
+    "app_nav_my": "My booking",
     "app_view_statuses": "View printer status",
     "app_status_heading": "Machine status",
     # admin_rooms.html
