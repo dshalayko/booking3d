@@ -185,6 +185,12 @@ class TestSession:
         assert response.status_code == 200
         assert 'value="/app/my"' in response.text
 
+    async def test_status_without_session_opens_bootstrap(self, client):
+        response = await client.get("/app/status")
+
+        assert response.status_code == 200
+        assert 'value="/app/status"' in response.text
+
 
 class TestOpenAccess:
     """`MINIAPP_OPEN_ACCESS` — режим для проверки брон без бота и сертификата."""
@@ -367,6 +373,32 @@ class TestScreens:
         assert printers[1].name not in root.text
         assert engravers[0].name not in root.text
         assert "/app/schedule/" not in root.text
+        assert 'href="/app/status"' in root.text
+
+    async def test_active_booking_can_open_read_only_status_and_return(
+        self, client, db, room, printers, engravers, make_user
+    ):
+        user = await make_user()
+        other = await make_user(name="Другой")
+        await reservations_svc.book(db, user, printers[0].id, tomorrow_at(), 60)
+        await machines_svc.occupy(db, other, printers[1].id, 60)
+        await db.commit()
+        await open_app(client, user)
+
+        status = await client.get("/app/status")
+        partial = await client.get("/app/partials/status")
+
+        assert status.status_code == 200
+        assert printers[0].name in status.text
+        assert printers[1].name in status.text
+        assert engravers[0].name in status.text
+        assert 'href="/app/my"' in status.text
+        assert 'data-poll="/app/partials/status"' in status.text
+        assert "/app/occupy/" not in status.text
+        assert "/app/release/" not in status.text
+        assert "/app/schedule/" not in status.text
+        assert printers[1].name in partial.text
+        assert "/app/release/" not in partial.text
 
     async def test_active_booking_blocks_all_direct_booking_routes(
         self, client, db, room, printers, make_user

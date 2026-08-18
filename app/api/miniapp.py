@@ -147,6 +147,14 @@ async def room_board(request: Request, db: Db, room_id: int, flash: str = "") ->
     )
 
 
+@router.get("/status", response_class=HTMLResponse)
+async def status_board(request: Request, db: Db) -> Response:
+    """Весь парк только для чтения; доступен даже при активной брони."""
+    if await viewer(request, db) is None:
+        return await _bootstrap(request, db, f"{SAFE_NEXT_PREFIX}/status")
+    return await screens.status_page(request, db, APP)
+
+
 @router.post("/session")
 async def open_session(
     request: Request,
@@ -199,6 +207,11 @@ async def board_partial(request: Request, db: Db, room_id: int) -> Response:
     return await screens.board_partial(
         request, db, APP, room_id, viewer=await viewer(request, db)
     )
+
+
+@router.get("/partials/status", response_class=HTMLResponse)
+async def status_partial(request: Request, db: Db) -> Response:
+    return await screens.status_partial(request, db, APP)
 
 
 # --- занять / освободить -----------------------------------------------------

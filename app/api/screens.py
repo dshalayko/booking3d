@@ -285,6 +285,50 @@ async def mine_page(
     return templates.TemplateResponse(request, "kiosk.html", context)
 
 
+async def status_page(
+    request: Request,
+    db: AsyncSession,
+    client: Client,
+) -> Response:
+    """Весь парк для просмотра из Mini App, без действий над машинами.
+
+    Активная бронь закрывает каталог и расписание, но не должна закрывать
+    человеку обзор парка. Отдельный read-only контекст не даёт ссылкам
+    «занять» и «освободить» случайно обойти это правило.
+    """
+    state = await board_svc.build(db)
+    context = {
+        "rooms": state.rooms,
+        "now": state.now,
+        "focused": False,
+        "can_book": False,
+        "read_only": True,
+        "show_room_names": len(state.rooms) > 1,
+        "status_view": True,
+        "poll": f"{client.base}/partials/status",
+        **client.context,
+    }
+    return templates.TemplateResponse(request, "kiosk.html", context)
+
+
+async def status_partial(request: Request, db: AsyncSession, client: Client) -> Response:
+    """Живое содержимое read-only доски статусов Mini App."""
+    state = await board_svc.build(db)
+    return templates.TemplateResponse(
+        request,
+        "_board.html",
+        {
+            "rooms": state.rooms,
+            "now": state.now,
+            "focused": False,
+            "can_book": False,
+            "read_only": True,
+            "show_room_names": len(state.rooms) > 1,
+            **client.context,
+        },
+    )
+
+
 async def mine_partial(
     request: Request, db: AsyncSession, client: Client, viewer: User | None = None
 ) -> Response:

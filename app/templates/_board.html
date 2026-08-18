@@ -12,6 +12,9 @@
 
 {% for room in rooms %}
   <article class="room">
+    {% if show_room_names|default(false) %}
+      <h2 class="status-room-name">{{ room.name }}</h2>
+    {% endif %}
     {% if room.note %}<p class="room-note">{{ room.note }}</p>{% endif %}
 
     {% if not room.groups %}
@@ -36,7 +39,8 @@
           {# Доска сжата до своей машины (`focused`) — большой кнопки здесь нет:
              у человека машина уже есть. Занять другую можно из помещения — по
              ссылке в его заголовке. #}
-          {% if focused|default(false) %}
+          {% if read_only|default(false) %}
+          {% elif focused|default(false) %}
           {% elif free %}
             <a class="btn btn-hero" href="{{ base }}/occupy/{{ free.id }}">
               {{ t.board_occupy_cta.format(kind=MACHINE_KIND_ONE.get(group.kind, group.kind)) }}
@@ -47,7 +51,7 @@
           {% endif %}
           {# Брони — второй способ получить машину, и вход в них должен быть виден
              на главном экране, а не только в боте. #}
-          {% if group.machines and can_book|default(true) %}
+          {% if not read_only|default(false) and group.machines and can_book|default(true) %}
             <a class="btn btn-outline btn-schedule" href="{{ base }}/schedule/{{ room.id }}/{{ group.kind }}">
               {{ t.board_schedule_cta }}
             </a>
@@ -72,7 +76,9 @@
                   <p class="tile-time" data-eta="{{ machine.eta_at | iso }}">
                     {{ t.tile_until.format(time=machine.eta_at | hhmm) }}
                   </p>
-                  <a class="btn btn-ghost" href="{{ base }}/release/{{ machine.id }}">{{ t.tile_release }}</a>
+                  {% if not read_only|default(false) %}
+                    <a class="btn btn-ghost" href="{{ base }}/release/{{ machine.id }}">{{ t.tile_release }}</a>
+                  {% endif %}
 
                 {% elif machine.status == "done_wait" %}
                   {# «Заберите деталь» на переговорной было бы бессмыслицей —
@@ -82,9 +88,11 @@
                   <p class="tile-time" data-since="{{ machine.done_since | iso }}">
                     {{ t.tile_done_at.format(time=machine.done_since | hhmm) }}
                   </p>
-                  <a class="btn btn-primary" href="{{ base }}/release/{{ machine.id }}">
-                    {{ MACHINE_DONE_ACTION.get(machine.kind, t.tile_release) }}
-                  </a>
+                  {% if not read_only|default(false) %}
+                    <a class="btn btn-primary" href="{{ base }}/release/{{ machine.id }}">
+                      {{ MACHINE_DONE_ACTION.get(machine.kind, t.tile_release) }}
+                    </a>
+                  {% endif %}
 
                 {% elif machine.booking_now %}
                   {# Машина физически свободна, но её час принадлежит человеку с
@@ -92,7 +100,9 @@
                   <p class="tile-status">{{ t.tile_booked }}</p>
                   <p class="tile-owner">{{ machine.booked_by }}</p>
                   <p class="tile-time">{{ t.tile_until.format(time=machine.booked_until | hhmm) }}</p>
-                  <a class="btn btn-ghost" href="{{ base }}/occupy/{{ machine.id }}">{{ t.tile_its_me }}</a>
+                  {% if not read_only|default(false) %}
+                    <a class="btn btn-ghost" href="{{ base }}/occupy/{{ machine.id }}">{{ t.tile_its_me }}</a>
+                  {% endif %}
 
                 {% else %}
                   <p class="tile-status">{{ t.tile_free }}</p>

@@ -973,6 +973,8 @@ UI = {
     ),
     "app_nav_board": "Помещения",
     "app_nav_my": "Мои брони",
+    "app_view_statuses": "Посмотреть статус принтеров",
+    "app_status_heading": "Статус оборудования",
     # admin_rooms.html
     "admin_rooms_title": "Помещения",
     "admin_rooms_add": "Добавить помещение",

@@ -5,6 +5,13 @@
     <div class="banner banner-ok" data-autohide="6">{{ flash }}</div>
   {% endif %}
 
+  {% if status_view|default(false) %}
+    <header class="sheet-head status-head">
+      <h1>{{ t.app_status_heading }}</h1>
+      <a class="btn btn-small btn-ghost" href="{{ base }}/my">{{ t.app_nav_my }}</a>
+    </header>
+  {% endif %}
+
   {# Адрес опроса приходит из обработчика (`poll`): у доски помещения он свой, у
      сжатого «моего» — свой. Иначе через десять секунд на месте одного вида
      оказался бы другой. #}

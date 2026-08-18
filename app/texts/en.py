@@ -976,6 +976,8 @@ UI = {
     ),
     "app_nav_board": "Rooms",
     "app_nav_my": "My bookings",
+    "app_view_statuses": "View printer status",
+    "app_status_heading": "Machine status",
     # admin_rooms.html
     "admin_rooms_title": "Rooms",
     "admin_rooms_add": "Add a room",
