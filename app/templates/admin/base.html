@@ -14,10 +14,10 @@
 {% from "admin/_icons.html" import icon %}
 {% block body_class %}admin-page{% endblock %}
 
-{# Опрос доски, автообновление киоска и Wake Lock панели не нужны. Более того,
-   старый app.js из service worker мог зациклить перезагрузку /admin после
-   деплоя. Маленький отдельный скрипт снимает регистрацию с браузера админа. #}
-{% block scripts %}<script src="/static/admin.js?v={{ asset_version }}"></script>{% endblock %}
+{# Панель работает обычными ссылками и формами. JavaScript ей не нужен: так
+   киосковый service worker и его жизненный цикл вообще не могут вмешаться в
+   загрузку /admin. #}
+{% block scripts %}{% endblock %}
 
 {% block title %}{{ section.heading or section.title }}{% endblock %}
 

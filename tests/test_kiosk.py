@@ -520,7 +520,6 @@ class TestStaticAndOffline:
         assert (await client.get("/static/manifest.webmanifest")).status_code == 200
         assert (await client.get("/static/app.css")).status_code == 200
         assert (await client.get("/static/app.js")).status_code == 200
-        assert (await client.get("/static/admin.js")).status_code == 200
 
 
 class TestSelfUpdate:

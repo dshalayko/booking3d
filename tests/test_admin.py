@@ -46,8 +46,8 @@ class TestAccess:
 
         assert response.status_code == 200
         assert "ADMIN_SECRET" in response.text
-        assert "/static/admin.js?v=" in response.text
         assert "/static/app.js" not in response.text
+        assert "<script" not in response.text
 
     async def test_dashboard_opens_after_login(self, client, printers, make_user):
         await make_user(name="Иван", is_admin=True)
@@ -57,15 +57,8 @@ class TestAccess:
 
         assert response.status_code == 200
         assert "P2S #1" in response.text
-        assert "/static/admin.js?v=" in response.text
         assert "/static/app.js" not in response.text
-
-    async def test_admin_script_removes_kiosk_service_worker(self, client):
-        response = await client.get("/static/admin.js")
-
-        assert response.status_code == 200
-        assert "getRegistration" in response.text
-        assert "unregister" in response.text
+        assert "<script" not in response.text
 
     async def test_actions_are_closed_without_secret(self, client, printers):
         response = await client.post(f"/admin/machines/{printers[0].id}/break", data={"note": "x"})
