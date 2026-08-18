@@ -270,6 +270,22 @@
         tg.BackButton.show();
         tg.BackButton.onClick(function () { history.back(); });
       }
+
+      // BackButton — навигация внутри приложения. Закрытие должно быть
+      // отдельным явным действием: иначе после нескольких переходов человек
+      // листает историю назад и не понимает, как вернуться в чат.
+      var closeButton = document.querySelector("[data-tg-close]");
+      var closeBar = document.querySelector("[data-tg-close-bar]");
+      if (closeButton && closeBar && typeof tg.close === "function") {
+        closeBar.hidden = false;
+        closeButton.addEventListener("click", function () {
+          try {
+            tg.close();
+          } catch (error) {
+            /* старый клиент Telegram — системное меню остаётся доступно */
+          }
+        });
+      }
     } catch (error) {
       /* не в Telegram — просто веб-страница */
     }

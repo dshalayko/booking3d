@@ -954,6 +954,7 @@ UI = {
     "admin_no_events": "Пока ничего не происходило",
     # miniapp
     "app_loading": "Открываем…",
+    "app_close": "Закрыть приложение",
     "app_outside_telegram_title": "Откройте из Telegram",
     "app_outside_telegram_hint": (
         "Это мини-приложение бота: расписание и брони открываются командой "

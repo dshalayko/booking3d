@@ -32,6 +32,15 @@
       data-texts="{{ t_js | tojson | forceescape }}"
       data-version="{{ asset_version }}"
       {%- if auto_return|default(false) and needs_pin %} data-autoreturn="60"{% endif %}>
+  {% if telegram_sdk|default(false) %}
+    {# BackButton листает историю Mini App и не закрывает его. Явное действие
+       показываем только после обнаружения настоящего Telegram WebApp API. #}
+    <div class="app-close-bar" data-tg-close-bar hidden>
+      <button class="btn btn-ghost btn-small app-close" type="button" data-tg-close>
+        {{ t.app_close }}
+      </button>
+    </div>
+  {% endif %}
   <div id="offline-banner" class="banner banner-offline" hidden>
     {{ t.offline_banner }}
   </div>

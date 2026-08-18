@@ -957,6 +957,7 @@ UI = {
     "admin_no_events": "Nothing has happened yet",
     # miniapp
     "app_loading": "Opening…",
+    "app_close": "Close app",
     "app_outside_telegram_title": "Open it from Telegram",
     "app_outside_telegram_hint": (
         "This is the bot's mini app: the schedule and bookings open with /book "

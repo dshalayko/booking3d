@@ -117,6 +117,11 @@ class TestSession:
         assert response.status_code == 200
         assert "data-tg-bootstrap" in response.text
         assert "telegram-web-app.js" in response.text
+        assert "data-tg-close" in response.text
+        assert t.UI["app_close"] in response.text
+
+        script = await client.get("/static/app.js")
+        assert 'tg.close()' in script.text
 
     async def test_valid_open_sets_session_and_shows_board(self, client, room, printers, make_user):
         user = await make_user()

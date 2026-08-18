@@ -541,6 +541,8 @@ body {
 
 /* --- мои брони (Mini App) --- */
 
+.app-close-bar { flex: 0 0 auto; display: flex; justify-content: flex-end; }
+.app-close { color: var(--text); }
 .app-loading { margin: auto; font-size: 22px; color: var(--muted); }
 /* Тестовый вход: список людей вместо подписи Telegram. Жёлтым, чтобы включённый
    MINIAPP_OPEN_ACCESS нельзя было принять за обычный экран входа. */
