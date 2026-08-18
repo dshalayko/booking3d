@@ -160,11 +160,9 @@ class MachineSession(Base):
 
     id: Mapped[int] = mapped_column(primary_key=True)
     machine_id: Mapped[int] = mapped_column(ForeignKey("machines.id"), nullable=False)
-    # Помещение машины, скопированное в саму работу. Копия, а не join: правило 2
-    # («одна работа на человека в помещении») держит частичный уникальный индекс,
-    # а индекс не умеет смотреть в соседнюю таблицу. Машина из помещения в
-    # помещение не переезжает (services/machines.py), так что копия не разойдётся
-    # с оригиналом.
+    # Помещение машины, скопированное в работу для истории и отчётов. Машина из
+    # помещения в помещение не переезжает (services/machines.py), так что копия
+    # не разойдётся с оригиналом.
     room_id: Mapped[int] = mapped_column(ForeignKey("rooms.id"), nullable=False)
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), nullable=False)
     started_at: Mapped[datetime] = mapped_column(
@@ -195,14 +193,10 @@ class MachineSession(Base):
             unique=True,
             postgresql_where=text("status IN ('printing', 'done_wait')"),
         ),
-        # Правило 2: одна активная работа на человека в помещении — на все типы
-        # разом, а не на тип. Занял принтер — освободи, прежде чем брать
-        # гравировщик рядом. А переговорная в другом помещении печати не мешает:
-        # это разные комнаты и разные дела.
+        # Правило 2: одна активная работа на человека во всей системе.
         Index(
             "one_active_session_per_user",
             "user_id",
-            "room_id",
             unique=True,
             postgresql_where=text("status IN ('printing', 'done_wait')"),
         ),
@@ -213,6 +207,11 @@ class MachineSession(Base):
 
 
 class QueueEntry(Base):
+    """Историческая запись очереди.
+
+    Новые записи приложение не создаёт; таблица остаётся, чтобы старые события
+    продолжали отображаться в журнале и не теряли внешние ключи.
+    """
     __tablename__ = "queue"
 
     id: Mapped[int] = mapped_column(primary_key=True)
@@ -262,24 +261,13 @@ class QueueEntry(Base):
 
 
 class Reservation(Base):
-    """Бронь машины на конкретное окно в будущем.
-
-    Очередь отвечает на вопрос «кто следующий, когда освободится», бронь — на
-    вопрос «мне нужно к утру четверга». Поэтому бронь всегда на конкретную
-    машину, а не на тип: человек приходит в назначенный час к назначенному
-    столу, и «какой-нибудь принтер этого типа» здесь ничего не гарантирует.
-
-    Правило 12: в своё окно машину занимает только тот, кто её забронировал —
-    это право сильнее очереди (правило 7).
-    """
+    """Бронь машины на конкретное окно в будущем."""
 
     __tablename__ = "reservations"
 
     id: Mapped[int] = mapped_column(primary_key=True)
     machine_id: Mapped[int] = mapped_column(ForeignKey("machines.id"), nullable=False)
-    # Помещение машины — копия, как и у работы: правило 13 («одна бронь на
-    # человека в помещении») держит частичный уникальный индекс, а тот не умеет
-    # смотреть в `machines`.
+    # Помещение машины — копия для истории и отчётов.
     room_id: Mapped[int] = mapped_column(ForeignKey("rooms.id"), nullable=False)
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), nullable=False)
     starts_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
@@ -299,13 +287,10 @@ class Reservation(Base):
     started_notified_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
     __table_args__ = (
-        # Правило 13: одна бронь на человека в помещении. Парк маленький, и без
-        # ограничения один человек забивает собой всю неделю вперёд. Бронь
-        # переговорной при этом печати не мешает: это другое помещение.
+        # Правило 13: одна бронь на человека во всей системе.
         Index(
             "one_active_reservation_per_user",
             "user_id",
-            "room_id",
             unique=True,
             postgresql_where=text(f"status = '{ReservationStatus.BOOKED}'"),
         ),

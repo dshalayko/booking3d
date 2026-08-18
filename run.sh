@@ -143,7 +143,7 @@ async def main() -> None:
 
 asyncio.run(main())
 PY
-    say "теперь можно занять оба принтера и проверить очередь своим PIN"
+    say "теперь можно занять несколько машин разными PIN и проверить расписание"
 }
 
 # Тестовые люди живут в диапазоне 900000–900999: настоящий Telegram таких chat_id
@@ -157,7 +157,7 @@ cmd_reset() {
         TRUNCATE sessions, queue, reservations RESTART IDENTITY;
         DELETE FROM users WHERE tg_chat_id BETWEEN 900000 AND 900999;
         UPDATE machines SET status='free', note=NULL;"
-    say "работы, очереди и брони очищены, тестовые люди удалены"
+    say "работы, брони и исторические записи очереди очищены, тестовые люди удалены"
     say "тестовые помещения и машины теперь удаляются из админки: истории за ними нет"
 }
 
@@ -165,8 +165,7 @@ cmd_fastforward() {
     ensure_db
     say "сдвигаю сроки в прошлое — сверка сработает в ближайшую минуту"
     docker compose exec -T db psql -U booking booking -q -c "
-        UPDATE sessions SET eta_at = now() - interval '1 minute' WHERE status = 'printing';
-        UPDATE queue SET offer_expires_at = now() - interval '1 minute' WHERE status = 'offered';"
+        UPDATE sessions SET eta_at = now() - interval '1 minute' WHERE status = 'printing';"
 }
 
 cmd_psql() {
@@ -191,8 +190,8 @@ cmd_help() {
   urls         ссылки на киоск, регистрацию планшета и админку
   admin <id>   выдать права админа по telegram chat id
   demo         создать тестовых людей (chat_id 9000xx, PIN печатаются)
-  fastforward  сдвинуть сроки печатей и предложений в прошлое
-  reset        очистить работы, очереди и брони, удалить тестовых людей
+  fastforward  сдвинуть сроки работ в прошлое
+  reset        очистить работы, брони и тестовые данные, удалить тестовых людей
   psql         консоль базы
   stop         остановить приложение и базу
 

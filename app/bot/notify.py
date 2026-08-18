@@ -1,7 +1,7 @@
 """Отправка уведомлений.
 
-Домен ничего не знает про Telegram: сервисы возвращают `Offer` и прочие
-результаты, а этот модуль превращает их в сообщения. Сама отправка спрятана за
+Домен ничего не знает про Telegram: сервисы возвращают результаты, а этот
+модуль превращает их в сообщения. Сама отправка спрятана за
 `Sender`, чтобы в тестах подменяться списком, а в бою — вызовом aiogram.
 
 Ошибка отправки никогда не роняет запрос: человек заблокировал бота — это его
@@ -14,9 +14,7 @@ from collections.abc import Awaitable, Callable
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.bot import texts
-from app.models import Room, User
-from app.services.queue import Offer
+from app.models import User
 
 logger = logging.getLogger(__name__)
 
@@ -52,30 +50,3 @@ async def send_to_user(db: AsyncSession, user_id: int, text: str) -> bool:
     if chat_id is None:
         return False
     return await send(chat_id, text)
-
-
-async def announce_offers(db: AsyncSession, offers: list[Offer]) -> None:
-    """Правило 4: сообщение уходит только тому, кому сделано предложение.
-
-    Имя помещения ищется здесь, а не приезжает в `Offer`: домен раздаёт машины и
-    про надписи не знает, а «P2S #1 освободился» без комнаты не говорит человеку,
-    куда идти. Одним запросом на всю рассылку — приглашений за раз бывает
-    столько, сколько освободившихся машин.
-    """
-    if not offers:
-        return
-
-    room_ids = {item.room_id for item in offers}
-    names = dict(
-        (
-            await db.execute(select(Room.id, Room.name).where(Room.id.in_(room_ids)))
-        ).all()
-    )
-    for item in offers:
-        await send_to_user(
-            db,
-            item.user_id,
-            texts.offer(
-                item.machine_name, names.get(item.room_id, ""), item.expires_at
-            ),
-        )

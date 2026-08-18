@@ -5,7 +5,7 @@ import pytest
 from sqlalchemy import select
 
 from app.config import Settings, load, settings
-from app.enums import MachineKind, MachineStatus, QueueStatus, SessionStatus
+from app.enums import MachineKind, MachineStatus, SessionStatus
 from app.models import Machine, MachineSession, QueueEntry, User
 from app.services import machines as svc
 from app.services import queue as queue_svc
@@ -19,7 +19,6 @@ from app.services.errors import (
     MachineNameTaken,
     MachineNotAvailable,
     MachineReleaseForbidden,
-    MachineReserved,
     NotAdmin,
     UserBusy,
 )
@@ -34,15 +33,13 @@ async def test_occupy_starts_session(db, printers, make_user):
 
     assert result.machine_name == "P2S #1"
     assert result.eta_at == NOON + timedelta(minutes=120)
-    assert result.from_offer is False
-
     session = await db.get(MachineSession, result.session_id)
     assert session.status == SessionStatus.PRINTING
     assert (await db.get(Machine, printers[0].id)).status == MachineStatus.PRINTING
 
 
 async def test_eta_ignores_night_pause(db, printers, make_user):
-    """Печать идёт и ночью: ночная пауза относится только к окну очереди."""
+    """Печать идёт и ночью без паузы."""
     user = await make_user()
     late = datetime(2026, 8, 10, 19, 50, tzinfo=UTC)  # 22:50 по Никосии
 
@@ -190,38 +187,13 @@ async def test_set_broken_requires_admin(db, printers, make_user):
         await svc.set_broken(db, user, printers[0].id, now=NOON)
 
 
-async def test_clear_broken_offers_printer_to_queue(db, room, printers, make_user):
+async def test_clear_broken_returns_printer_to_service(db, printers, make_user):
     admin = await make_user(is_admin=True)
-    waiting = await make_user()
     await svc.set_broken(db, admin, printers[0].id, now=NOON)
-    await svc.set_broken(db, admin, printers[1].id, now=NOON)
-    await queue_svc.join(db, waiting.id, room.id, MachineKind.PRINTER, now=NOON)
 
-    result = await svc.clear_broken(db, admin, printers[0].id, now=NOON)
+    await svc.clear_broken(db, admin, printers[0].id, now=NOON)
 
-    assert [offer.user_id for offer in result.offers] == [waiting.id]
-
-
-async def test_release_offers_printer_to_first_in_queue(db, room, printers, make_user):
-    owner = await make_user()
-    first = await make_user()
-    second = await make_user()
-    await svc.occupy(db, owner, printers[0].id, 60, now=NOON)
-    await svc.occupy(db, first, printers[1].id, 60, now=NOON)
-    await db.commit()
-
-    # оба принтера заняты, двое встают в очередь
-    third = await make_user()
-    await queue_svc.join(
-        db, second.id, room.id, MachineKind.PRINTER, now=NOON + timedelta(minutes=1)
-    )
-    await queue_svc.join(
-        db, third.id, room.id, MachineKind.PRINTER, now=NOON + timedelta(minutes=2)
-    )
-
-    result = await svc.release(db, owner, printers[0].id, now=NOON + timedelta(minutes=30))
-
-    assert [offer.user_id for offer in result.offers] == [second.id]
+    assert (await db.get(Machine, printers[0].id)).status == MachineStatus.FREE
 
 
 async def test_concurrent_occupy_lets_exactly_one_win(db, printers, sessions, make_user):
@@ -253,48 +225,31 @@ async def test_concurrent_occupy_lets_exactly_one_win(db, printers, sessions, ma
     assert len(active) == 1
 
 
-async def test_offer_is_marked_taken_when_used(db, room, printers, make_user):
-    owner = await make_user()
-    waiting = await make_user()
-    await svc.occupy(db, owner, printers[0].id, 60, now=NOON)
-    await svc.occupy(db, await make_user(), printers[1].id, 60, now=NOON)
-    join = await queue_svc.join(db, waiting.id, room.id, MachineKind.PRINTER, now=NOON)
+async def test_concurrent_occupy_of_two_machines_keeps_global_user_limit(
+    db, printers, sessions, make_user
+):
+    """Два параллельных тапа одного человека не обходят глобальный лимит."""
+    user = await make_user()
+    await db.commit()
 
-    await svc.release(db, owner, printers[0].id, now=NOON + timedelta(minutes=30))
-    result = await svc.occupy(db, waiting, printers[0].id, 60, now=NOON + timedelta(minutes=31))
+    async def attempt(machine_id: int) -> str:
+        async with sessions() as session:
+            person = await session.get(User, user.id)
+            try:
+                await svc.occupy(session, person, machine_id, 60, now=NOON)
+                await session.commit()
+                return "ok"
+            except DomainError:
+                await session.rollback()
+                return "fail"
 
-    assert result.from_offer is True
-    entry = await db.get(QueueEntry, join.entry_id)
-    assert entry.status == QueueStatus.TAKEN
+    outcomes = await asyncio.gather(*(attempt(machine.id) for machine in printers))
 
-
-async def test_admin_can_bypass_queue(db, room, printers, make_user):
-    """Исключение из правила 7: админ чинит застрявшие ситуации руками."""
-    owner = await make_user()
-    waiting = await make_user()
-    admin = await make_user(is_admin=True)
-    await svc.occupy(db, owner, printers[0].id, 60, now=NOON)
-    await svc.occupy(db, await make_user(), printers[1].id, 60, now=NOON)
-    await queue_svc.join(db, waiting.id, room.id, MachineKind.PRINTER, now=NOON)
-    await svc.release(db, owner, printers[0].id, now=NOON + timedelta(minutes=30))
-
-    result = await svc.occupy(db, admin, printers[0].id, 60, now=NOON + timedelta(minutes=31))
-
-    assert result.from_offer is False
-
-
-async def test_non_offered_user_cannot_jump_the_queue(db, room, printers, make_user):
-    """Правило 7: подошедший к киоску всегда быстрее того, кто едет из дома."""
-    owner = await make_user()
-    waiting = await make_user()
-    outsider = await make_user()
-    await svc.occupy(db, owner, printers[0].id, 60, now=NOON)
-    await svc.occupy(db, await make_user(), printers[1].id, 60, now=NOON)
-    await queue_svc.join(db, waiting.id, room.id, MachineKind.PRINTER, now=NOON)
-    await svc.release(db, owner, printers[0].id, now=NOON + timedelta(minutes=30))
-
-    with pytest.raises(MachineReserved):
-        await svc.occupy(db, outsider, printers[0].id, 60, now=NOON + timedelta(minutes=31))
+    assert sorted(outcomes) == ["fail", "ok"]
+    active = await db.scalars(
+        select(MachineSession).where(MachineSession.status == SessionStatus.PRINTING)
+    )
+    assert len(active.all()) == 1
 
 
 class TestPrinterNames:
@@ -458,8 +413,10 @@ class TestPark:
         with pytest.raises(MachineHasHistory, match="брон"):
             await svc.remove(db, admin, printers[0].id)
 
-    async def test_machine_offered_to_the_queue_is_kept(self, db, room, printers, make_user):
-        """Печатей нет, но в журнале осталось приглашение — тоже история."""
+    async def test_machine_with_legacy_queue_history_is_kept(
+        self, db, room, printers, make_user
+    ):
+        """Старое приглашение остаётся частью журнала и держит внешний ключ."""
         admin = await make_user(is_admin=True)
         owner = await make_user()
         waiting = await make_user()

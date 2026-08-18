@@ -8,11 +8,10 @@ from app.config import settings
 from app.enums import (
     MachineKind,
     MachineStatus,
-    QueueStatus,
     ReservationStatus,
     SessionStatus,
 )
-from app.models import Machine, MachineSession, QueueEntry, Reservation, Room, User
+from app.models import Machine, MachineSession, Reservation, Room, User
 from app.services import activity as activity_svc
 from app.services import auth
 from app.services import machines as machines_svc
@@ -123,16 +122,12 @@ class TestMachineActions:
         assert printer.note == "полетел хотэнд"
         assert [text for chat, text in outbox if chat == owner_chat]
 
-    async def test_fix_returns_printer_and_offers_it_to_queue(
-        self, client, db, room, printers, make_user, outbox
+    async def test_fix_returns_printer_without_legacy_queue_notifications(
+        self, client, db, printers, make_user, outbox
     ):
         machine_id = printers[0].id
         admin = await make_user(is_admin=True)
-        waiting = await make_user()
-        waiting_chat = waiting.tg_chat_id
         await machines_svc.set_broken(db, admin, machine_id)
-        await machines_svc.set_broken(db, admin, printers[1].id)
-        await queue_svc.join(db, waiting.id, room.id, MachineKind.PRINTER)
         await db.commit()
         await login(client)
         outbox.clear()
@@ -141,7 +136,7 @@ class TestMachineActions:
 
         db.expire_all()
         assert (await db.get(Machine, machine_id)).status == MachineStatus.FREE
-        assert [text for chat, text in outbox if chat == waiting_chat]
+        assert outbox == []
 
     async def test_cancel_records_reason_and_frees_printer(
         self, client, db, printers, make_user, outbox
@@ -199,24 +194,7 @@ class TestMachineActions:
         assert "make_admin" in response.text
 
 
-class TestQueueAndUsers:
-    async def test_remove_from_queue(self, client, db, room, printers, make_user, outbox):
-        await make_user(is_admin=True)
-        waiting = await make_user()
-        waiting_id, waiting_chat = waiting.id, waiting.tg_chat_id
-        for printer in printers:
-            await machines_svc.occupy(db, await make_user(), printer.id, 60)
-        join = await queue_svc.join(db, waiting.id, room.id, MachineKind.PRINTER)
-        await db.commit()
-        await login(client)
-        outbox.clear()
-
-        await client.post(f"/admin/queue/{room.id}/{waiting_id}/remove")
-
-        db.expire_all()
-        assert (await db.get(QueueEntry, join.entry_id)).status == QueueStatus.LEFT
-        assert [text for chat, text in outbox if chat == waiting_chat]
-
+class TestUsers:
     async def test_rename_fixes_a_typo_in_the_login(
         self, client, db, printers, make_user, outbox
     ):
@@ -353,7 +331,7 @@ class TestActivityLog:
         text = "\n".join(event.text for event in await activity_svc.recent(db))
 
         assert "В очередь на принтер (Мастерская): Пётр" in text
-        assert "Приглашение на P2S #1: Пётр" in text
+        assert "Приглашение на P2S #1: Пётр" not in text
         assert "Выход из очереди: Пётр" in text
 
     async def test_log_shows_cancellation_reason(self, db, printers, make_user):
@@ -673,36 +651,6 @@ class TestPurge:
         assert response.status_code == 409
         db.expire_all()
         assert await db.get(Room, room_id) is not None
-
-    async def test_waiting_person_keeps_their_place_when_the_machine_goes(
-        self, client, db, room, printers, make_user
-    ):
-        """Человек ждал не эту машину, а любую своего типа: приглашение на
-        удалённую машину возвращает его в очередь, а не выкидывает из неё."""
-        await make_user(is_admin=True)
-        waiting = await make_user()
-        waiting_id = waiting.id
-        owners = []
-        for printer in printers:
-            owner = await make_user()
-            owners.append(owner)
-            await machines_svc.occupy(db, owner, printer.id, 60)
-        await queue_svc.join(db, waiting.id, room.id, MachineKind.PRINTER)
-        # Освободившийся принтер уходит первому в очереди — теперь он «предложен».
-        await machines_svc.release(db, owners[0], printers[0].id)
-        await db.commit()
-        assert (
-            await db.scalar(select(QueueEntry.status).where(QueueEntry.user_id == waiting_id))
-        ) == QueueStatus.OFFERED
-        await login(client)
-
-        await client.post(f"/admin/machines/{printers[0].id}/delete", data={"confirm": "1"})
-
-        db.expire_all()
-        entry = await db.scalar(select(QueueEntry).where(QueueEntry.user_id == waiting_id))
-        assert entry.status == QueueStatus.WAITING
-        assert entry.offered_machine_id is None
-
 
 class TestBookings:
     """Брони на будущее: их не видно ни на плитках, ни в очереди."""

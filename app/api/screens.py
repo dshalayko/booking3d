@@ -5,8 +5,8 @@
 и все три описаны в `Client`: префикс адресов, нужен ли PIN и известно ли, кто
 смотрит. Всё остальное — этот модуль.
 
-Помещение есть в адресе почти каждого экрана: доска, расписание и очередь у
-каждого свои. Планшет своё помещение знает (оно записано в его device-cookie,
+Помещение есть в адресе почти каждого экрана: доска и расписание у каждого
+свои. Планшет своё помещение знает (оно записано в его device-cookie,
 см. api/kiosk.py), телефон выбирает из списка.
 
 Разделение сделано ради одной строки правил: вторая копия «показать расписание»
@@ -33,7 +33,6 @@ from app.enums import MachineKind, MachineStatus
 from app.models import Machine, Room, User
 from app.services import board as board_svc
 from app.services import machines as machines_svc
-from app.services import queue as queue_svc
 from app.services import reservations as reservations_svc
 from app.services import rooms as rooms_svc
 from app.services import schedule as schedule_svc
@@ -66,10 +65,8 @@ class Client:
     # нет: планшет общий, и личность там живёт ровно один POST с PIN.
     #
     # От этого зависит, куда человек уходит после действия. На личном экране его
-    # оставляют там, где виден результат: свои брони после бронирования, своё
-    # место в очереди после ожидания. На общем экране обоих этих страниц нет —
-    # «мои брони» показали бы чужой список, а «вы в очереди» назвало бы чужой
-    # номер, — и планшет возвращается к доске, как и всегда.
+    # оставляют там, где видны свои брони. На общем экране такого списка нет —
+    # он показал бы чужие данные, поэтому планшет возвращается к доске.
     personal: bool = False
 
     @property
@@ -212,7 +209,7 @@ async def board_context(
 
     С `room_id` — одно помещение целиком: так доску видят планшет на стене и
     телефон, открывший комнату. Без него — «моё»: парк сжимается до занятой
-    машины и очереди её секции, по всем помещениям сразу (services/board.py,
+    машины по всем помещениям сразу (services/board.py,
     `personal`). Сжатый вид бывает только там, где известно, кто смотрит, то есть
     в Mini App.
     """
@@ -230,11 +227,11 @@ async def board_context(
         # Сжата ли доска: от этого зависит, показывать ли большую кнопку
         # «занять» — у человека машина уже есть, а вторую он берёт из помещения.
         "focused": room_id is None,
-        # Кому принадлежит кнопка «выйти из очереди»: в Mini App она действует
-        # на смотрящего, и предлагать её тому, кто в этой очереди не стоит,
-        # значит вести его в отказ. На киоске (None) выходят по PIN — там
-        # кнопка общая, как и экран.
-        "viewer_id": viewer.id if viewer is not None else None,
+        "can_book": (
+            True
+            if viewer is None
+            else await reservations_svc.can_user_book(db, viewer.id)
+        ),
     }
 
 
@@ -275,7 +272,7 @@ async def mine_page(
     flash: str = "",
     viewer: User | None = None,
 ) -> Response:
-    """«Моё» — доска, сжатая до занятого и своей очереди, по всем помещениям.
+    """«Моё» — доска, сжатая до занятого, по всем помещениям.
 
     Только для Mini App: на телефон заходят с вопросом «что с моей печатью», и
     чужие машины в этот момент оттесняют ответ за край экрана. Имя комнаты в
@@ -384,77 +381,7 @@ async def do_release(
         await notify.send_to_user(
             db, result.owner_user_id, texts.released_by_other(result.machine_name, user.name)
         )
-    await notify.announce_offers(db, result.offers)
     return client.done("released")
-
-
-# --- очередь -----------------------------------------------------------------
-
-
-async def queue_join_page(
-    request: Request, db: AsyncSession, client: Client, room_id: int, kind: str
-) -> Response:
-    """Очередь у каждой пары (помещение, тип) своя — обе части в адресе кнопки."""
-    valid_kind(kind)
-    room = await _room(db, room_id)
-    return templates.TemplateResponse(
-        request,
-        "confirm.html",
-        {
-            "title": t.CONFIRM_QUEUE_JOIN_TITLE,
-            "hint": t.CONFIRM_QUEUE_JOIN_HINT,
-            "subject": t.CONFIRM_QUEUE_JOIN_SUBJECT.format(
-                title=t.MACHINE_KIND_TITLE.get(kind, kind), room=room.name
-            ),
-            "action": f"{client.base}/queue/join/{room.id}/{kind}",
-            "submit": t.CONFIRM_QUEUE_JOIN_SUBMIT,
-            **client.context,
-        },
-    )
-
-
-async def do_queue_join(
-    db: AsyncSession, client: Client, user: User, room_id: int, kind: str
-) -> Response:
-    result = await queue_svc.join(db, user.id, room_id, kind)
-    await db.commit()
-    await notify.announce_offers(db, result.offers)
-    # Встав в очередь, человек остаётся у расписания этого же оборудования, а не
-    # уходит на главную. Очередь и бронь — два ответа на один вопрос «мне нужна
-    # машина»: первая про «как освободится», вторая про «к четвергу к утру». В
-    # очередь встают как раз тогда, когда всё занято, — и это ровно тот момент,
-    # когда второй ответ нужнее всего. Что человек уже стоит в очереди, сетка
-    # говорит плашкой (см. `schedule_page`), иначе он вставал бы туда дважды.
-    return client.done(
-        "queued", f"/schedule/{room_id}/{kind}" if client.personal else "/"
-    )
-
-
-async def queue_leave_page(
-    request: Request, db: AsyncSession, client: Client, room_id: int
-) -> Response:
-    room = await _room(db, room_id)
-    return templates.TemplateResponse(
-        request,
-        "confirm.html",
-        {
-            "title": t.CONFIRM_QUEUE_LEAVE_TITLE,
-            "hint": t.CONFIRM_QUEUE_LEAVE_HINT,
-            "subject": t.CONFIRM_QUEUE_LEAVE_SUBJECT.format(room=room.name),
-            "action": f"{client.base}/queue/leave/{room.id}",
-            "submit": t.CONFIRM_QUEUE_LEAVE_SUBMIT,
-            **client.context,
-        },
-    )
-
-
-async def do_queue_leave(
-    db: AsyncSession, client: Client, user: User, room_id: int
-) -> Response:
-    result = await queue_svc.leave(db, user.id, room_id)
-    await db.commit()
-    await notify.announce_offers(db, result.offers)
-    return client.done("left")
 
 
 # --- расписание и брони ------------------------------------------------------
@@ -470,13 +397,7 @@ async def schedule_page(
     viewer: User | None = None,
     flash: str = "",
 ) -> Response:
-    """Расписание одного типа в одном помещении: часы — свои у каждой комнаты.
-
-    Сюда же приводит «встать в очередь» (`do_queue_join`), поэтому экран знает
-    про ожидание: место в очереди рисуется плашкой над сеткой. Без неё человек,
-    которого только что сюда привели, не видит, что он уже ждёт, и встаёт второй
-    раз — в отказ «вы уже в очереди».
-    """
+    """Расписание одного типа в одном помещении: часы — свои у каждой комнаты."""
     valid_kind(kind)
     room = await _room(db, room_id)
     now = datetime.now(UTC)
@@ -490,17 +411,16 @@ async def schedule_page(
         now=now,
         viewer_id=viewer.id if viewer else None,
     )
-    # Только там, где известно, кто смотрит: на стене «вы в очереди» — это про
-    # кого угодно, и номер в нём чужой.
-    place = (
-        None if viewer is None else await queue_svc.position_in(db, viewer.id, room.id, kind)
-    )
     return templates.TemplateResponse(
         request,
         "schedule.html",
         {
             "grid": grid,
-            "queue_place": place,
+            "can_book": (
+                True
+                if viewer is None
+                else await reservations_svc.can_user_book(db, viewer.id)
+            ),
             "flash": t.FLASH_KIOSK.get(flash),
             **client.context,
         },
@@ -622,7 +542,6 @@ async def do_booking_cancel(
             result.user_id,
             texts.booking_cancelled_by_admin(result.machine_name, result.starts_at),
         )
-    await notify.announce_offers(db, result.offers)
     return client.done("booking_cancelled")
 
 
@@ -634,13 +553,17 @@ async def my_page(
     Сюда же приводит бронирование, поэтому экран умеет показать плашку: без неё
     человек попадает на список и не понимает, случилось ли что-то только что.
     """
+    can_book = await reservations_svc.can_user_book(db, user.id)
     return templates.TemplateResponse(
         request,
         "my.html",
         {
             "person": user,
-            "bookings": await reservations_svc.of_user(db, user.id),
-            "links": await schedule_links(db),
+            "bookings": await reservations_svc.of_user(
+                db, user.id, include_in_progress=True
+            ),
+            "links": await schedule_links(db) if can_book else [],
+            "can_book": can_book,
             "flash": t.FLASH_KIOSK.get(flash),
             **client.context,
         },

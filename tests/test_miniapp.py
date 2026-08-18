@@ -19,11 +19,11 @@ from urllib.parse import urlencode
 
 import pytest
 
+from app import texts as t
 from app.config import settings
 from app.enums import MachineKind, MachineStatus, ReservationStatus
 from app.models import Machine, Reservation
 from app.services import machines as machines_svc
-from app.services import queue as queue_svc
 from app.services import reservations as reservations_svc
 from app.services import schedule as schedule_svc
 from app.services import telegram
@@ -127,9 +127,10 @@ class TestSession:
 
         assert response.status_code == 303
         assert response.headers["location"] == "/app/"
-        # Своего у человека пока ничего нет, и главный экран — список помещений.
+        # Своего у человека пока ничего нет, и главный экран — доска оборудования.
         board = await client.get("/app/")
-        assert room.name in board.text
+        assert room.name not in board.text
+        assert printers[0].name in board.text
 
     async def test_forged_open_is_refused(self, client, make_user):
         await make_user()
@@ -206,7 +207,8 @@ class TestOpenAccess:
 
         assert response.status_code == 303
         board = await client.get("/app/")
-        assert room.name in board.text
+        assert room.name not in board.text
+        assert printers[0].name in board.text
 
     async def test_signed_in_person_can_act(self, client, db, printers, open_access, make_user):
         person = await make_user()
@@ -300,6 +302,92 @@ class TestScreens:
         assert "P2S #1" in listing.text
         assert "banner-ok" in listing.text
 
+    async def test_started_booking_stays_visible_until_work_is_released(
+        self, client, db, room, printers, make_user
+    ):
+        user = await make_user()
+        start = tomorrow_at()
+        await reservations_svc.book(db, user, printers[0].id, start, 60)
+        await machines_svc.occupy(db, user, printers[0].id, 60, now=start)
+        await db.commit()
+        await open_app(client, user)
+
+        listing = await client.get("/app/my")
+        mine = await client.get("/app/")
+
+        assert "P2S #1" in listing.text
+        assert t.UI["my_in_progress"] in listing.text
+        assert f'/app/release/{printers[0].id}' in listing.text
+        assert f'/app/schedule/{room.id}/{MachineKind.PRINTER}' not in mine.text
+        assert t.UI["board_schedule_cta"] not in mine.text
+
+        await machines_svc.release(db, user, printers[0].id, now=start + timedelta(hours=1))
+        await db.commit()
+        finished = await client.get("/app/my")
+
+        assert t.UI["my_in_progress"] not in finished.text
+        assert f'/app/schedule/{room.id}/{MachineKind.PRINTER}' in finished.text
+
+    async def test_active_booking_hides_new_booking_links(
+        self, client, db, room, printers, make_user
+    ):
+        user = await make_user()
+        await reservations_svc.book(db, user, printers[0].id, tomorrow_at(), 60)
+        await db.commit()
+        await open_app(client, user)
+
+        listing = await client.get("/app/my")
+        schedule = await client.get(
+            f"/app/schedule/{room.id}/{MachineKind.PRINTER}"
+        )
+
+        assert f'/app/schedule/{room.id}/{MachineKind.PRINTER}' not in listing.text
+        assert schedule.status_code == 303
+        assert schedule.headers["location"] == "/app/my"
+
+    async def test_active_booking_turns_app_into_own_booking_screen(
+        self, client, db, room, printers, engravers, make_user
+    ):
+        user = await make_user()
+        await reservations_svc.book(db, user, printers[0].id, tomorrow_at(), 60)
+        await db.commit()
+        await open_app(client, user)
+
+        root = await client.get("/app/")
+
+        assert root.status_code == 200
+        assert t.UI["my_heading"] in root.text
+        assert f'>{t.UI["back"]}</a>' not in root.text
+        assert printers[0].name in root.text
+        assert printers[1].name not in root.text
+        assert engravers[0].name not in root.text
+        assert "/app/schedule/" not in root.text
+
+    async def test_active_booking_blocks_all_direct_booking_routes(
+        self, client, db, room, printers, make_user
+    ):
+        user = await make_user()
+        await reservations_svc.book(db, user, printers[0].id, tomorrow_at(), 60)
+        await db.commit()
+        await open_app(client, user)
+
+        responses = [
+            await client.get(f"/app/room/{room.id}"),
+            await client.get(f"/app/schedule/{room.id}/{MachineKind.PRINTER}"),
+            await client.get(
+                f"/app/book/{printers[1].id}",
+                params={"start": tomorrow_at(hour=12).isoformat()},
+            ),
+            await client.post(
+                f"/app/book/{printers[1].id}",
+                data={"start": tomorrow_at(hour=12).isoformat(), "minutes": "60"},
+            ),
+        ]
+
+        assert all(response.status_code == 303 for response in responses)
+        assert all(response.headers["location"] == "/app/my" for response in responses)
+        assert len(await reservations_svc.of_user(db, user.id)) == 1
+
     async def test_cancelling_returns_to_the_main_screen(
         self, client, db, printers, make_user
     ):
@@ -327,7 +415,7 @@ class TestScreens:
         # И лимит правила 13 свободен сразу же, без всякой паузы.
         assert await reservations_svc.active_of_user(db, user_id) is None
 
-    async def test_schedule_highlights_my_booking(self, client, room, db, printers, make_user):
+    async def test_schedule_redirects_to_my_booking(self, client, room, db, printers, make_user):
         user = await make_user(name="Аня")
         await reservations_svc.book(db, user, printers[0].id, tomorrow_at(), 60)
         await db.commit()
@@ -338,7 +426,8 @@ class TestScreens:
             params={"date": schedule_svc.day_of(tomorrow_at()).isoformat()},
         )
 
-        assert "cell-mine" in response.text
+        assert response.status_code == 303
+        assert response.headers["location"] == "/app/my"
 
     async def test_kiosk_schedule_highlights_nothing(self, client, room, db, printers, make_user):
         """На стене неизвестно, кто смотрит, — своих брон там нет."""
@@ -386,53 +475,6 @@ class TestScreens:
         db.expire_all()
         stored = await db.get(Reservation, booking.reservation_id)
         assert stored.status == ReservationStatus.BOOKED
-
-    async def test_queue_from_the_phone(self, client, room, db, printers, make_user):
-        """Встал в очередь — остаётся у расписания, и видно, что он в ней.
-
-        Очередь и бронь — два ответа на «мне нужна машина», и в очередь встают
-        ровно тогда, когда всё занято, то есть когда второй ответ нужнее всего.
-        Место в очереди подписано над сеткой, иначе человек пойдёт вставать в неё
-        второй раз — кнопка-то осталась на доске.
-        """
-        busy = await make_user()
-        waiting = await make_user()
-        await machines_svc.occupy(db, busy, printers[0].id, 60)
-        await machines_svc.occupy(db, await make_user(), printers[1].id, 60)
-        await db.commit()
-        await open_app(client, waiting)
-
-        response = await client.post(f"/app/queue/join/{room.id}/{MachineKind.PRINTER}")
-
-        assert response.status_code == 303
-        assert await queue_svc.position_of(db, waiting.id, room.id) == 1
-        assert (
-            response.headers["location"]
-            == f"/app/schedule/{room.id}/{MachineKind.PRINTER}?flash=queued"
-        )
-
-        grid = await client.get(
-            f"/app/schedule/{room.id}/{MachineKind.PRINTER}", params={"flash": "queued"}
-        )
-        assert "grid-queue" in grid.text
-        assert "номер 1" in grid.text
-        assert f"/app/queue/leave/{room.id}" in grid.text
-
-    async def test_queue_place_belongs_to_its_own_equipment(
-        self, client, room, db, printers, engravers, make_user
-    ):
-        """Ожидание гравировщика на сетке принтеров — обещание чужой машины."""
-        waiting = await make_user()
-        await machines_svc.occupy(db, await make_user(), engravers[0].id, 60)
-        await queue_svc.join(db, waiting.id, room.id, MachineKind.ENGRAVER)
-        await db.commit()
-        await open_app(client, waiting)
-
-        printers_grid = await client.get(f"/app/schedule/{room.id}/{MachineKind.PRINTER}")
-        engravers_grid = await client.get(f"/app/schedule/{room.id}/{MachineKind.ENGRAVER}")
-
-        assert "grid-queue" not in printers_grid.text
-        assert "grid-queue" in engravers_grid.text
 
     async def test_app_pages_do_not_auto_return(self, client, printers, make_user):
         """Планшет общий и возвращается к доске сам; телефон — личный."""
@@ -548,26 +590,6 @@ class TestOwnBoard:
         # Занять вторую машину предлагать некуда: она есть.
         assert f'href="/app/occupy/{printers[1].id}"' not in page
 
-    async def test_line_i_stand_in_stays(self, client, room, db, printers, engravers, make_user):
-        """Иначе из очереди на другой тип стало бы некуда выйти.
-
-        Порядок действий именно такой: с занятой машиной в очередь не встают
-        (services/queue.py), а вот занять принтер, стоя в очереди на
-        гравировщик, можно — очередь проверяется в пределах своего типа.
-        """
-        user = await make_user(name="Аня")
-        await machines_svc.occupy(db, await make_user(), engravers[0].id, 60)
-        await queue_svc.join(db, user.id, room.id, MachineKind.ENGRAVER)
-        await machines_svc.occupy(db, user, printers[0].id, 60)
-        await db.commit()
-        await open_app(client, user)
-
-        page = (await client.get("/app/")).text
-
-        assert "P2S #1" in page
-        assert "Гравёр #1" not in page
-        assert f'href="/app/queue/leave/{room.id}"' in page
-
     async def test_with_nothing_of_mine_the_first_room_opens(
         self, client, room, printers, make_user
     ):
@@ -580,7 +602,7 @@ class TestOwnBoard:
 
         page = (await client.get("/app/")).text
 
-        assert room.name in page
+        assert room.name not in page
         assert "P2S #1" in page and "P2S #2" in page
 
     async def test_room_board_opens_the_whole_room(self, client, room, db, printers, make_user):
@@ -595,11 +617,10 @@ class TestOwnBoard:
         # Опрос обязан спрашивать ту же доску, что открыта.
         assert f'data-poll="/app/partials/board/{room.id}"' in page
 
-    async def test_from_mine_there_is_a_way_to_the_whole_room(
+    async def test_mine_has_no_redundant_room_link(
         self, client, room, db, printers, make_user
     ):
-        """Занять вторую машину или посмотреть, что там ещё стоит, иначе некуда:
-        имя комнаты в заголовке сжатой доски — ссылка на неё целиком."""
+        """Сжатая доска не тратит место на заголовок-ссылку помещения."""
         user = await make_user()
         await machines_svc.occupy(db, user, printers[0].id, 60)
         await db.commit()
@@ -607,28 +628,8 @@ class TestOwnBoard:
 
         mine = (await client.get("/app/")).text
 
-        assert f'href="/app/room/{room.id}"' in mine
-
-    async def test_someone_elses_line_has_no_leave_button(
-        self, client, room, db, printers, make_user
-    ):
-        """Выход из очереди действует на смотрящего: в чужой очереди эта кнопка
-        вела бы в отказ «вы не в очереди»."""
-        user = await make_user()
-        waiting = await make_user()
-        await machines_svc.occupy(db, user, printers[0].id, 60)
-        await machines_svc.occupy(db, await make_user(), printers[1].id, 60)
-        await queue_svc.join(db, waiting.id, room.id, MachineKind.PRINTER)
-        await db.commit()
-        await open_app(client, user)
-
-        page = (await client.get("/app/")).text
-        wall = (await client.get(f"/room/{room.id}")).text
-
-        assert waiting.name in page
-        assert f'href="/app/queue/leave/{room.id}"' not in page
-        # На стене неизвестно, кто нажимает, и выход остаётся общим — по PIN.
-        assert f'href="/queue/leave/{room.id}"' in wall
+        assert room.name not in mine
+        assert f'href="/app/room/{room.id}"' not in mine
 
     async def test_polled_partial_is_narrowed_too(self, client, room, db, printers, make_user):
         """Иначе доска сжата ровно до первого опроса — десять секунд."""
@@ -654,21 +655,3 @@ class TestOwnBoard:
 
         assert "P2S #1" in page
         assert "P2S #2" in page
-
-    async def test_waiting_in_a_line_is_mine_too(self, client, room, db, printers, make_user):
-        """Ждущий заходит с тем же вопросом — «дошла ли очередь».
-
-        Своей машины у него нет, но список помещений вместо своего места в
-        очереди заставил бы искать себя по комнатам.
-        """
-        user = await make_user()
-        for printer in printers:
-            await machines_svc.occupy(db, await make_user(), printer.id, 60)
-        await queue_svc.join(db, user.id, room.id, MachineKind.PRINTER)
-        await db.commit()
-        await open_app(client, user)
-
-        page = (await client.get("/app/")).text
-
-        assert user.name in page
-        assert f'href="/app/queue/leave/{room.id}"' in page

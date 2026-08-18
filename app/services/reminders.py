@@ -30,13 +30,11 @@ from datetime import UTC, datetime, timedelta
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app import texts as t
 from app.bot import notify, texts
 from app.config import settings
-from app.enums import ACTIVE_SESSION_STATUSES, MachineStatus, QueueStatus, SessionStatus
-from app.models import Machine, MachineSession, QueueEntry, User
+from app.enums import ACTIVE_SESSION_STATUSES, MachineStatus, SessionStatus
+from app.models import Machine, MachineSession
 from app.services import machines as machines_svc
-from app.services import queue as queue_svc
 from app.services import reservations as reservations_svc
 from app.services.errors import DomainError
 
@@ -50,7 +48,6 @@ class Report:
     warned: int = 0
     finished: int = 0
     unclaimed: int = 0
-    expired_offers: int = 0
     bookings_reminded: int = 0
     bookings_started: int = 0
     bookings_expired: int = 0
@@ -61,7 +58,6 @@ class Report:
             self.warned
             + self.finished
             + self.unclaimed
-            + self.expired_offers
             + self.bookings_reminded
             + self.bookings_started
             + self.bookings_expired
@@ -90,33 +86,28 @@ async def reconcile(db: AsyncSession, now: datetime | None = None) -> Report:
     now = now or datetime.now(UTC)
     report = Report()
     pending = _Pending()
-    offers: list[queue_svc.Offer] = []
-
     await _warn_before_finish(db, now, report, pending)
     await _finish_overdue(db, now, report, pending)
     await _ping_unclaimed(db, now, report, pending)
-    await _expire_offers(db, now, report, pending, offers)
     # Брони идут после сессий: работа, только что перешедшая в «готово», должна
     # успеть освободить машину до того, как мы решим, ждёт ли бронь занятый стол.
     await _remind_bookings(db, now, report, pending)
     await _start_bookings(db, now, report, pending)
-    await _expire_bookings(db, now, report, pending, offers)
+    await _expire_bookings(db, now, report, pending)
 
     if report.touched:
         await db.commit()
 
     for message in pending.messages:
         await notify.send_to_user(db, message.user_id, message.text)
-    await notify.announce_offers(db, offers)
 
     if report.touched:
         logger.info(
             "сверка: предупреждено %s, завершено %s, напоминаний о детали %s, "
-            "просроченных предложений %s, брони: напомнили %s, начались %s, сняты %s",
+            "брони: напомнили %s, начались %s, сняты %s",
             report.warned,
             report.finished,
             report.unclaimed,
-            report.expired_offers,
             report.bookings_reminded,
             report.bookings_started,
             report.bookings_expired,
@@ -180,17 +171,6 @@ async def _finish_overdue(
             texts.finished(result.machine_name, result.machine_kind),
         )
 
-        owner_name = await db.scalar(select(User.name).where(User.id == result.owner_user_id))
-        # Подсказка «сходи проверь» уходит первому в этой очереди: тому, кто ждёт
-        # гравировщик — или принтер в другом помещении, — этот принтер не нужен.
-        first = await _first_in_queue(db, result.room_id, result.machine_kind)
-        if first is not None:
-            pending.add(
-                first.user_id,
-                texts.check_machine(
-                    result.machine_name, result.machine_kind, owner_name or ""
-                ),
-            )
         report.finished += 1
 
 
@@ -219,50 +199,7 @@ async def _ping_unclaimed(
             texts.unclaimed_owner(machine.name, machine.kind, minutes),
         )
 
-        owner_name = await db.scalar(select(User.name).where(User.id == session.user_id))
-        first = await _first_in_queue(db, machine.room_id, machine.kind)
-        if first is not None:
-            pending.add(
-                first.user_id,
-                texts.unclaimed_queue(machine.name, machine.kind, owner_name or "", minutes),
-            )
         report.unclaimed += 1
-
-
-async def _expire_offers(
-    db: AsyncSession,
-    now: datetime,
-    report: Report,
-    pending: _Pending,
-    offers: list[queue_svc.Offer],
-) -> None:
-    """Правило 5: не подтвердил за 30 минут — предложение уходит следующему.
-
-    Ночная пауза уже учтена в `offer_expires_at` при выдаче предложения, здесь
-    достаточно сравнить с часами.
-    """
-    entries = (
-        await db.scalars(
-            select(QueueEntry).where(
-                QueueEntry.status == QueueStatus.OFFERED,
-                QueueEntry.offer_expires_at <= now,
-            )
-        )
-    ).all()
-
-    for entry in entries:
-        machine_name = await db.scalar(
-            select(Machine.name).where(Machine.id == entry.offered_machine_id)
-        )
-        try:
-            result = await queue_svc.expire_offer(db, entry.id, now=now)
-        except DomainError as error:
-            logger.info("пропускаю истечение предложения %s: %s", entry.id, error)
-            continue
-
-        pending.add(result.user_id, texts.offer_expired(machine_name or t.BOT_MACHINE_FALLBACK))
-        offers.extend(result.offers)
-        report.expired_offers += 1
 
 
 async def _remind_bookings(
@@ -322,9 +259,8 @@ async def _expire_bookings(
     now: datetime,
     report: Report,
     pending: _Pending,
-    offers: list[queue_svc.Offer],
 ) -> None:
-    """Не пришёл за отведённые минуты — бронь снимается, машина уходит очереди.
+    """Не пришёл за отведённые минуты — бронь снимается.
 
     Занятую машину `expire_no_show` не тронет (правило 14) и ответит отказом;
     такая бронь просто дождётся следующей сверки.
@@ -342,7 +278,6 @@ async def _expire_bookings(
                 result.machine_name, settings.reservation_grace_minutes
             ),
         )
-        offers.extend(result.offers)
         report.bookings_expired += 1
 
 
@@ -353,11 +288,6 @@ async def _active_session(db: AsyncSession, machine_id: int) -> MachineSession |
             MachineSession.status.in_(ACTIVE_SESSION_STATUSES),
         )
     )
-
-
-async def _first_in_queue(db: AsyncSession, room_id: int, kind: str) -> QueueEntry | None:
-    entries = await queue_svc.active_entries(db, room_id=room_id, kind=kind)
-    return entries[0] if entries else None
 
 
 async def has_running_now(db: AsyncSession) -> bool:

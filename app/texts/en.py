@@ -229,9 +229,7 @@ BOT_HELP = (
     "Here's what I can do:\n\n"
     "📅 /book — schedule and bookings ahead\n"
     "📊 /status — how the machines are doing right now\n"
-    "👤 /my — my job, my booking and my place in line\n"
-    "⏳ /queue — join the line\n"
-    "🚪 /leave — leave the line\n"
+    "👤 /my — my job and bookings\n"
     "🟢 /free — free up the machine I booked\n"
     "🔑 /pin — a new PIN for the tablet in the room\n\n"
     "You take a machine from the tablet in the room with your PIN, "
@@ -242,12 +240,7 @@ BOT_HELP = (
 BOT_COMMAND_DESCRIPTIONS = {
     "book": "schedule and bookings",
     "status": "how the machines are doing",
-    "my": "my job, booking and place in line",
-    "queue": "join the line",
-    "queue_printer": "line for a printer",
-    "queue_engraver": "line for an engraver",
-    "queue_meeting_room": "line for the meeting room",
-    "leave": "leave the line",
+    "my": "my job and bookings",
     "free": "free up my machine",
     "pin": "a new PIN",
     "help": "what I can do",
@@ -571,14 +564,15 @@ ERR_RESERVATION_OVERLAP = "{machine} is already booked for that time (from {time
 ERR_RESERVATION_JUST_BOOKED = "{machine} has just been booked for that time"
 ERR_RESERVATION_BUSY = "{machine} is working until {time} — pick a later time"
 ERR_ALREADY_BOOKED = (
-    "You already have a booking in this room. Cancel it to book another slot"
+    "You already have an active booking. Cancel it or finish the current job "
+    "before booking another slot"
 )
-# A booking is one thing in a room, just like work and a place in line (rules 2
-# and 13). The machine you booked yourself is outside the ban: you take it both
+# A booking is the same one task as a job (rules 2 and 13). The machine you
+# booked yourself is outside the ban: you take it both
 # in your own hour and earlier, if it stands free — that is the same thing, not
 # a second one.
 ERR_OCCUPY_WHILE_BOOKED = (
-    "You've got a booking in this room: take the machine you booked, or cancel the booking"
+    "You've got a booking: take the machine you booked, or cancel the booking"
 )
 ERR_QUEUE_WHILE_BOOKED = "You've got a booking in this room — no need to wait in line"
 ERR_RESERVATION_NOT_FOUND = "No such booking, or it is already closed"
@@ -590,11 +584,12 @@ ERR_RESERVATION_WORK_HOURS = "A booking can only start during opening hours: {ho
 ERR_WORK_HOURS_ORDER = "Closing time must be later than opening (00:00 — round the clock)"
 ERR_WORK_HOURS_FORMAT = "“{value}” doesn't look like a time — try something like 08:00"
 
-# The limits are counted per room (rules 2 and 13): a printer you took doesn't
-# stop you booking the meeting room, and the refusal says so — otherwise it
-# reads as "the system is broken".
-ERR_USER_BUSY = "You've already got something in this room"
-ERR_USER_BUSY_FREE_FIRST = "You've already got something in this room — free it up first"
+# One limit applies across the system: a person cannot use two machines, or a
+# machine and a meeting room, at the same time.
+ERR_USER_BUSY = "You already have an active job — finish it first"
+ERR_USER_BUSY_FREE_FIRST = (
+    "You already have a job in progress — wait for its time to end or finish it"
+)
 ERR_ALREADY_IN_QUEUE = "You're already in this room's line"
 ERR_NOT_IN_QUEUE = "You're not in this room's line"
 ERR_OFFER_NOT_ACTIVE = "That offer is no longer valid"
@@ -823,6 +818,10 @@ UI = {
     "schedule_hint": "Tap a free hour — that's when your booking starts",
     "schedule_work_hours": "Open {hours}",
     "schedule_my_bookings": "My bookings",
+    "schedule_blocked": (
+        "You can make another booking when the current time ends, "
+        "or after you cancel the booking."
+    ),
     # Joining the line lands here: the place in line is written above the grid so
     # that nobody goes and joins it a second time.
     "schedule_queue": "You're in line for {kind}, number {position}",
@@ -854,6 +853,12 @@ UI = {
     "my_when": "{start} — {end}",
     "my_where": "{machine} · {room}",
     "my_cancel": "Cancel booking",
+    "my_in_progress": "Booking in use now",
+    "my_finish": "Finish job",
+    "my_blocked": (
+        "You can make another booking when the current time ends, "
+        "or after you cancel the booking."
+    ),
     "my_schedule": "To the schedule",
     "my_state_busy": "You've got {machine} until {time}",
     "my_state_queue": "In line for {kind}, number {position}",

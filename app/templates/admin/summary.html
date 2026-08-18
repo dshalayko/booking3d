@@ -1,7 +1,6 @@
 {# «Сводка»: цифры парка и карточка на пару «помещение — тип».
 
-   Машины и очередь этого типа стоят в одной карточке: это одно решение — снять
-   работу или подвинуть того, кто ждёт. Карточки-цифры кликабельны там, где есть
+   Карточки-цифры кликабельны там, где есть
    куда вести: «броней впереди» открывает раздел броней. #}
 {% extends "admin/base.html" %}
 {% from "admin/_icons.html" import icon %}
@@ -40,8 +39,6 @@
      "sub": t.admin_stat_of.format(count=counts.machines)},
     {"label": t.admin_stat_broken, "value": counts.broken, "icon": "warning", "tone": "broken",
      "sub": t.admin_stat_of.format(count=counts.machines)},
-    {"label": t.admin_stat_queue, "value": counts.queue, "icon": "people", "tone": "wait",
-     "sub": t.admin_stat_people.format(count=counts.people), "href": "/admin/people"},
     {"label": t.admin_stat_bookings, "value": counts.bookings, "icon": "calendar",
      "tone": "accent", "sub": t.admin_stat_ahead, "href": "/admin/bookings"},
   ] %}
@@ -65,12 +62,6 @@
               {% if machine.owner_name %}
                 <span class="admin-dim">
                   {{ t.admin_owner_until.format(name=machine.owner_name, time=machine.eta_at | hhmm) }}
-                </span>
-              {% endif %}
-              {% if machine.reserved_for %}
-                <span class="admin-dim">
-                  {{ t.admin_reserved.format(name=machine.reserved_for,
-                                             time=machine.reserved_until | hhmm) }}
                 </span>
               {% endif %}
               {% if machine.note %}<span class="admin-dim">{{ machine.note }}</span>{% endif %}
@@ -100,26 +91,6 @@
           </div>
         {% endfor %}
 
-        <div class="ad-sub">
-          <p class="ad-sub-title">{{ t.admin_queue }}</p>
-          {% for person in group.queue %}
-            <div class="admin-row">
-              <div class="admin-row-main">
-                <span class="ad-num">{{ person.position }}</span>
-                <strong>{{ person.name }}</strong>
-                {% if person.offered %}<span class="admin-dim">{{ t.queue_offered }}</span>{% endif %}
-              </div>
-              <div class="admin-actions">
-                <form method="post"
-                      action="/admin/queue/{{ room.id }}/{{ person.user_id }}/remove">
-                  <button class="btn btn-small" type="submit">{{ t.admin_remove }}</button>
-                </form>
-              </div>
-            </div>
-          {% else %}
-            <p class="admin-dim">{{ t.admin_empty }}</p>
-          {% endfor %}
-        </div>
       </article>
     {% endfor %}{% endfor %}
 

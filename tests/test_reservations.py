@@ -8,12 +8,10 @@
 from datetime import UTC, datetime, timedelta
 
 import pytest
-from sqlalchemy import select
 
-from app.enums import MachineKind, MachineStatus, QueueStatus, ReservationStatus
-from app.models import MachineSession, QueueEntry, Reservation
+from app.enums import MachineKind, MachineStatus, ReservationStatus
+from app.models import MachineSession, Reservation
 from app.services import machines as machines_svc
-from app.services import queue as queue_svc
 from app.services import reminders as reminders_svc
 from app.services import reservations as svc
 from app.services import schedule
@@ -93,12 +91,11 @@ class TestBook:
             await svc.book(db, user, printers[1].id, tomorrow(4), 60, now=NOON)
 
     async def test_booking_while_working_is_rejected(self, db, printers, make_user):
-        """Одно дело на человека в помещении: занятая машина — уже дело.
+        """Одна задача на человека во всей системе: занятая машина — уже задача.
 
         Раньше бронь и работа считались разными вещами со своими лимитами. При
-        небольшом парке это давало одному человеку и станок сейчас, и час на
-        будущее — ту самую монополию, ради которой правило 2 не пускает
-        занявшего ещё и в очередь.
+        небольшом парке это давало одному человеку станок сейчас и час на
+        будущее.
         """
         user = await make_user()
         await machines_svc.occupy(db, user, printers[0].id, 60, now=NOON)
@@ -106,35 +103,16 @@ class TestBook:
         with pytest.raises(UserBusy):
             await svc.book(db, user, printers[1].id, tomorrow(), 60, now=NOON)
 
-    async def test_work_in_another_room_does_not_block_booking(
+    async def test_work_in_another_room_blocks_booking_too(
         self, db, printers, meeting, make_user
     ):
-        """Граница — помещение: печать в мастерской и переговорка на завтра —
-        разные дела, и запрет второго из-за первого обессмыслил бы комнаты."""
-        room, unit = meeting
+        """Пока идёт одна работа, новую бронь нельзя создать нигде."""
+        _, unit = meeting
         user = await make_user()
         await machines_svc.occupy(db, user, printers[0].id, 60, now=NOON)
 
-        result = await svc.book(db, user, unit.id, tomorrow(), 60, now=NOON)
-
-        assert result.room_id == room.id
-
-    async def test_booking_while_waiting_in_line_is_allowed(
-        self, db, room, printers, make_user
-    ):
-        """Очередь — это «как освободится», бронь — «к четвергу к утру».
-
-        Человек, которому очередь не подходит, должен мочь взять себе час: в
-        Mini App его для этого и приводят на расписание сразу после очереди.
-        """
-        user = await make_user()
-        for printer in printers:
-            await machines_svc.occupy(db, await make_user(), printer.id, 60, now=NOON)
-        await queue_svc.join(db, user.id, room.id, MachineKind.PRINTER, now=NOON)
-
-        result = await svc.book(db, user, printers[0].id, tomorrow(), 60, now=NOON)
-
-        assert result.machine_id == printers[0].id
+        with pytest.raises(UserBusy):
+            await svc.book(db, user, unit.id, tomorrow(), 60, now=NOON)
 
     async def test_start_must_be_on_the_grid(self, db, printers, make_user):
         user = await make_user()
@@ -190,6 +168,40 @@ class TestBook:
 
         assert result.starts_at == NOON + 3 * HOUR
 
+    async def test_second_booking_is_blocked_even_in_another_room(
+        self, db, printers, meeting, make_user
+    ):
+        user = await make_user()
+        _, meeting_unit = meeting
+        first = await svc.book(db, user, printers[0].id, tomorrow(), 60, now=NOON)
+
+        with pytest.raises(AlreadyBooked):
+            await svc.book(db, user, meeting_unit.id, tomorrow(2), 60, now=NOON)
+
+        await svc.cancel(db, user, first.reservation_id, now=NOON)
+        second = await svc.book(db, user, meeting_unit.id, tomorrow(2), 60, now=NOON)
+        assert second.machine_id == meeting_unit.id
+
+    async def test_new_booking_is_blocked_until_done_work_is_released(
+        self, db, printers, make_user
+    ):
+        user = await make_user()
+        start = tomorrow()
+        await svc.book(db, user, printers[0].id, start, 60, now=NOON)
+        await machines_svc.occupy(db, user, printers[0].id, 60, now=start)
+        await machines_svc.mark_done_wait(db, printers[0].id, now=start + HOUR)
+
+        with pytest.raises(UserBusy):
+            await svc.book(
+                db, user, printers[1].id, start + 2 * HOUR, 60, now=start + HOUR
+            )
+
+        await machines_svc.release(db, user, printers[0].id, now=start + HOUR)
+        result = await svc.book(
+            db, user, printers[1].id, start + 2 * HOUR, 60, now=start + HOUR
+        )
+        assert result.machine_id == printers[1].id
+
 
 class TestOccupyWithBooking:
     async def test_own_window_can_be_occupied(self, db, printers, make_user):
@@ -231,27 +243,15 @@ class TestOccupyWithBooking:
         assert result.from_reservation is False
         assert (await svc.active_of_user(db, user.id)) is not None
 
-    async def test_booking_in_another_room_does_not_block_occupy(
+    async def test_booking_in_another_room_blocks_occupy(
         self, db, printers, meeting, make_user
     ):
         user = await make_user()
         _, unit = meeting
         await svc.book(db, user, unit.id, tomorrow(), 60, now=NOON)
 
-        result = await machines_svc.occupy(db, user, printers[0].id, 60, now=NOON)
-
-        assert result.machine_id == printers[0].id
-
-    async def test_booking_blocks_the_queue(self, db, room, printers, make_user):
-        """Час на эту машину человеку уже обещан — место в очереди сверх него
-        было бы второй заявкой на тот же парк."""
-        user = await make_user()
-        await svc.book(db, user, printers[0].id, tomorrow(), 60, now=NOON)
-        for printer in printers:
-            await machines_svc.occupy(db, await make_user(), printer.id, 60, now=NOON)
-
         with pytest.raises(AlreadyBooked):
-            await queue_svc.join(db, user.id, room.id, MachineKind.PRINTER, now=NOON)
+            await machines_svc.occupy(db, user, printers[0].id, 60, now=NOON)
 
     async def test_someone_elses_window_blocks_occupy(self, db, printers, make_user):
         owner = await make_user()
@@ -290,54 +290,6 @@ class TestOccupyWithBooking:
         result = await machines_svc.occupy(db, passerby, printers[0].id, 180, now=NOON)
 
         assert result.eta_at == NOON + 3 * HOUR
-
-    async def test_booking_beats_the_queue(self, db, room, printers, make_user):
-        """Правило 12 сильнее правила 7: иначе бронь не гарантирует ничего."""
-        booker = await make_user()
-        waiting = await make_user()
-        busy_owner = await make_user()
-
-        await svc.book(db, booker, printers[0].id, tomorrow(), 120, now=NOON)
-        # Второй принтер занят, чтобы человек мог встать в очередь на тип.
-        await machines_svc.occupy(db, busy_owner, printers[1].id, 60, now=NOON)
-        await queue_svc.join(db, waiting.id, room.id, MachineKind.PRINTER, now=NOON)
-
-        result = await machines_svc.occupy(db, booker, printers[0].id, 60, now=tomorrow(0))
-
-        assert result.from_reservation is True
-
-    async def test_queue_is_not_offered_a_booked_machine(self, db, room, printers, make_user):
-        """Предложение на машину в чужом окне сгорело бы впустую."""
-        booker = await make_user()
-        waiting = await make_user()
-        owner = await make_user()
-
-        await svc.book(db, booker, printers[0].id, NOON, 120, now=NOON - HOUR)
-        await machines_svc.occupy(db, owner, printers[1].id, 60, now=NOON)
-
-        result = await queue_svc.join(db, waiting.id, room.id, MachineKind.PRINTER, now=NOON)
-
-        assert result.offers == []
-        entry = await db.scalar(select(QueueEntry).where(QueueEntry.user_id == waiting.id))
-        assert entry.status == QueueStatus.WAITING
-
-    async def test_queue_is_not_offered_a_machine_booked_within_minutes(
-        self, db, room, printers, make_user
-    ):
-        """До брони десять минут — предложение бессмысленно, занять не выйдет."""
-        booker = await make_user()
-        waiting = await make_user()
-        owner = await make_user()
-
-        await svc.book(db, booker, printers[0].id, NOON + HOUR, 60, now=NOON)
-        await machines_svc.occupy(db, owner, printers[1].id, 60, now=NOON)
-
-        result = await queue_svc.join(
-            db, waiting.id, room.id, MachineKind.PRINTER, now=NOON + timedelta(minutes=50)
-        )
-
-        assert result.offers == []
-
 
 class TestCancel:
     async def test_owner_cancels_own_booking(self, db, printers, make_user):
@@ -379,22 +331,6 @@ class TestCancel:
         assert result.by_owner is False
         reservation = await db.get(Reservation, booking.reservation_id)
         assert reservation.cancel_reason == "уехала машина"
-
-    async def test_cancelling_running_window_offers_machine_to_queue(
-        self, db, room, printers, make_user
-    ):
-        """Пока окно шло, машина была придержана; после отмены она свободна."""
-        booker = await make_user()
-        waiting = await make_user()
-        owner = await make_user()
-
-        booking = await svc.book(db, booker, printers[0].id, NOON, 120, now=NOON - HOUR)
-        await machines_svc.occupy(db, owner, printers[1].id, 60, now=NOON)
-        await queue_svc.join(db, waiting.id, room.id, MachineKind.PRINTER, now=NOON)
-
-        result = await svc.cancel(db, booker, booking.reservation_id, now=NOON)
-
-        assert [offer.user_id for offer in result.offers] == [waiting.id]
 
     async def test_cancelling_twice_is_rejected(self, db, printers, make_user):
         user = await make_user()
@@ -445,25 +381,6 @@ class TestNoShow:
 
         reservation = await db.get(Reservation, booking.reservation_id)
         assert reservation.status == ReservationStatus.BOOKED
-
-    async def test_expired_booking_goes_to_the_queue(self, db, room, printers, make_user):
-        booker = await make_user()
-        waiting = await make_user()
-        owner = await make_user()
-
-        booking = await svc.book(db, booker, printers[0].id, NOON + HOUR, 60, now=NOON)
-        await machines_svc.occupy(db, owner, printers[1].id, 600, now=NOON)
-        # Встаёт в очередь за десять минут до чужого окна: свободный принтер ему
-        # не предложат — занять его всё равно не выйдет.
-        await queue_svc.join(
-            db, waiting.id, room.id, MachineKind.PRINTER, now=NOON + timedelta(minutes=50)
-        )
-        late = NOON + HOUR + timedelta(minutes=31)
-
-        result = await svc.expire_no_show(db, booking.reservation_id, now=late)
-
-        assert [offer.user_id for offer in result.offers] == [waiting.id]
-
 
 class TestReconcile:
     async def test_reminds_an_hour_before(self, db, printers, make_user):

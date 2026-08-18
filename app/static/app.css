@@ -109,8 +109,6 @@ body {
   --tile-btn: 72px;
   --hero-height: 108px;
   --hero-font: 38px;
-  --queue-pad: 14px 20px;
-  --queue-font: 22px;
 }
 
 /* Мельче — не только в узком окне, но и в низком: у настенных планшетов
@@ -128,16 +126,11 @@ body {
     --tile-btn: 64px;
     --hero-height: 88px;
     --hero-font: 30px;
-    --queue-pad: 12px 16px;
-    --queue-font: 19px;
   }
 }
 
-/* Низкий экран (тот же 1024×600, лежащий на боку): в высоту не влезала уже сама
-   плитка — очередь внутри карточки с единственной машиной оказывалась ниже её
-   нижнего края, и кнопка «выйти» пропадала совсем. Ужимается всё, что мерится
-   по вертикали: кнопки и главная строка статуса. Ширина здесь ни при чём —
-   отдельный блок, а не ещё одна ветка предыдущего. */
+/* Низкий экран (тот же 1024×600, лежащий на боку): ужимается всё, что мерится
+   по вертикали — кнопки и главная строка статуса. */
 @media (max-height: 640px) {
   #board {
     --tile-pad: 12px 16px;
@@ -149,24 +142,16 @@ body {
     --tile-btn: 52px;
     --hero-height: 72px;
     --hero-font: 26px;
-    --queue-pad: 10px 14px;
-    --queue-font: 17px;
   }
   .btn-sub { font-size: 16px; }
   .btn-schedule { min-height: 46px; font-size: 18px; }
   .tile { gap: 2px; }
   .tile .btn { margin-top: 6px; }
-  .queue-column { margin-top: 8px; padding-top: 8px; gap: 6px; }
-  .queue-column .queue-list { gap: 6px; }
-  .queue-pos { width: 26px; height: 26px; font-size: 15px; }
 }
 
 .board-empty { margin: auto; font-size: 26px; color: var(--muted); text-align: center; }
 
-/* Помещение: имя сверху, секции типов под ним.
-
-   Имя показано всегда, даже когда помещение одно: планшет висит на стене, и по
-   имени человек сверяет экран с дверью, в которую вошёл. */
+/* Помещение: секции типов и машин без дублирующего заголовка комнаты. */
 .room {
   flex: 1;
   display: flex;
@@ -174,17 +159,10 @@ body {
   gap: 12px;
   min-height: 0;
 }
-.room-head { flex: 0 0 auto; display: flex; align-items: baseline; gap: 16px; flex-wrap: wrap; }
-.room-name { margin: 0; font-size: 30px; font-weight: 700; }
-/* Имя-ссылка (сжатая доска) не должно выглядеть чужеродно среди заголовков:
-   подчёркивание появляется только при касании. */
-.room-name a { color: inherit; text-decoration: none; }
-.room-name a:active { text-decoration: underline; }
 .room-note { margin: 0; font-size: 20px; color: var(--muted); }
 .room-groups { flex: 1; display: flex; gap: 20px; min-height: 0; }
 
 @media (max-width: 1100px), (max-height: 700px) {
-  .room-name { font-size: 24px; }
   .room-note { font-size: 17px; }
 }
 
@@ -235,11 +213,7 @@ body {
   letter-spacing: .04em;
 }
 
-/* По умолчанию плитки и очередь стоят вплотную и читаются как одна карточка.
-   У принтеров ниже есть исключение: на планшете длинная нижняя полоса выглядит
-   лучше отдельным блоком, как в состоянии печати.
-
-   Карточка занимает всю высоту колонки, а лишнюю высоту забирают плитки: у
+/* Карточка занимает всю высоту колонки, а лишнюю высоту забирают плитки: у
    машины ровно четыре строки состояния, и они разъезжаются равномерно, а не
    собираются сверху, оставив дыру перед кнопкой. */
 .group-body {
@@ -249,32 +223,15 @@ body {
   min-height: 0;
 }
 .group-printer .group-body { gap: 12px; }
-.group-printer .tile { justify-content: flex-start; }
 
 .tiles {
   flex: 1;
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
-  /* Строки делят высоту сетки поровну и не растут по содержимому: иначе плитка
-     с длинным именем выталкивала бы очередь за нижний край экрана. */
+  /* Строки делят высоту сетки поровну и не растут по содержимому. */
   grid-auto-rows: minmax(0, 1fr);
   gap: 12px;
   min-height: 0;
-}
-.group-body .tile { border-bottom-left-radius: 0; border-bottom-right-radius: 0; }
-.group-body .queue { border-top-left-radius: 0; border-top-right-radius: 0; }
-.group-printer .group-body > .tiles > .tile {
-  border-bottom-left-radius: var(--radius);
-  border-bottom-right-radius: var(--radius);
-}
-.group-printer .group-body > .queue {
-  border-top-left-radius: var(--radius);
-  border-top-right-radius: var(--radius);
-}
-/* У единственной машины полосы очереди снизу нет — срезать ей углы не за что. */
-.group-body .tile-single {
-  border-bottom-left-radius: var(--radius);
-  border-bottom-right-radius: var(--radius);
 }
 
 /* Содержимое стоит цельным блоком по центру, а не прижато к краям: у свободной
@@ -288,7 +245,9 @@ body {
   padding: var(--tile-pad);
   display: flex;
   flex-direction: column;
-  justify-content: center;
+  /* Все типы выровнены одинаково: одиночный гравировщик не должен съезжать
+     в центр высокой колонки, пока принтеры начинаются от верхнего края. */
+  justify-content: flex-start;
   gap: 6px;
   min-height: 0;
   overflow: hidden;
@@ -309,93 +268,6 @@ body {
 .tile-time { margin: 0; font-size: var(--tile-time); color: var(--muted); }
 .tile-note { margin: 0; font-size: var(--tile-note); color: var(--muted); }
 .tile .btn { min-height: var(--tile-btn); font-size: var(--tile-owner); margin-top: 10px; }
-
-/* Состояние машины прижато к верху: под ним внутри той же плитки идёт очередь,
-   см. `.queue-column`. */
-.tile-single { justify-content: flex-start; }
-
-/* --- очередь --- */
-
-.queue {
-  flex: 0 0 auto;
-  background: var(--card);
-  border-radius: var(--radius);
-  padding: var(--queue-pad);
-  display: flex;
-  align-items: center;
-  gap: 20px;
-  flex-wrap: wrap;
-  min-height: 0;
-}
-.queue-list {
-  list-style: none;
-  display: flex;
-  gap: 18px;
-  margin: 0;
-  padding: 0;
-  flex: 1;
-  flex-wrap: wrap;
-  font-size: var(--queue-font);
-}
-/* Человек очереди — всегда одна строка: номер, имя и пометка «ваша очередь»
-   переносились по словам, и обрезанный по высоте столбик резал такую строку
-   пополам — на экране оставался кусок буквы. */
-.queue-list li { display: flex; align-items: center; gap: 8px; min-width: 0; white-space: nowrap; overflow: hidden; }
-.queue-pos {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 30px; height: 30px;
-  border-radius: 50%;
-  background: rgba(255, 255, 255, .1);
-  font-size: 17px;
-}
-.queue-offered { color: var(--accent); font-weight: 700; }
-.queue-tag { font-size: 16px; text-transform: uppercase; letter-spacing: .04em; }
-.queue-empty { margin: 0; flex: 1; font-size: var(--queue-font); color: var(--muted); }
-
-/* Очередь внутри плитки — когда машина в секции одна. Тогда цветная полоса
-   статуса идёт во всю высоту карточки, а не обрывается там, где кончается
-   состояние машины. Люди столбиком, кнопка выхода прижата к низу карточки.
-   Идёт после `.queue`, чтобы перебить её строчную раскладку без `!important`. */
-.queue-column {
-  flex: 1;
-  min-height: 0;
-  margin-top: 12px;
-  padding: 12px 0 0;
-  border-top: 1px solid rgba(255, 255, 255, .08);
-  border-radius: 0;
-  background: none;
-  flex-direction: column;
-  align-items: stretch;
-  gap: 10px;
-  /* Перенос достался от строчной `.queue`, и в столбике он значит другое: когда
-     плитка ниже своего содержимого (низкий экран, много машин в ряду), лишнее
-     уезжает не вниз, а во второй столбец — то есть кнопка «выйти» вылетает за
-     край карточки и обрезается. Столбику перенос не нужен: очередь и так
-     ограничена высотой плитки. */
-  flex-wrap: nowrap;
-}
-/* Список сжимается, кнопка — нет. Когда очередь длиннее, чем остаток плитки
-   (низкий экран, шесть человек), обрезается хвост списка: он всё равно
-   продолжается за краем, и первым в нём стоит тот, кому машина достанется.
-   Кнопка «выйти» пропадать не должна — без неё из очереди не выйти вообще. */
-.queue-column .queue-list {
-  flex: 0 1 auto;
-  min-height: 0;
-  overflow: hidden;
-  flex-direction: column;
-  /* Перенос — тоже наследство строчной раскладки: с ограниченной высотой
-     очередь уходила во второй столбец вбок и обрезалась по буквам. */
-  flex-wrap: nowrap;
-  gap: 10px;
-}
-/* Сам список сжимается, строки в нём — нет: иначе вместо «обрезан хвост
-   очереди» получалось три сплющенных строки по паре пикселей, в которых не
-   читается ни одна. Верхние видны целиком, нижние уходят за край. */
-.queue-column .queue-list li { flex: 0 0 auto; }
-.queue-column .queue-empty { flex: 0 0 auto; }
-.queue-column .btn { margin-top: auto; flex: 0 0 auto; }
 
 /* --- кнопки --- */
 
@@ -423,7 +295,7 @@ body {
 .btn-ghost { background: rgba(255, 255, 255, .06); color: var(--muted); }
 /* Второстепенное действие рядом с главной кнопкой: цветной контур с приглушённой
    заливкой. Серая кнопка на тёмном фоне читается как подпись, а сплошная
-   заливка спорила бы с «Занять» и «Встать в очередь» над ней. Цвет задаёт сама
+   заливка спорила бы с «Занять» над ней. Цвет задаёт сама
    кнопка через `--outline-rgb`: «Расписание» на доске — оранжевая, «Как
    получить PIN» под клавиатурой — синяя. */
 .btn-outline {
@@ -612,23 +484,6 @@ body {
 .day-number { font-size: 20px; font-weight: 700; }
 
 .grid-hint { margin: 0; font-size: 18px; color: var(--muted); }
-
-/* Своё место в очереди над сеткой. Карточкой, а не строкой подсказки: это не
-   пояснение к экрану, а состояние человека, и оно должно читаться раньше часов.
-   Кнопка выхода внутри — выйти из очереди можно оттуда же, где про неё узнал. */
-.grid-queue {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  flex-wrap: wrap;
-  margin: 0;
-  padding: 12px 16px;
-  border-radius: var(--radius);
-  background: rgba(var(--accent-rgb), 0.12);
-  border: 1px solid rgba(var(--accent-rgb), 0.35);
-  font-size: 18px;
-}
 
 .grid { display: flex; flex-direction: column; gap: 4px; }
 /* Первая колонка — часы, дальше по колонке на машину. Число приезжает из
@@ -892,8 +747,7 @@ body.admin-page { padding: 0; gap: 0; }
    на половину экрана. */
 .ad-split { display: grid; grid-template-columns: minmax(280px, 340px) minmax(0, 1fr); gap: 16px; align-items: start; }
 
-/* Очередь внутри карточки машины: то же решение, что и сама машина, но
-   отделено линией — снять работу и убрать человека из очереди путать нельзя. */
+/* Вложенные данные карточки отделены линией от основных действий. */
 .ad-sub { margin-top: 4px; padding-top: 10px; border-top: 1px solid rgba(255, 255, 255, .08); }
 .ad-sub-title { margin: 0 0 4px; font-size: 13px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); }
 .ad-num {
@@ -1075,8 +929,6 @@ body.admin-page { padding: 0; gap: 0; }
     --tile-btn: 38px;
     --hero-height: 52px;
     --hero-font: 19px;
-    --queue-pad: 8px 10px;
-    --queue-font: 13px;
   }
 
   /* Заголовок типа и «Расписание» — в одну строку: расписание нужно реже, чем
@@ -1090,12 +942,8 @@ body.admin-page { padding: 0; gap: 0; }
   .btn-schedule { order: 0; flex: 0 0 auto; width: auto; min-height: 34px; padding: 6px 12px; font-size: 13px; }
 
   .tiles { gap: 6px; }
-  /* Плитки и очередь — раздельными карточками. Слитная карточка на всю колонку
-     придумана для стены, где колонок несколько; в ладони колонка одна, и всё
-     склеенное превращается в одну простыню без границ. */
   .group-body, .group-printer .group-body { gap: 6px; }
-  .group-body > .tiles > .tile,
-  .group-body > .queue { border-radius: var(--radius); }
+  .group-body > .tiles > .tile { border-radius: var(--radius); }
 
   /* Плитка в две строки вместо столбика из пяти: имя и статус в первой, кто и
      до какого часа — во второй. Разметка на всех экранах одна, поэтому строки
@@ -1116,17 +964,6 @@ body.admin-page { padding: 0; gap: 0; }
   /* Действие — во всю ширину плитки: это единственная кнопка, ради которой
      карточку вообще открывают, и целиться в неё не должно быть нужно. */
   .tile .btn { grid-column: 1 / -1; margin-top: 6px; font-size: 14px; }
-
-  .queue { gap: 8px; }
-  /* Очередь без единой кнопки — это «в очереди никого» и всё: ни уйти, ни
-     встать (машина занята, и предложение уже на большой кнопке сверху).
-     Отдельной карточкой такая строка читалась как пустая плитка машины,
-     поэтому на телефоне она остаётся подписью без фона. */
-  .queue:not(:has(.btn)) { padding: 4px 2px 0; background: none; }
-  .queue-list { gap: 6px 12px; }
-  .queue-pos { width: 20px; height: 20px; font-size: 12px; }
-  .queue-tag { font-size: 11px; }
-  .queue-column { grid-column: 1 / -1; margin-top: 8px; padding-top: 8px; gap: 6px; }
 
   /* --- экраны действий --- */
 
@@ -1183,7 +1020,6 @@ body.admin-page { padding: 0; gap: 0; }
   .day-number { font-size: 15px; }
 
   .grid-hint { font-size: 12px; }
-  .grid-queue { padding: 8px 10px; gap: 8px; font-size: 13px; }
   .grid { gap: 3px; }
   /* Колонка часов ужимается до «08:00» и отдаёт остальное машинам: в клетку
      нужно попасть пальцем, а часы только читают. */

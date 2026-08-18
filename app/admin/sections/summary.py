@@ -1,7 +1,7 @@
 """«Сводка» — состояние парка прямо сейчас и кнопки, которыми его чинят.
 
-Сюда заходят, когда что-то пошло не так: работа зависла, машина сломалась,
-человек в очереди уже ушёл. Всё остальное — брони, люди, журнал — живёт в
+Сюда заходят, когда что-то пошло не так: работа зависла или машина сломалась.
+Всё остальное — брони, люди, журнал — живёт в
 своих разделах: там смотрят, а здесь действуют.
 
 Действия над машиной («в обслуживание», «вернуть в строй», «снять работу»)
@@ -10,8 +10,6 @@
 состояние машины, там — состав парка. Адреса оставлены как есть: их знают
 закладки и тесты, а красота URL этого не стоит.
 """
-
-from datetime import UTC, datetime
 
 from fastapi import Form, HTTPException, Request, status
 from fastapi.responses import HTMLResponse, Response
@@ -24,7 +22,6 @@ from app.enums import MachineStatus
 from app.models import User
 from app.services import board as board_svc
 from app.services import machines as machines_svc
-from app.services import queue as queue_svc
 from app.services import reservations as reservations_svc
 from app.services import users as users_svc
 
@@ -57,7 +54,6 @@ def counts(board: board_svc.Board, bookings: list, users: list[User]) -> dict[st
             if machine.status in (MachineStatus.PRINTING, MachineStatus.DONE_WAIT)
         ),
         "broken": sum(1 for machine in machines if machine.status == MachineStatus.BROKEN),
-        "queue": len(board.queue),
         "bookings": len(bookings),
         "people": len(users),
     }
@@ -100,9 +96,8 @@ async def break_machine(db: Db, machine_id: int, note: str = Form("")) -> Respon
 @router.post("/machines/{machine_id}/fix")
 async def fix_machine(db: Db, machine_id: int) -> Response:
     admin = await core.acting_admin(db)
-    result = await machines_svc.clear_broken(db, admin, machine_id)
+    await machines_svc.clear_broken(db, admin, machine_id)
     await db.commit()
-    await notify.announce_offers(db, result.offers)
     return core.redirect("fixed")
 
 
@@ -121,20 +116,4 @@ async def cancel_session(db: Db, machine_id: int, reason: str = Form("")) -> Res
         await notify.send_to_user(
             db, result.owner_user_id, texts.work_cancelled_by_admin(result.machine_name, reason)
         )
-    await notify.announce_offers(db, result.offers)
     return core.redirect("cancelled")
-
-
-@router.post("/queue/{room_id}/{user_id}/remove")
-async def remove_from_queue(db: Db, room_id: int, user_id: int) -> Response:
-    """Убрать человека из очереди помещения.
-
-    Помещение в адресе, а не угадывается: мест в очереди у человека может быть
-    столько, сколько комнат (правило 2), и убрать его не из той — значит вернуть
-    в чужую очередь того, кто как раз дождался.
-    """
-    result = await queue_svc.leave(db, user_id, room_id, now=datetime.now(UTC))
-    await db.commit()
-    await notify.send_to_user(db, user_id, texts.removed_from_queue())
-    await notify.announce_offers(db, result.offers)
-    return core.redirect("removed")

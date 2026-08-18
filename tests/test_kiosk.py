@@ -8,10 +8,9 @@ from app.api.kiosk import duration_options
 from app.api.render import templates
 from app.config import Settings, settings
 from app.enums import MachineKind, MachineStatus, ReservationStatus
-from app.models import Machine, QueueEntry, Reservation
+from app.models import Machine, Reservation
 from app.services import auth
 from app.services import machines as machines_svc
-from app.services import queue as queue_svc
 from app.services import reservations as reservations_svc
 from app.services import schedule as schedule_svc
 
@@ -60,21 +59,6 @@ class TestBoard:
 
         assert "Заберите деталь" in response.text
 
-    async def test_board_shows_queue_and_reservation(self, client, room, db, printers, make_user):
-        owner = await make_user()
-        other = await make_user()
-        waiting = await make_user(name="Анна")
-        await machines_svc.occupy(db, owner, printers[0].id, 60)
-        await machines_svc.occupy(db, other, printers[1].id, 60)
-        await queue_svc.join(db, waiting.id, room.id, MachineKind.PRINTER)
-        await machines_svc.release(db, owner, printers[0].id)
-        await db.commit()
-
-        response = await client.get(f"/room/{room.id}")
-
-        assert "Придержано" in response.text
-        assert "Анна" in response.text
-
     async def test_partial_returns_only_the_fragment(self, client, room, printers):
         response = await client.get(f"/partials/board/{room.id}")
 
@@ -82,7 +66,7 @@ class TestBoard:
         assert "<html" not in response.text
         assert "P2S #1" in response.text
 
-    async def test_hero_button_offers_queue_when_all_busy(
+    async def test_schedule_stays_available_when_all_machines_are_busy(
         self, client, room, db, printers, make_user
     ):
         for printer in printers:
@@ -91,8 +75,8 @@ class TestBoard:
 
         response = await client.get(f"/room/{room.id}")
 
-        assert "Встать в очередь" in response.text
-        assert "все заняты" in response.text
+        assert "Встать в очередь" not in response.text
+        assert f"/schedule/{room.id}/{MachineKind.PRINTER}" in response.text
 
 
 class TestOccupy:
@@ -191,29 +175,6 @@ class TestOccupy:
         assert response.status_code == 409
         assert "уже занято" in response.text
 
-    async def test_queue_jumping_is_refused_on_screen(self, client, room, db, printers, make_user):
-        """Правило 7 глазами постороннего у киоска."""
-        owner = await make_user()
-        other = await make_user()
-        waiting = await make_user()
-        await machines_svc.occupy(db, owner, printers[0].id, 60)
-        await machines_svc.occupy(db, other, printers[1].id, 60)
-        await queue_svc.join(db, waiting.id, room.id, MachineKind.PRINTER)
-        await machines_svc.release(db, owner, printers[0].id)
-        await db.commit()
-        await make_user(pin="4242")
-        await enroll(client, room)
-
-        response = await client.post(
-            f"/occupy/{printers[0].id}",
-            data={"pin": "4242", "minutes": "60"},
-            headers={"accept": "text/html"},
-        )
-
-        assert response.status_code == 409
-        assert "придержано" in response.text.lower()
-
-
 class TestPinHelp:
     """Кнопка с QR под клавиатурой: адрес бота с планшета на стене не набрать."""
 
@@ -273,17 +234,6 @@ class TestOpenAccess:
         db.expire_all()
         assert (await db.get(Machine, machine_id)).status == MachineStatus.PRINTING
 
-    async def test_queue_join_without_enrolled_device(self, client, room, db, printers, make_user):
-        user = await make_user(pin="4242")
-        await machines_svc.occupy(db, await make_user(), printers[0].id, 60)
-        await machines_svc.occupy(db, await make_user(), printers[1].id, 60)
-        await db.commit()
-
-        response = await client.post(f"/queue/join/{room.id}/printer", data={"pin": "4242"})
-
-        assert response.status_code == 303
-        assert await queue_svc.position_of(db, user.id, room.id) == 1
-
     async def test_keypad_is_shown_without_enrolled_device(self, client, printers):
         response = await client.get(f"/occupy/{printers[0].id}")
 
@@ -308,7 +258,7 @@ class TestOpenAccess:
         assert response.status_code == 403
 
 
-class TestReleaseAndQueue:
+class TestRelease:
     async def test_release_frees_printer(self, client, room, db, printers, make_user):
         machine_id = printers[0].id
         owner = await make_user(pin="4242")
@@ -366,39 +316,6 @@ class TestReleaseAndQueue:
         db.expire_all()
         assert (await db.get(Machine, machine_id)).status == MachineStatus.FREE
 
-    async def test_join_and_leave_queue(self, client, room, db, printers, make_user):
-        # Номер помещения запоминаем до `expire_all`: у отвязанной от сессии
-        # строки обращение к полю полезло бы в базу вне асинхронного контекста.
-        room_id = room.id
-        user_id = (await make_user(pin="4242")).id
-        for printer in printers:
-            await machines_svc.occupy(db, await make_user(), printer.id, 60)
-        await db.commit()
-        await enroll(client, room)
-
-        joined = await client.post(f"/queue/join/{room_id}/printer", data={"pin": "4242"})
-        assert joined.headers["location"] == "/?flash=queued"
-        db.expire_all()
-        assert await queue_svc.position_of(db, user_id, room_id) == 1
-
-        left = await client.post(f"/queue/leave/{room_id}", data={"pin": "4242"})
-        assert left.headers["location"] == "/?flash=left"
-        db.expire_all()
-        assert await queue_svc.position_of(db, user_id, room_id) is None
-
-    async def test_queue_asks_pin_again(self, client, room, db, printers, make_user):
-        """Встал в очередь — выход из неё требует PIN заново, как и всё остальное."""
-        await make_user(pin="4242")
-        for printer in printers:
-            await machines_svc.occupy(db, await make_user(), printer.id, 60)
-        await db.commit()
-        await enroll(client, room)
-
-        await client.post(f"/queue/join/{room.id}/printer", data={"pin": "4242"})
-        response = await client.get(f"/queue/leave/{room.id}")
-
-        assert "keypad" in response.text
-
     async def test_flash_message_is_shown(self, client, room, printers):
         response = await client.get(f"/room/{room.id}?flash=released")
 
@@ -437,24 +354,6 @@ class TestScheduleScreen:
         response = await client.get(f"/schedule/{room.id}/{MachineKind.PRINTER}?date=не-дата")
 
         assert response.status_code == 200
-
-    async def test_place_in_queue_is_not_shown_on_the_wall(
-        self, client, room, db, printers, make_user
-    ):
-        """«Вы в очереди, номер 1» на общем планшете — это про кого угодно.
-
-        В Mini App эта строка есть: там известно, кто смотрит, и туда же приводит
-        «встать в очередь» (см. test_miniapp.py).
-        """
-        waiting = await make_user()
-        for printer in printers:
-            await machines_svc.occupy(db, await make_user(), printer.id, 60)
-        await queue_svc.join(db, waiting.id, room.id, MachineKind.PRINTER)
-        await db.commit()
-
-        response = await client.get(f"/schedule/{room.id}/{MachineKind.PRINTER}")
-
-        assert "grid-queue" not in response.text
 
     async def test_board_links_to_schedule(self, client, room, printers):
         response = await client.get(f"/room/{room.id}")
@@ -675,7 +574,7 @@ class TestDurations:
 
 
 class TestKindsOnTheWall:
-    """Секция на тип: у принтеров и гравировщиков свои очереди."""
+    """Секция на каждый тип оборудования."""
 
     async def test_board_has_a_section_per_kind(self, client, room, printers, engravers):
         response = await client.get(f"/room/{room.id}")
@@ -683,11 +582,11 @@ class TestKindsOnTheWall:
         assert "Принтеры" in response.text and "Гравировщики" in response.text
         assert "Гравёр #1" in response.text
 
-    async def test_each_section_has_its_own_queue_button(self, client, room, printers, engravers):
+    async def test_each_section_has_its_own_schedule(self, client, room, printers, engravers):
         response = await client.get(f"/room/{room.id}")
 
-        assert f"/queue/join/{room.id}/printer" in response.text
-        assert f"/queue/join/{room.id}/engraver" in response.text
+        assert f"/schedule/{room.id}/printer" in response.text
+        assert f"/schedule/{room.id}/engraver" in response.text
 
     async def test_busy_engraver_says_it_engraves(self, client, room, db, engravers, make_user):
         await machines_svc.occupy(db, await make_user(), engravers[0].id, 60)
@@ -703,25 +602,3 @@ class TestKindsOnTheWall:
 
         assert response.status_code == 200
         assert "админк" in response.text
-
-    async def test_join_the_engraver_line_from_the_kiosk(
-        self, client, room, db, printers, engravers, make_user
-    ):
-        person_id = (await make_user(pin="4242")).id
-        await machines_svc.occupy(db, await make_user(), engravers[0].id, 60)
-        await db.commit()
-        await enroll(client, room)
-
-        response = await client.post(f"/queue/join/{room.id}/engraver", data={"pin": "4242"})
-
-        assert response.status_code == 303
-        db.expire_all()
-        entry = await db.scalar(select(QueueEntry).where(QueueEntry.user_id == person_id))
-        assert entry.kind == MachineKind.ENGRAVER
-
-    async def test_unknown_kind_is_refused(self, client, room, printers):
-        await enroll(client, room)
-
-        response = await client.get(f"/queue/join/{room.id}/laser", headers={"accept": "text/html"})
-
-        assert response.status_code == 400

@@ -1,15 +1,9 @@
-"""Брони на будущее.
-
-Очередь (services/queue.py) отвечает на вопрос «кто следующий, когда
-освободится». Бронь отвечает на другой: «мне нужно к утру четверга». Поэтому
-бронь всегда на конкретную машину и на конкретное окно, а не на тип.
+"""Брони оборудования на конкретную машину и конкретное окно времени.
 
 Правила отсюда (PLAN.md):
-  12. в своё окно машину занимает только тот, кто её забронировал, — это право
-      сильнее очереди (правило 7);
-  13. одно дело на человека в помещении: работа, место в очереди или бронь.
-      Бронь одна, и поверх занятой машины её не выдают; обратная сторона правила
-      живёт в services/machines.py и services/queue.py. Своя забронированная
+  12. в своё окно машину занимает только тот, кто её забронировал;
+  13. одна активная работа или бронь на человека во всей системе.
+      Бронь одна, и поверх занятой машины её не выдают. Своя забронированная
       машина из запрета выключена — занять её можно и раньше своего часа;
   14. бронь не сгорает, пока машина занята чужой работой: отсчёт неявки идёт
       только со свободной машины;
@@ -31,10 +25,10 @@
 описание случившегося, а транзакцией и Telegram занимается вызывающий слой.
 """
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from datetime import UTC, date, datetime, timedelta
 
-from sqlalchemy import select
+from sqlalchemy import or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -48,7 +42,6 @@ from app.enums import (
     SessionStatus,
 )
 from app.models import Machine, MachineSession, Reservation, Room, User
-from app.services import queue as queue_svc
 from app.services import schedule
 from app.services import workhours as workhours_svc
 from app.services.errors import (
@@ -89,7 +82,6 @@ class CancelResult:
     machine_name: str
     starts_at: datetime
     by_owner: bool
-    offers: list[queue_svc.Offer] = field(default_factory=list)
 
 
 @dataclass(frozen=True)
@@ -99,7 +91,6 @@ class ExpireResult:
     machine_id: int
     machine_name: str
     starts_at: datetime
-    offers: list[queue_svc.Offer] = field(default_factory=list)
 
 
 @dataclass(frozen=True)
@@ -189,6 +180,11 @@ async def book(
 
     ends_at = starts_at + timedelta(minutes=duration_minutes)
 
+    # Один пользователь не должен успеть одновременно забронировать две машины
+    # из двух запросов. Блокировка строки пользователя сериализует такие POST-ы
+    # даже между разными помещениями.
+    await db.scalar(select(User.id).where(User.id == user.id).with_for_update())
+
     machine = await _lock_machine(db, machine_id)
     if machine.status == MachineStatus.BROKEN:
         raise MachineNotAvailable(t.ERR_MACHINE_BROKEN.format(machine=machine.name))
@@ -201,15 +197,13 @@ async def book(
     if not schedule.is_open_at(starts_at, hours):
         raise InvalidReservationTime(t.ERR_RESERVATION_WORK_HOURS.format(hours=hours.text()))
 
-    # Правило 13 — в пределах помещения: бронь переговорной не должна запрещать
-    # бронь принтера, это разные комнаты и разные дела.
-    if await active_of_user(db, user.id, machine.room_id) is not None:
+    # Пока у человека есть бронь, вторую не выдаём — независимо от помещения и
+    # типа оборудования. Сначала текущую нужно использовать или отменить.
+    if await active_of_user(db, user.id) is not None:
         raise AlreadyBooked(t.ERR_ALREADY_BOOKED)
 
-    # И то же правило 13 со стороны работы: занятая машина — это уже одно дело в
-    # помещении, и бронь поверх неё дала бы одному человеку и станок сейчас, и
-    # час на будущее. Парк маленький, и это ровно та монополия, ради которой
-    # правило 2 не пускает занявшего ещё и в очередь.
+    # Пока текущая работа не закрыта, новую бронь не создаём. `done_wait` тоже
+    # активен: деталь ещё занимает стол и пользователь должен освободить машину.
     #
     # Запросом здесь, а не вызовом services/machines.py: тот спрашивает у брон,
     # до какого часа машину можно занять, и обратный импорт замкнул бы кольцо
@@ -217,7 +211,6 @@ async def book(
     working = await db.scalar(
         select(MachineSession.id).where(
             MachineSession.user_id == user.id,
-            MachineSession.room_id == machine.room_id,
             MachineSession.status.in_(ACTIVE_SESSION_STATUSES),
         )
     )
@@ -279,9 +272,6 @@ async def cancel(
     reservation.cancelled_by_user_id = actor.id
     await db.flush()
 
-    # Окно могло идти прямо сейчас — тогда до отмены машина была придержана
-    # бронью, а теперь её можно предложить очереди.
-    offers = await queue_svc.offer_free_machines(db, now)
     return CancelResult(
         reservation_id=reservation.id,
         user_id=reservation.user_id,
@@ -289,14 +279,13 @@ async def cancel(
         machine_name=machine.name if machine else t.BOT_MACHINE_FALLBACK,
         starts_at=reservation.starts_at,
         by_owner=by_owner,
-        offers=offers,
     )
 
 
 async def expire_no_show(
     db: AsyncSession, reservation_id: int, now: datetime | None = None
 ) -> ExpireResult:
-    """Человек не пришёл: закрыть бронь и отдать машину очереди.
+    """Человек не пришёл: закрыть бронь.
 
     Правило 14: отсчёт идёт только со свободной машины. Если на столе чужая
     незабранная деталь, бронь ждёт — иначе человек теряет своё окно из-за чужой
@@ -320,14 +309,12 @@ async def expire_no_show(
     reservation.resolved_at = now
     await db.flush()
 
-    offers = await queue_svc.offer_free_machines(db, now)
     return ExpireResult(
         reservation_id=reservation.id,
         user_id=reservation.user_id,
         machine_id=machine.id,
         machine_name=machine.name,
         starts_at=reservation.starts_at,
-        offers=offers,
     )
 
 
@@ -352,21 +339,26 @@ async def get_active(db: AsyncSession, reservation_id: int) -> Reservation:
     return reservation
 
 
-async def active_of_user(
-    db: AsyncSession, user_id: int, room_id: int | None = None
-) -> Reservation | None:
-    """Ближайшая незакрытая бронь человека. С `room_id` — в этом помещении.
-
-    Без помещения — любая: боту в `/my` нужна ближайшая, какой бы комнаты она ни
-    была. С помещением проверяется правило 13, и его граница — комната.
-    """
+async def active_of_user(db: AsyncSession, user_id: int) -> Reservation | None:
+    """Ближайшая незакрытая бронь человека во всей системе."""
     query = select(Reservation).where(
         Reservation.user_id == user_id,
         Reservation.status.in_(ACTIVE_RESERVATION_STATUSES),
     )
-    if room_id is not None:
-        query = query.where(Reservation.room_id == room_id)
     return await db.scalar(query.order_by(Reservation.starts_at))
+
+
+async def can_user_book(db: AsyncSession, user_id: int) -> bool:
+    """Можно ли показывать пользователю действия создания новой брони."""
+    if await active_of_user(db, user_id) is not None:
+        return False
+    session = await db.scalar(
+        select(MachineSession.id).where(
+            MachineSession.user_id == user_id,
+            MachineSession.status.in_(ACTIVE_SESSION_STATUSES),
+        )
+    )
+    return session is None
 
 
 async def current_for_machine(
@@ -440,20 +432,27 @@ async def free_minutes(
 
 
 async def upcoming_for_machines(
-    db: AsyncSession, now: datetime | None = None
+    db: AsyncSession,
+    now: datetime | None = None,
+    machine_ids: set[int] | None = None,
 ) -> dict[int, tuple[Reservation, str]]:
     """Ближайшая бронь каждой машины с именем человека — для доски и бота."""
     now = now or _utcnow()
-    rows = (
-        await db.execute(
-            select(Reservation, User.name)
-            .join(User, User.id == Reservation.user_id)
-            .where(
-                Reservation.status.in_(ACTIVE_RESERVATION_STATUSES),
-                Reservation.ends_at > now,
-            )
-            .order_by(Reservation.starts_at)
+    if machine_ids is not None and not machine_ids:
+        return {}
+    query = (
+        select(Reservation, User.name)
+        .join(User, User.id == Reservation.user_id)
+        .where(
+            Reservation.status.in_(ACTIVE_RESERVATION_STATUSES),
+            Reservation.ends_at > now,
         )
+        .order_by(Reservation.starts_at)
+    )
+    if machine_ids is not None:
+        query = query.where(Reservation.machine_id.in_(machine_ids))
+    rows = (
+        await db.execute(query)
     ).all()
 
     nearest: dict[int, tuple[Reservation, str]] = {}
@@ -462,12 +461,23 @@ async def upcoming_for_machines(
     return nearest
 
 
-async def of_user(db: AsyncSession, user_id: int) -> list[tuple[Reservation, Machine, Room]]:
+async def of_user(
+    db: AsyncSession, user_id: int, include_in_progress: bool = False
+) -> list[tuple[Reservation, Machine, Room]]:
     """Брони человека, ближайшая первой — экран «мои брони».
 
-    Помещение приходит вместе с машиной: брон теперь может быть несколько — по
-    одной на комнату, — и «14:00, Дуб» без комнаты не говорит, куда идти.
+    `include_in_progress` оставляет в списке бронь, по которой уже началась
+    активная работа. Иначе она исчезала сразу после нажатия «Это я», хотя машина
+    всё ещё была занята пользователем.
     """
+    statuses = Reservation.status.in_(ACTIVE_RESERVATION_STATUSES)
+    if include_in_progress:
+        active_reservations = select(MachineSession.reservation_id).where(
+            MachineSession.reservation_id.is_not(None),
+            MachineSession.status == SessionStatus.PRINTING,
+        )
+        statuses = or_(statuses, Reservation.id.in_(active_reservations))
+
     rows = (
         await db.execute(
             select(Reservation, Machine, Room)
@@ -475,7 +485,7 @@ async def of_user(db: AsyncSession, user_id: int) -> list[tuple[Reservation, Mac
             .join(Room, Room.id == Reservation.room_id)
             .where(
                 Reservation.user_id == user_id,
-                Reservation.status.in_(ACTIVE_RESERVATION_STATUSES),
+                statuses,
             )
             .order_by(Reservation.starts_at)
         )
@@ -576,12 +586,27 @@ async def day_schedule(
     start, end = schedule.work_bounds(day, hours)
 
     reservations: dict[int, list[tuple[Reservation, str]]] = {}
+    machine_ids = [machine.id for machine in park]
+    if not machine_ids:
+        return DaySchedule(
+            room=room,
+            kind=kind,
+            day=day,
+            days=schedule.day_options(now),
+            columns=[],
+            hours=[
+                schedule.local(slot).strftime(t.TIME_FORMAT)
+                for slot in schedule.slot_starts(day, hours)
+            ],
+            work_hours=hours,
+        )
     for reservation, name in (
         await db.execute(
             select(Reservation, User.name)
             .join(User, User.id == Reservation.user_id)
             .where(
                 Reservation.status.in_(ACTIVE_RESERVATION_STATUSES),
+                Reservation.machine_id.in_(machine_ids),
                 Reservation.starts_at < end,
                 Reservation.ends_at > start,
             )
@@ -596,6 +621,7 @@ async def day_schedule(
             .join(User, User.id == MachineSession.user_id)
             .where(
                 MachineSession.status.in_(ACTIVE_SESSION_STATUSES),
+                MachineSession.machine_id.in_(machine_ids),
                 MachineSession.started_at < end,
             )
         )

@@ -36,6 +36,7 @@ from app.api.screens import APP
 from app.config import settings
 from app.models import User
 from app.services import auth, telegram
+from app.services import reservations as reservations_svc
 from app.services.errors import AppSessionRequired
 
 router = APIRouter(prefix="/app")
@@ -63,6 +64,23 @@ async def actor(request: Request, db: AsyncSession) -> User:
     if person is None:
         raise AppSessionRequired(t.ERR_APP_SESSION_REQUIRED)
     return person
+
+
+async def _has_booking(db: AsyncSession, person: User | None) -> bool:
+    """Есть ли бронь, которую Mini App должен показывать вместо каталога.
+
+    В список входит и уже начатая по брони работа: после нажатия «Это я» нельзя
+    внезапно вернуть человеку каталог и дать обойти правило второй бронью.
+    """
+    if person is None:
+        return False
+    return bool(
+        await reservations_svc.of_user(db, person.id, include_in_progress=True)
+    )
+
+
+def _my_bookings() -> RedirectResponse:
+    return RedirectResponse(f"{SAFE_NEXT_PREFIX}/my", status_code=status.HTTP_303_SEE_OTHER)
 
 
 async def _bootstrap(
@@ -98,15 +116,19 @@ async def _bootstrap(
 async def entry(request: Request, db: Db, next: str = "", flash: str = "") -> Response:
     """Точка входа и главный экран приложения.
 
-    С живой сессией показывает «моё» — занятую машину и очередь, в которой человек
-    стоит, по всем помещениям сразу. Сюда же возвращают все действия. Если своего
-    ничего нет, сжимать нечего, и открывается доска первого помещения: экрана
-    «все помещения» в системе нет, у каждой комнаты свой адрес. Без сессии —
-    бутстрап, который проверит подпись и вернёт обратно.
+    При действующей брони показывает только её — каталог и календарь до отмены
+    или завершения недоступны. Без брони показывает занятую человеком машину по
+    всем помещениям, а если своего ничего нет — доску первого помещения. Без
+    сессии открывает бутстрап, который проверит подпись и вернёт обратно.
     """
     person = await viewer(request, db)
     if person is None or next:
         return await _bootstrap(request, db, _safe_next(next or f"{SAFE_NEXT_PREFIX}/"))
+
+    # Пока бронь действует, Mini App становится экраном одной задачи: человек
+    # видит только свою бронь и может либо использовать, либо отменить её.
+    if await _has_booking(db, person):
+        return await screens.my_page(request, db, APP, person, flash)
 
     context = await screens.board_context(db, viewer=person)
     if not context["rooms"]:
@@ -117,8 +139,11 @@ async def entry(request: Request, db: Db, next: str = "", flash: str = "") -> Re
 
 @router.get("/room/{room_id}", response_class=HTMLResponse)
 async def room_board(request: Request, db: Db, room_id: int, flash: str = "") -> Response:
+    person = await viewer(request, db)
+    if await _has_booking(db, person):
+        return _my_bookings()
     return await screens.board_page(
-        request, db, APP, room_id, flash, viewer=await viewer(request, db)
+        request, db, APP, room_id, flash, viewer=person
     )
 
 
@@ -203,31 +228,6 @@ async def release_action(request: Request, db: Db, machine_id: int) -> Response:
     return await screens.do_release(db, APP, user, machine_id)
 
 
-# --- очередь -----------------------------------------------------------------
-
-
-@router.get("/queue/join/{room_id}/{kind}", response_class=HTMLResponse)
-async def queue_join_form(request: Request, db: Db, room_id: int, kind: str) -> Response:
-    return await screens.queue_join_page(request, db, APP, room_id, kind)
-
-
-@router.post("/queue/join/{room_id}/{kind}")
-async def queue_join_action(request: Request, db: Db, room_id: int, kind: str) -> Response:
-    user = await actor(request, db)
-    return await screens.do_queue_join(db, APP, user, room_id, kind)
-
-
-@router.get("/queue/leave/{room_id}", response_class=HTMLResponse)
-async def queue_leave_form(request: Request, db: Db, room_id: int) -> Response:
-    return await screens.queue_leave_page(request, db, APP, room_id)
-
-
-@router.post("/queue/leave/{room_id}")
-async def queue_leave_action(request: Request, db: Db, room_id: int) -> Response:
-    user = await actor(request, db)
-    return await screens.do_queue_leave(db, APP, user, room_id)
-
-
 # --- расписание и брони ------------------------------------------------------
 
 
@@ -235,15 +235,19 @@ async def queue_leave_action(request: Request, db: Db, room_id: int) -> Response
 async def schedule_screen(
     request: Request, db: Db, room_id: int, kind: str, date: str = "", flash: str = ""
 ) -> Response:
-    """Здесь свои брони подсвечены и видно своё место в очереди: в отличие от
-    киоска, известно, кто смотрит. Сюда же приводит «встать в очередь»."""
+    """Здесь свои брони подсвечены: в отличие от киоска, известно, кто смотрит."""
+    person = await viewer(request, db)
+    if await _has_booking(db, person):
+        return _my_bookings()
     return await screens.schedule_page(
-        request, db, APP, room_id, kind, date, viewer=await viewer(request, db), flash=flash
+        request, db, APP, room_id, kind, date, viewer=person, flash=flash
     )
 
 
 @router.get("/book/{machine_id}", response_class=HTMLResponse)
 async def book_form(request: Request, db: Db, machine_id: int, start: str = "") -> Response:
+    if await _has_booking(db, await viewer(request, db)):
+        return _my_bookings()
     return await screens.book_page(request, db, APP, machine_id, start)
 
 
@@ -256,6 +260,8 @@ async def book_action(
     minutes: int = Form(...),
 ) -> Response:
     user = await actor(request, db)
+    if await _has_booking(db, user):
+        return _my_bookings()
     return await screens.do_book(db, APP, user, machine_id, start, minutes)
 
 

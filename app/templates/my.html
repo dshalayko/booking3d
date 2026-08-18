@@ -10,7 +10,6 @@
 
 <main class="sheet">
   <header class="sheet-head">
-    <a class="btn btn-small btn-ghost" href="{{ base }}/">{{ t.back }}</a>
     <h1>{{ t.my_heading }}</h1>
   </header>
 
@@ -27,14 +26,23 @@
           <span class="booking-when">
             {{ t.my_when.format(start=booking.starts_at | when, end=booking.ends_at | hhmm) }}
           </span>
-          <a class="btn btn-small" href="{{ base }}/booking/{{ booking.id }}/cancel">
-            {{ t.my_cancel }}
-          </a>
+          {% if booking.status == "taken" %}
+            <span class="booking-when">{{ t.my_in_progress }}</span>
+            <a class="btn btn-small" href="{{ base }}/release/{{ machine.id }}">
+              {{ t.my_finish }}
+            </a>
+          {% else %}
+            <a class="btn btn-small" href="{{ base }}/booking/{{ booking.id }}/cancel">
+              {{ t.my_cancel }}
+            </a>
+          {% endif %}
         </li>
       {% endfor %}
     </ul>
+  {% elif can_book %}
+    <p class="board-empty">{{ t.my_empty }}</p>
   {% else %}
-    <p class="queue-empty">{{ t.my_empty }}</p>
+    <p class="board-empty">{{ t.my_blocked }}</p>
   {% endif %}
 
   {# Отсюда же — вход в расписание каждой пары «помещение — тип», которая реально

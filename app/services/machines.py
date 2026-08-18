@@ -2,15 +2,13 @@
 
 Правила отсюда (PLAN.md):
   1. одна активная сессия на машину;
-  2. одна активная сессия на человека в помещении;
-  7. пока очередь непуста, занять свободную машину может только адресат
-     предложения (и админ) — в пределах своего помещения и типа;
+  2. одна активная сессия на человека во всей системе;
   8. таймер не освобождает машину автоматически — по истечении `eta_at`
      она уходит в `done_wait`, а не в `free`;
   9. активную работу снимает только владелец или админ; готовую деталь из
      `done_wait` может отметить любой авторизованный;
  12. в своё окно машину занимает только тот, кто её забронировал, — и это право
-     сильнее очереди (правило 7). Сами брони живут в services/reservations.py.
+     Сами брони живут в services/reservations.py.
 
 Состав парка (`create`, `rename`, `remove`) живёт здесь же, а не в админке:
 командная строка и HTTP-обработчик должны одинаково отвечать на вопрос «можно
@@ -20,7 +18,7 @@
 не отправляют — возвращают описание случившегося.
 """
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 
 from sqlalchemy import func, select
@@ -33,11 +31,10 @@ from app.enums import (
     ROOM_KIND_MACHINE_KINDS,
     MachineKind,
     MachineStatus,
-    QueueStatus,
     SessionStatus,
 )
 from app.models import Machine, MachineSession, QueueEntry, Reservation, User
-from app.services import queue, reservations, rooms, schedule
+from app.services import reservations, rooms, schedule
 from app.services.errors import (
     AlreadyBooked,
     InvalidDuration,
@@ -49,7 +46,6 @@ from app.services.errors import (
     MachineNameTaken,
     MachineNotAvailable,
     MachineReleaseForbidden,
-    MachineReserved,
     NotAdmin,
     UserBusy,
 )
@@ -69,7 +65,6 @@ class OccupyResult:
     machine_name: str
     room_id: int
     eta_at: datetime
-    from_offer: bool
     from_reservation: bool = False
 
 
@@ -80,7 +75,6 @@ class ReleaseResult:
     session_id: int | None
     owner_user_id: int | None
     session_status: str | None
-    offers: list[queue.Offer] = field(default_factory=list)
 
 
 @dataclass(frozen=True)
@@ -88,9 +82,6 @@ class DoneWaitResult:
     machine_id: int
     machine_name: str
     machine_kind: str
-    # Помещение нужно тому, кто разошлёт подсказку «сходи проверь»: очередь, до
-    # которой она относится, — это пара (помещение, тип). См. services/reminders.py.
-    room_id: int
     session_id: int
     owner_user_id: int
 
@@ -141,6 +132,10 @@ async def occupy(
         )
 
     now = now or _utcnow()
+    # Брони и занятия одного пользователя сериализуются одной строкой. Без
+    # этого два параллельных запроса к разным машинам оба успеют пройти
+    # проверку «пользователь свободен» до вставки сессии.
+    await db.scalar(select(User.id).where(User.id == user.id).with_for_update())
     machine = await _lock_machine(db, machine_id)
 
     if machine.status == MachineStatus.BROKEN:
@@ -149,30 +144,22 @@ async def occupy(
         raise MachineNotAvailable(t.ERR_MACHINE_BUSY.format(machine=machine.name))
 
     reservation = await _check_booking_allows(db, user, machine, duration_minutes, now)
-    # Правило 12 сильнее правила 7: пришедший в своё окно занимает машину, даже
-    # если очередь непуста и приглашение сейчас у кого-то другого. Иначе бронь
-    # не гарантирует ничего — а именно за гарантию её и берут.
-    offer = None
-    if reservation is None:
-        offer = await _check_queue_allows(db, user, machine)
-
-    # Правило 2 считается в пределах помещения: занятый принтер в мастерской не
-    # мешает занять переговорную, а второй принтер рядом с первым — мешает.
-    if await _active_session_of_user(db, user.id, machine.room_id) is not None:
+    # Работа одна во всей системе: физически одновременно пользоваться второй
+    # машиной или переговорной тот же человек не может.
+    if await _active_session_of_user(db, user.id) is not None:
         raise UserBusy(t.ERR_USER_BUSY)
 
-    # Правило 13 с этой стороны: у человека с бронью в помещении одно дело —
+    # Правило 13 с этой стороны: у человека с бронью во всей системе одно дело —
     # эта самая бронь. Своя забронированная машина не в счёт: её занимают и по
     # правилу 12 (пришёл в своё окно), и просто раньше времени, если она стоит
     # свободная, — это то же самое дело, а не второе. Чужая — уже второе, и
     # тогда один человек держит станок сейчас и час на будущее.
     if reservation is None:
-        booking = await reservations.active_of_user(db, user.id, machine.room_id)
+        booking = await reservations.active_of_user(db, user.id)
         if booking is not None and booking.machine_id != machine.id:
             raise AlreadyBooked(t.ERR_OCCUPY_WHILE_BOOKED)
 
-    # eta_at считается обычным сложением: работа идёт и ночью, ночная пауза
-    # относится только к окну подтверждения предложения из очереди.
+    # eta_at считается обычным сложением: работа может идти и ночью.
     session = MachineSession(
         machine_id=machine.id,
         room_id=machine.room_id,
@@ -192,9 +179,6 @@ async def occupy(
 
     machine.status = MachineStatus.PRINTING
 
-    if offer is not None:
-        offer.status = QueueStatus.TAKEN
-        offer.resolved_at = now
     if reservation is not None:
         reservations.mark_taken(reservation, now)
 
@@ -205,7 +189,6 @@ async def occupy(
         machine_name=machine.name,
         room_id=machine.room_id,
         eta_at=session.eta_at,
-        from_offer=offer is not None,
         from_reservation=reservation is not None,
     )
 
@@ -261,14 +244,12 @@ async def release(
     machine.status = MachineStatus.FREE
     await db.flush()
 
-    offers = await queue.offer_free_machines(db, now)
     return ReleaseResult(
         machine_id=machine.id,
         machine_name=machine.name,
         session_id=session_id,
         owner_user_id=owner_user_id,
         session_status=session_status,
-        offers=offers,
     )
 
 
@@ -299,7 +280,6 @@ async def mark_done_wait(
         machine_id=machine.id,
         machine_name=machine.name,
         machine_kind=machine.kind,
-        room_id=machine.room_id,
         session_id=session.id,
         owner_user_id=session.user_id,
     )
@@ -345,7 +325,7 @@ async def set_broken(
 async def clear_broken(
     db: AsyncSession, admin: User, machine_id: int, now: datetime | None = None
 ) -> ReleaseResult:
-    """Вернуть машину в строй и сразу предложить её очереди её типа."""
+    """Вернуть машину в строй."""
     if not admin.is_admin:
         raise NotAdmin(t.ERR_ADMIN_ONLY)
 
@@ -359,14 +339,12 @@ async def clear_broken(
     machine.note = None
     await db.flush()
 
-    offers = await queue.offer_free_machines(db, now)
     return ReleaseResult(
         machine_id=machine.id,
         machine_name=machine.name,
         session_id=None,
         owner_user_id=None,
         session_status=None,
-        offers=offers,
     )
 
 
@@ -527,32 +505,6 @@ async def _ensure_name_free(db: AsyncSession, name: str, except_id: int | None =
         raise MachineNameTaken(t.ERR_MACHINE_NAME_TAKEN.format(name=name))
 
 
-async def _check_queue_allows(db: AsyncSession, user: User, machine: Machine):
-    """Правило 7: очередь имеет смысл, только если её нельзя обойти.
-
-    Подошедший к киоску всегда быстрее того, кто едет из дома, поэтому пока
-    очередь непуста, свободную машину занимает только адресат предложения.
-    Проверяется в пределах помещения и типа: люди, ждущие гравировщик — или
-    принтер в другом корпусе, — не должны мешать занять освободившийся принтер
-    здесь. Возвращает предложение этого человека, если оно есть.
-    """
-    offer = await queue.offer_for_machine(db, machine.id)
-    if offer is not None:
-        if offer.user_id == user.id:
-            return offer
-        if user.is_admin:
-            return None
-        raise MachineReserved(t.ERR_MACHINE_RESERVED.format(machine=machine.name))
-
-    waiting = await queue.has_active_entries(
-        db, room_id=machine.room_id, kind=machine.kind
-    )
-    if waiting and not user.is_admin:
-        raise MachineReserved(t.ERR_QUEUE_WAIT_YOUR_TURN)
-
-    return None
-
-
 async def _check_booking_allows(
     db: AsyncSession,
     user: User,
@@ -622,13 +574,10 @@ async def _active_session_of_machine(db: AsyncSession, machine_id: int) -> Machi
     )
 
 
-async def _active_session_of_user(
-    db: AsyncSession, user_id: int, room_id: int
-) -> MachineSession | None:
+async def _active_session_of_user(db: AsyncSession, user_id: int) -> MachineSession | None:
     return await db.scalar(
         select(MachineSession).where(
             MachineSession.user_id == user_id,
-            MachineSession.room_id == room_id,
             MachineSession.status.in_(ACTIVE_SESSION_STATUSES),
         )
     )

@@ -1,7 +1,7 @@
 """«Брони» — окна, забронированные на будущее.
 
-Своя страница, а не блок «Сводки»: брони не видно ни на плитках, ни в очереди,
-а снимать зависшую бронь иначе пришлось бы в psql. Список длинный и растёт со
+Своя страница, а не блок «Сводки»: снимать зависшую бронь иначе пришлось бы в
+psql. Список длинный и растёт со
 временем — на оперативной странице он оттеснял бы вниз то, ради чего туда
 заходят.
 """
@@ -53,5 +53,4 @@ async def cancel(db: Db, reservation_id: int, reason: str = Form("")) -> Respons
             result.user_id,
             texts.booking_cancelled_by_admin(result.machine_name, result.starts_at),
         )
-    await notify.announce_offers(db, result.offers)
     return core.redirect("booking_cancelled", SECTION.path)

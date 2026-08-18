@@ -85,7 +85,7 @@ async def reset_pin(db: Db, user_id: int) -> Response:
 
 @router.get("/users/{user_id}/delete", response_class=HTMLResponse)
 async def confirm_delete(request: Request, db: Db, user_id: int) -> Response:
-    """Что уедет вместе с человеком: его работы, брони и место в очереди.
+    """Что уедет вместе с человеком: работы, брони и старые записи очереди.
 
     Чужие работы, которые он закрыл, остаются — у них только пропадёт подпись
     «освободил такой-то» (см. services/purge.py).

@@ -1,8 +1,8 @@
 {# Живая часть главного экрана: сама перезапрашивается каждые 10 секунд.
 
-   Три уровня: помещение → тип оборудования → машина. Помещение всегда подписано
-   именем — на стене планшет висит в одной комнате, и её имя это то, что человек
-   сверяет с дверью; в «моём» (Mini App) помещений может быть несколько сразу.
+   Три уровня: помещение → тип оборудования → машина. Имя помещения на доске не
+   выводим: адрес уже выбрал нужную комнату, а повторяющийся заголовок отнимал
+   вертикальное место. Необязательное примечание помещения всё ещё показываем.
 
    Секция типа подписана только когда типов в помещении больше одного: в
    переговорной «Дуб» подзаголовок «Переговорная» — это второй раз то же самое.
@@ -10,55 +10,9 @@
    Адреса действий идут через `base`: пусто у киоска, `/app` у Mini App
    (см. api/render.py). #}
 
-{# Очередь секции. Рисуется в двух местах, поэтому макросом: в секции из
-   нескольких машин — полосой под плитками, в секции из одной — столбиком внутри
-   самой плитки (см. ниже). #}
-{% macro queue_block(room, group, free, column=false) %}
-  <footer class="queue{% if column %} queue-column{% endif %}">
-    {% if group.queue %}
-      <ol class="queue-list">
-        {% for person in group.queue %}
-          <li class="{% if person.offered %}queue-offered{% endif %}">
-            <span class="queue-pos">{{ person.position }}</span>{{ person.name }}
-            {%- if person.offered %} <span class="queue-tag">{{ t.queue_offered }}</span>{% endif %}
-          </li>
-        {% endfor %}
-      </ol>
-      {# «Выйти» — только своё место. На киоске (`viewer_id` не задан) кнопка
-         общая: кто выходит, решает PIN на следующем экране. В Mini App выход
-         действует на смотрящего, и в чужой очереди эта кнопка вела бы в отказ
-         «вы не в очереди». #}
-      {% set viewer = viewer_id|default(none) %}
-      {% if viewer is none or group.queue | selectattr("user_id", "equalto", viewer) | first %}
-        <a class="btn btn-small" href="{{ base }}/queue/leave/{{ room.id }}">{{ t.queue_leave }}</a>
-      {% endif %}
-    {% elif group.machines %}
-      <p class="queue-empty">{{ t.queue_empty }}</p>
-      {# Когда всё занято, «встать в очередь» уже написано на большой кнопке
-         сверху — вторая такая же рядом только добавляет, во что тыкать. #}
-      {% if free %}
-        <a class="btn btn-small" href="{{ base }}/queue/join/{{ room.id }}/{{ group.kind }}">
-          {{ t.queue_join }}
-        </a>
-      {% endif %}
-    {% endif %}
-  </footer>
-{% endmacro %}
-
 {% for room in rooms %}
   <article class="room">
-    <header class="room-head">
-      {# В сжатой доске («моё») имя комнаты — ссылка на неё целиком: занять
-         вторую машину или посмотреть, что там ещё стоит, иначе некуда. На стене
-         и на доске помещения это просто заголовок — ссылка вела бы на ту же
-         страницу. #}
-      {% if focused|default(false) %}
-        <h1 class="room-name"><a href="{{ base }}/room/{{ room.id }}">{{ room.name }}</a></h1>
-      {% else %}
-        <h1 class="room-name">{{ room.name }}</h1>
-      {% endif %}
-      {% if room.note %}<p class="room-note">{{ room.note }}</p>{% endif %}
-    </header>
+    {% if room.note %}<p class="room-note">{{ room.note }}</p>{% endif %}
 
     {% if not room.groups %}
       <p class="board-empty">{{ t.board_park_empty }}</p>
@@ -73,19 +27,15 @@
     <div class="room-groups">
     {% for group in room.groups %}
       {% set free = group.first_free %}
-      {# Машина в секции одна — очередь уезжает внутрь её плитки, и цветная полоса
-         статуса идёт во всю высоту карточки. Разделять их незачем: очередь тут
-         ровно к этой машине, а не к нескольким. #}
       {% set single = group.machines | length == 1 %}
       <section class="group group-{{ group.kind }}" style="--machines: {{ group.machines | length or 1 }}">
         <header class="group-head">
           {% if not room.single_group %}
             <h2 class="group-title">{{ MACHINE_KIND_TITLE.get(group.kind, group.kind) }}</h2>
           {% endif %}
-          {# Доска сжата до своей машины (`focused`) — большой кнопки здесь нет: у
-             человека машина уже есть, а «встать в очередь» на своей же секции
-             предлагать нечего. Занять вторую можно из помещения — по ссылке в
-             его заголовке. #}
+          {# Доска сжата до своей машины (`focused`) — большой кнопки здесь нет:
+             у человека машина уже есть. Занять другую можно из помещения — по
+             ссылке в его заголовке. #}
           {% if focused|default(false) %}
           {% elif free %}
             <a class="btn btn-hero" href="{{ base }}/occupy/{{ free.id }}">
@@ -94,33 +44,23 @@
                 {{ t.board_free_of.format(free=group.free_count, total=group.machines | length) }}
               </span>
             </a>
-          {% elif group.machines %}
-            <a class="btn btn-hero btn-hero-wait"
-               href="{{ base }}/queue/join/{{ room.id }}/{{ group.kind }}">
-              {{ t.board_queue_cta }}
-              <span class="btn-sub">{{ t.board_all_busy }}</span>
-            </a>
           {% endif %}
           {# Брони — второй способ получить машину, и вход в них должен быть виден
              на главном экране, а не только в боте. #}
-          {% if group.machines %}
+          {% if group.machines and can_book|default(true) %}
             <a class="btn btn-outline btn-schedule" href="{{ base }}/schedule/{{ room.id }}/{{ group.kind }}">
               {{ t.board_schedule_cta }}
             </a>
           {% endif %}
         </header>
 
-        {# Плитки и очередь — один блок без зазора: очередь относится к этим самым
-           машинам, а отдельной карточкой снизу она читалась как ещё одна машина. #}
         <div class="group-body">
           <div class="tiles">
             {% for machine in group.machines %}
-              <section class="tile tile-{{ machine.status }}{% if machine.reserved_for or machine.booking_now %} tile-reserved{% endif %}{% if single %} tile-single{% endif %}">
-                {# У переговорной единица брони названа по комнате, и имя на
-                   плитке повторяло бы заголовок помещения слово в слово. #}
-                {% if machine.name != room.name %}
-                  <h3 class="tile-name">{{ machine.name }}</h3>
-                {% endif %}
+              <section class="tile tile-{{ machine.status }}{% if machine.booking_now %} tile-reserved{% endif %}{% if single %} tile-single{% endif %}">
+                {# Заголовка помещения больше нет, поэтому имя самой единицы
+                   показываем всегда — в том числе у переговорной. #}
+                <h3 class="tile-name">{{ machine.name }}</h3>
 
                 {% if machine.status == "broken" %}
                   <p class="tile-status">{{ t.tile_broken }}</p>
@@ -146,12 +86,6 @@
                     {{ MACHINE_DONE_ACTION.get(machine.kind, t.tile_release) }}
                   </a>
 
-                {% elif machine.reserved_for %}
-                  <p class="tile-status">{{ t.tile_reserved }}</p>
-                  <p class="tile-owner">{{ machine.reserved_for }}</p>
-                  <p class="tile-time">{{ t.tile_until.format(time=machine.reserved_until | hhmm) }}</p>
-                  <a class="btn btn-ghost" href="{{ base }}/occupy/{{ machine.id }}">{{ t.tile_its_me }}</a>
-
                 {% elif machine.booking_now %}
                   {# Машина физически свободна, но её час принадлежит человеку с
                      бронью — «Свободно» здесь читалось бы как приглашение занять. #}
@@ -171,16 +105,13 @@
                   {% endif %}
                 {% endif %}
 
-                {% if single %}{{ queue_block(room, group, free, column=true) }}{% endif %}
               </section>
             {% endfor %}
           </div>
 
-          {% if not single %}{{ queue_block(room, group, free) }}{% endif %}
         </div>
       </section>
     {% endfor %}
     </div>
   </article>
 {% endfor %}
-

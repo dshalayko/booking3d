@@ -119,35 +119,6 @@ async def release_action(
     return await screens.do_release(db, KIOSK, user, machine_id)
 
 
-# --- очередь -----------------------------------------------------------------
-
-
-@router.get("/queue/join/{room_id}/{kind}", response_class=HTMLResponse)
-async def queue_join_form(request: Request, db: Db, room_id: int, kind: str) -> Response:
-    return await screens.queue_join_page(request, db, KIOSK, room_id, kind)
-
-
-@router.post("/queue/join/{room_id}/{kind}")
-async def queue_join_action(
-    request: Request, db: Db, room_id: int, kind: str, pin: str = Form("")
-) -> Response:
-    user = await resolve_actor(request, db, pin)
-    return await screens.do_queue_join(db, KIOSK, user, room_id, kind)
-
-
-@router.get("/queue/leave/{room_id}", response_class=HTMLResponse)
-async def queue_leave_form(request: Request, db: Db, room_id: int) -> Response:
-    return await screens.queue_leave_page(request, db, KIOSK, room_id)
-
-
-@router.post("/queue/leave/{room_id}")
-async def queue_leave_action(
-    request: Request, db: Db, room_id: int, pin: str = Form("")
-) -> Response:
-    user = await resolve_actor(request, db, pin)
-    return await screens.do_queue_leave(db, KIOSK, user, room_id)
-
-
 # --- расписание и брони ------------------------------------------------------
 
 

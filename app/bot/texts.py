@@ -82,11 +82,6 @@ def name_changed(previous: str, login: str) -> str:
 # --- статус ------------------------------------------------------------------
 
 
-def kind_word(kind: str) -> str:
-    """«принтер» / «гравировщик» — для фраз про очередь."""
-    return t.MACHINE_KIND_ONE.get(kind, kind)
-
-
 def busy_word(kind: str) -> str:
     """Что машина делает, пока занята: печатает или гравирует."""
     return t.MACHINE_BUSY_WORD.get(kind, t.MACHINE_KIND_ONE.get(kind, kind))
@@ -124,7 +119,6 @@ def status(board: Board) -> str:
                 title = t.MACHINE_KIND_TITLE.get(group.kind, group.kind)
                 lines.append(t.BOT_STATUS_SECTION.format(title=title))
             lines.extend(_machine_lines(group, board))
-            lines.append(_queue_line(group))
             parts.append("\n".join(lines))
         blocks.append("\n\n".join(parts))
 
@@ -135,17 +129,6 @@ def _machine_lines(group, board: Board) -> list[str]:
     lines = []
     for machine in group.machines:
         mark = t.BOT_STATUS_MARKS.get(machine.status, t.BOT_STATUS_MARK_UNKNOWN)
-
-        if machine.reserved_for and machine.status == MachineStatus.FREE:
-            lines.append(
-                t.BOT_STATUS_RESERVED.format(
-                    mark=mark,
-                    machine=machine.name,
-                    name=machine.reserved_for,
-                    time=hhmm(machine.reserved_until),
-                )
-            )
-            continue
 
         if machine.status == MachineStatus.PRINTING:
             word = busy_word(machine.kind)
@@ -172,17 +155,6 @@ def _machine_lines(group, board: Board) -> list[str]:
     return lines
 
 
-def _queue_line(group) -> str:
-    if not group.queue:
-        return t.BOT_STATUS_QUEUE_EMPTY
-    people = ", ".join(
-        t.BOT_STATUS_QUEUE_PERSON.format(position=person.position, name=person.name)
-        + (t.BOT_STATUS_QUEUE_OFFERED if person.offered else "")
-        for person in group.queue
-    )
-    return t.BOT_STATUS_QUEUE.format(people=people)
-
-
 @dataclass(frozen=True)
 class MyWork:
     """Активная работа человека — по одной на помещение (правило 2)."""
@@ -200,28 +172,15 @@ class MyBooking:
     ends_at: datetime
 
 
-@dataclass(frozen=True)
-class MyQueue:
-    """Место в очереди. Если приглашение уже пришло, у него есть машина и срок."""
-
-    room: str
-    kind: str
-    position: int
-    offered_machine: str | None = None
-    offer_until: datetime | None = None
-
-
 def my_state(
     now: datetime,
     works: list[MyWork],
     bookings: list[MyBooking],
-    queues: list[MyQueue],
 ) -> str:
     """Всё, что за человеком числится, — списками, а не по одному.
 
-    Списками, потому что лимиты считаются в помещении: занятый принтер в
-    мастерской и бронь переговорной существуют одновременно, и показать что-то
-    одно значило бы соврать про остальное.
+    Списки нужны для корректного отображения старых данных, созданных до
+    глобального пользовательского лимита.
     """
     parts = [
         t.BOT_MY_BUSY.format(
@@ -238,105 +197,9 @@ def my_state(
         )
         for booking in bookings
     ]
-    for place in queues:
-        if place.offered_machine:
-            parts.append(
-                t.BOT_MY_OFFERED.format(
-                    machine=place.offered_machine,
-                    room=place.room,
-                    time=hhmm(place.offer_until),
-                )
-            )
-        else:
-            parts.append(
-                t.BOT_MY_IN_QUEUE.format(
-                    position=place.position,
-                    kind=kind_word(place.kind),
-                    room=place.room,
-                )
-            )
-
     if not parts:
         parts.append(t.BOT_MY_NOTHING)
     return "\n\n".join(parts)
-
-
-# --- очередь -----------------------------------------------------------------
-
-
-def park_empty() -> str:
-    return t.BOT_STATUS_PARK_EMPTY
-
-
-def queue_pick_kind(kinds: list[str]) -> str:
-    """Очередей несколько, но все в одном помещении — спрашиваем командами."""
-    options = "\n".join(
-        t.BOT_QUEUE_PICK_KIND.format(
-            command=f"/queue_{kind}", title=t.MACHINE_KIND_TITLE.get(kind, kind)
-        )
-        for kind in kinds
-    )
-    return t.BOT_QUEUE_PICK_KINDS.format(options=options)
-
-
-def queue_pick_room(options: list[tuple[str, str]]) -> str:
-    """Очереди в разных помещениях: командой их не перечислить.
-
-    Команда вида `/queue_<номер помещения>` была бы адресом строки в базе, а не
-    словом человеческого языка, поэтому выбор отправляем на экран — там
-    помещения названы своими именами.
-    """
-    lines = "\n".join(
-        t.BOT_QUEUE_PICK_OPTION.format(
-            room=room, title=t.MACHINE_KIND_TITLE.get(kind, kind)
-        )
-        for room, kind in options
-    )
-    return t.BOT_QUEUE_PICK.format(options=lines)
-
-
-def queue_leave_pick(options: list[tuple[str, str]]) -> str:
-    """Человек стоит в нескольких очередях — из какой выходить, решает он."""
-    lines = "\n".join(
-        t.BOT_QUEUE_PICK_OPTION.format(
-            room=room, title=t.MACHINE_KIND_TITLE.get(kind, kind)
-        )
-        for room, kind in options
-    )
-    return t.BOT_QUEUE_LEAVE_PICK.format(options=lines)
-
-
-def queue_joined(position: int, kind: str, room: str) -> str:
-    return t.BOT_QUEUE_JOINED.format(
-        position=position, kind=kind_word(kind), room=room
-    )
-
-
-def queue_already(position: int) -> str:
-    return t.BOT_QUEUE_ALREADY.format(position=position)
-
-
-def queue_left() -> str:
-    return t.BOT_QUEUE_LEFT
-
-
-def not_in_queue() -> str:
-    """Тот же текст, что у доменного отказа: ответ один, а пути к нему два."""
-    return t.ERR_NOT_IN_QUEUE
-
-
-def offer(machine_name: str, room_name: str, expires_at: datetime) -> str:
-    return t.BOT_OFFER.format(
-        machine=machine_name, room=room_name, time=hhmm(expires_at)
-    )
-
-
-def offer_expired(machine_name: str) -> str:
-    return t.BOT_OFFER_EXPIRED.format(machine=machine_name)
-
-
-def offer_night_hint() -> str:
-    return t.BOT_OFFER_NIGHT_HINT
 
 
 # --- брони -------------------------------------------------------------------
@@ -425,12 +288,6 @@ def finished(machine_name: str, kind: str) -> str:
     )
 
 
-def check_machine(machine_name: str, kind: str, owner_name: str) -> str:
-    return t.BOT_CHECK_MACHINE.format(
-        machine=machine_name, name=owner_name, hint=t.MACHINE_CHECK_HINT.get(kind, "")
-    )
-
-
 def unclaimed_owner(machine_name: str, kind: str, minutes: int) -> str:
     return t.BOT_UNCLAIMED_OWNER.format(
         machine=machine_name,
@@ -439,24 +296,11 @@ def unclaimed_owner(machine_name: str, kind: str, minutes: int) -> str:
     )
 
 
-def unclaimed_queue(machine_name: str, kind: str, owner_name: str, minutes: int) -> str:
-    return t.BOT_UNCLAIMED_QUEUE.format(
-        machine=machine_name,
-        name=owner_name,
-        ago=humanize(minutes),
-        hint=t.MACHINE_UNCLAIMED_QUEUE_HINT.get(kind, ""),
-    )
-
-
 def work_cancelled_by_admin(machine_name: str, reason: str | None) -> str:
     text = t.BOT_CANCELLED_BY_ADMIN.format(machine=machine_name)
     if reason:
         text += t.BOT_CANCELLED_REASON.format(reason=reason)
     return text + t.BOT_CANCELLED_TAIL
-
-
-def removed_from_queue() -> str:
-    return t.BOT_QUEUE_REMOVED
 
 
 def nothing_to_free() -> str:

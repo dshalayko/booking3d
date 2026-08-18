@@ -1,9 +1,8 @@
 """Помещения.
 
-Помещение — не подпись на экране, а граница, внутри которой считаются правила:
-своя очередь (правило 3), свои лимиты «одна работа и одна бронь на человека»
-(правила 2 и 13) и свои часы работы (правило 15). Поэтому здесь проверяется и
-состав комнат, и то, что эти границы действительно не протекают.
+Помещение — не подпись на экране: оно задаёт состав парка и часы работы.
+Пользовательские лимиты при этом общие для всей системы, поэтому здесь
+проверяются и границы комнаты, и переходы между комнатами.
 
 Отдельно — переговорная: у неё нет оборудования, единицей брони служит сама
 комната. Строка в `machines` с типом `meeting_room` создаётся вместе с
@@ -28,9 +27,7 @@ from app.services import schedule
 from app.services import workhours as workhours_svc
 from app.services.errors import (
     AlreadyBooked,
-    AlreadyInQueue,
     MachineKindNotInRoom,
-    MachineReserved,
     NotAdmin,
     RoomKindUnknown,
     RoomNameInvalid,
@@ -265,33 +262,18 @@ class TestMachineBelongsToRoom:
 
         assert unit.room_id == room.id
 
-    async def test_queue_of_a_kind_absent_from_the_room_is_refused(
-        self, db, meeting, make_user
-    ):
-        room, _ = meeting
-        person = await make_user()
+class TestGlobalUserLimits:
+    """Одна активная работа и одна бронь считаются по всей системе."""
 
-        with pytest.raises(MachineKindNotInRoom):
-            await queue_svc.join(db, person.id, room.id, MachineKind.PRINTER, now=NOON)
-
-
-class TestLimitsArePerRoom:
-    """Правила 2 и 13 считаются в помещении, а не на весь коворкинг.
-
-    Иначе бронь переговорной запрещала бы печать, и вся система нескольких
-    помещений сводилась бы к одной комнате с разными плитками.
-    """
-
-    async def test_work_in_one_room_does_not_block_another(
+    async def test_work_in_one_room_blocks_another(
         self, db, room, printers, meeting, make_user
     ):
         person = await make_user()
         _, unit = meeting
 
         await machines_svc.occupy(db, person, printers[0].id, 60, now=NOON)
-        result = await machines_svc.occupy(db, person, unit.id, 60, now=NOON)
-
-        assert result.machine_id == unit.id
+        with pytest.raises(UserBusy):
+            await machines_svc.occupy(db, person, unit.id, 60, now=NOON)
 
     async def test_second_work_in_the_same_room_is_refused(
         self, db, room, printers, make_user
@@ -302,114 +284,18 @@ class TestLimitsArePerRoom:
         with pytest.raises(UserBusy):
             await machines_svc.occupy(db, person, printers[1].id, 60, now=NOON)
 
-    async def test_place_in_line_is_one_per_room(
-        self, db, room, printers, other_room, make_user
-    ):
-        second = Machine(
-            room_id=other_room.id,
-            name="P2S #3",
-            kind=MachineKind.PRINTER,
-            status=MachineStatus.PRINTING,
-        )
-        db.add(second)
-        await db.flush()
-        person = await make_user()
-        for printer in printers:
-            await machines_svc.occupy(db, await make_user(), printer.id, 60, now=NOON)
-
-        here = await queue_svc.join(db, person.id, room.id, MachineKind.PRINTER, now=NOON)
-        there = await queue_svc.join(
-            db, person.id, other_room.id, MachineKind.PRINTER, now=NOON
-        )
-
-        assert here.position == 1 and there.position == 1
-        with pytest.raises(AlreadyInQueue):
-            await queue_svc.join(db, person.id, room.id, MachineKind.PRINTER, now=NOON)
-
-    async def test_booking_is_one_per_room(self, db, room, printers, meeting, make_user):
+    async def test_booking_is_one_per_user(self, db, printers, meeting, make_user):
         person = await make_user()
         _, unit = meeting
 
-        first = await reservations_svc.book(
+        await reservations_svc.book(
             db, person, printers[0].id, tomorrow_at(), 60, now=NOON
         )
-        second = await reservations_svc.book(
-            db, person, unit.id, tomorrow_at(), 60, now=NOON
-        )
 
-        assert {first.room_id, second.room_id} == {room.id, unit.room_id}
         with pytest.raises(AlreadyBooked):
             await reservations_svc.book(
-                db, person, printers[1].id, tomorrow_at(14), 60, now=NOON
+                db, person, unit.id, tomorrow_at(14), 60, now=NOON
             )
-
-
-class TestQueueIsPerRoom:
-    """Правило 3: очередь — это пара (помещение, тип).
-
-    Общая очередь на два корпуса приглашала бы человека к машине, до которой ему
-    идти в другое здание: он не придёт, а машина простоит придержанной всё окно
-    подтверждения.
-    """
-
-    async def test_offer_stays_inside_its_room(
-        self, db, room, printers, other_room, make_user
-    ):
-        far = Machine(
-            room_id=other_room.id,
-            name="P2S #3",
-            kind=MachineKind.PRINTER,
-            status=MachineStatus.FREE,
-        )
-        db.add(far)
-        await db.flush()
-        owner = await make_user()
-        here = await make_user()
-        await machines_svc.occupy(db, owner, printers[0].id, 60, now=NOON)
-        await machines_svc.occupy(db, await make_user(), printers[1].id, 60, now=NOON)
-        await queue_svc.join(db, here.id, room.id, MachineKind.PRINTER, now=NOON)
-
-        # Свободна машина в другом помещении — приглашение туда не уходит.
-        offers = await queue_svc.offer_free_machines(db, now=NOON)
-        assert offers == []
-
-        # А своя освободилась — уходит сразу.
-        released = await machines_svc.release(db, owner, printers[0].id, now=NOON)
-        assert [offer.user_id for offer in released.offers] == [here.id]
-
-    async def test_line_in_another_room_does_not_lock_a_free_machine(
-        self, db, room, printers, other_room, make_user
-    ):
-        """Правило 7 действует в пределах помещения — как и в пределах типа."""
-        far = Machine(
-            room_id=other_room.id,
-            name="P2S #3",
-            kind=MachineKind.PRINTER,
-            status=MachineStatus.FREE,
-        )
-        db.add(far)
-        await db.flush()
-        for printer in printers:
-            await machines_svc.occupy(db, await make_user(), printer.id, 60, now=NOON)
-        await queue_svc.join(db, (await make_user()).id, room.id, MachineKind.PRINTER, now=NOON)
-        passerby = await make_user()
-
-        result = await machines_svc.occupy(db, passerby, far.id, 60, now=NOON)
-
-        assert result.from_offer is False
-
-    async def test_line_of_the_same_room_still_locks_it(self, db, room, printers, make_user):
-        """Проверка от обратного: внутри помещения правило 7 работает как раньше."""
-        owner = await make_user()
-        await machines_svc.occupy(db, owner, printers[0].id, 60, now=NOON)
-        await machines_svc.occupy(db, await make_user(), printers[1].id, 60, now=NOON)
-        waiting = await make_user()
-        await queue_svc.join(db, waiting.id, room.id, MachineKind.PRINTER, now=NOON)
-        await machines_svc.release(db, owner, printers[0].id, now=NOON)
-        passerby = await make_user()
-
-        with pytest.raises(MachineReserved):
-            await machines_svc.occupy(db, passerby, printers[0].id, 60, now=NOON)
 
 
 class TestAdminPage:
@@ -461,7 +347,8 @@ class TestAdminPage:
         board = await client.get(f"/room/{created.id}")
 
         assert board.status_code == 200
-        assert "Ангар" in board.text
+        assert "Ангар" not in board.text
+        assert "Здесь пока нет оборудования" in board.text
 
     async def test_machine_in_a_wrong_room_is_refused(self, client, db, meeting, make_user):
         room, _ = meeting
@@ -529,7 +416,7 @@ class TestKioskIsTiedToOneRoom:
 
         board = await client.get("/")
 
-        assert room.name in board.text
+        assert room.name not in board.text
         assert "P2S #1" in board.text
         assert "P2S #3" not in board.text, "чужое помещение на стене только мешает"
 
@@ -540,7 +427,7 @@ class TestKioskIsTiedToOneRoom:
         он показывает первое помещение, а не список и не ошибку."""
         board = await client.get("/")
 
-        assert room.name in board.text
+        assert room.name not in board.text
         assert other_room.name not in board.text
 
     async def test_room_board_is_open_to_everyone(self, client, room, printers):
@@ -570,7 +457,7 @@ class TestKioskIsTiedToOneRoom:
         board = await client.get("/")
 
         assert board.status_code == 200
-        assert room.name in board.text
+        assert room.name not in board.text
 
     async def test_without_any_room_the_screen_says_so(self, client):
         """Пустая база: экран объясняет, что делать, а не показывает пятисотую."""
@@ -593,7 +480,7 @@ class TestMeetingRoomWords:
         response = await client.get(f"/room/{room.id}")
 
         assert "Свободно" in response.text
-        # Секция типа не подписана: заголовок помещения сказал бы то же дважды.
+        # Заголовка помещения нет, имя остаётся на самой бронируемой единице.
         assert response.text.count("Переговорная «Дуб»") == 1
 
     async def test_time_is_up_instead_of_take_your_part(self, client, db, meeting, make_user):
