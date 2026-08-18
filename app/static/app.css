@@ -939,19 +939,20 @@ body.admin-page { padding: 0; gap: 0; }
     right: max(12px, env(safe-area-inset-right));
     bottom: max(10px, env(safe-area-inset-bottom));
   }
-  .app-close,
-  .my-links .btn-wide {
-    min-height: 58px;
-    padding: 14px 18px;
-    font-size: 18px;
-  }
-
   .banner { padding: 8px 12px; font-size: 14px; }
 
   /* Кнопки уровня экрана: 44px — минимум, который ещё уверенно нажимается
      пальцем, и втрое меньше киосковых 72px, рассчитанных на тычок не глядя. */
   .btn { min-height: 44px; padding: 10px 14px; font-size: 16px; }
   .btn-small { min-height: 34px; padding: 6px 12px; font-size: 13px; }
+  /* Обе нижние кнопки Mini App одинаковые. Правило идёт после `.btn-small`,
+     иначе общий мобильный размер снова сплющит только кнопку закрытия. */
+  .app-close-bar .app-close,
+  .my-links .btn-wide {
+    min-height: 58px;
+    padding: 14px 18px;
+    font-size: 18px;
+  }
 
   /* --- главный экран --- */
 
