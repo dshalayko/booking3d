@@ -28,23 +28,24 @@
    Авто-возврат на главный экран — свойство планшета на стене, а не страницы: он
    общий, и брошенный чужой экран должен сам вернуться к доске. В Mini App
    (`needs_pin` = false) телефон личный, и уводить человека с экрана нельзя. #}
-<body class="{% block body_class %}{% endblock %}"
+<body class="{% block body_class %}{% endblock %}{% if telegram_sdk|default(false) %} miniapp-page{% endif %}"
       data-texts="{{ t_js | tojson | forceescape }}"
       data-version="{{ asset_version }}"
       {%- if auto_return|default(false) and needs_pin %} data-autoreturn="60"{% endif %}>
+  <div id="offline-banner" class="banner banner-offline" hidden>
+    {{ t.offline_banner }}
+  </div>
+  {% block content %}{% endblock %}
   {% if telegram_sdk|default(false) %}
     {# BackButton листает историю Mini App и не закрывает его. Явное действие
-       показываем только после обнаружения настоящего Telegram WebApp API. #}
+       стоит последним и закреплено CSS у нижнего края экрана; показываем его
+       только после обнаружения настоящего Telegram WebApp API. #}
     <div class="app-close-bar" data-tg-close-bar hidden>
       <button class="btn btn-ghost btn-small app-close" type="button" data-tg-close>
         {{ t.app_close }}
       </button>
     </div>
   {% endif %}
-  <div id="offline-banner" class="banner banner-offline" hidden>
-    {{ t.offline_banner }}
-  </div>
-  {% block content %}{% endblock %}
   {# Единственный внешний скрипт во всём проекте и единственная страница, где он
      допустим: Mini App живёт внутри Telegram и без интернета не открывается в
      принципе. Экраны киоска остаются автономными — они и должны читаться, когда

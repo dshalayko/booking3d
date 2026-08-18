@@ -541,8 +541,19 @@ body {
 
 /* --- мои брони (Mini App) --- */
 
-.app-close-bar { flex: 0 0 auto; display: flex; justify-content: flex-end; }
-.app-close { color: var(--text); }
+.miniapp-page {
+  /* Фиксированная кнопка не должна закрывать последнюю строку расписания или
+     подтверждение формы. */
+  padding-bottom: max(92px, calc(env(safe-area-inset-bottom) + 80px));
+}
+.app-close-bar {
+  position: fixed;
+  z-index: 20;
+  left: max(20px, env(safe-area-inset-left));
+  right: max(20px, env(safe-area-inset-right));
+  bottom: max(20px, env(safe-area-inset-bottom));
+}
+.app-close { width: 100%; color: var(--text); }
 .app-loading { margin: auto; font-size: 22px; color: var(--muted); }
 /* Тестовый вход: список людей вместо подписи Telegram. Жёлтым, чтобы включённый
    MINIAPP_OPEN_ACCESS нельзя было принять за обычный экран входа. */
@@ -909,6 +920,14 @@ body.admin-page { padding: 0; gap: 0; }
       max(12px, env(safe-area-inset-right))
       max(12px, env(safe-area-inset-bottom))
       max(12px, env(safe-area-inset-left));
+  }
+  body.miniapp-page {
+    padding-bottom: max(68px, calc(env(safe-area-inset-bottom) + 58px));
+  }
+  .app-close-bar {
+    left: max(12px, env(safe-area-inset-left));
+    right: max(12px, env(safe-area-inset-right));
+    bottom: max(10px, env(safe-area-inset-bottom));
   }
 
   .banner { padding: 8px 12px; font-size: 14px; }
