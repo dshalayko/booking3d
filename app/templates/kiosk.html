@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% block body_class %}{% if status_view|default(false) %}status-page{% endif %}{% endblock %}
 
 {% block content %}
   {% if flash %}

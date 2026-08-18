@@ -407,6 +407,7 @@ class TestScreens:
         partial = await client.get("/app/partials/status")
 
         assert status.status_code == 200
+        assert "status-page" in status.text
         assert printers[0].name in status.text
         assert printers[1].name in status.text
         assert engravers[0].name in status.text

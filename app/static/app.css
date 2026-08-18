@@ -1003,6 +1003,30 @@ body.admin-page { padding: 0; gap: 0; }
      карточку вообще открывают, и целиться в неё не должно быть нужно. */
   .tile .btn { grid-column: 1 / -1; margin-top: 6px; font-size: 14px; }
 
+  /* Экран просмотра статусов — исключение из компактной телефонной доски.
+     Действий внутри карточек нет, поэтому свободную высоту отдаём самим
+     статусам: группы делят экран по числу машин, а карточки — свою группу. */
+  .status-page #board {
+    flex: 1;
+    min-height: 0;
+    --tile-name: 18px;
+    --tile-status: 18px;
+    --tile-owner: 16px;
+    --tile-time: 15px;
+  }
+  .status-page .room { flex: 1 1 0; min-height: 0; }
+  .status-page .room-groups { flex: 1; min-height: 0; }
+  .status-page .group { flex: var(--machines, 1) 1 0; min-height: 0; }
+  .status-page .group-body,
+  .status-page .tiles { flex: 1; min-height: 0; }
+  .status-page .tiles { grid-auto-rows: minmax(96px, 1fr); }
+  .status-page .tile {
+    min-height: 96px;
+    padding: 14px 16px;
+    align-content: center;
+    row-gap: 6px;
+  }
+
   /* --- экраны действий --- */
 
   .sheet { gap: 12px; }
