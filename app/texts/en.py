@@ -854,6 +854,8 @@ UI = {
     "my_where": "{machine} · {room}",
     "my_cancel": "Cancel booking",
     "my_in_progress": "Booking in use now",
+    "my_current": "Current job",
+    "my_current_until": "In use until {time}",
     "my_finish": "Finish job",
     "my_blocked": (
         "You can make another booking when the current time ends, "

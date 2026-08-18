@@ -13,6 +13,22 @@
     <h1>{{ t.my_heading }}</h1>
   </header>
 
+  {% if current %}
+    {% set session, machine, room = current %}
+    <article class="booking booking-current">
+      <span class="booking-machine">
+        {{ t.my_where.format(machine=machine.name, room=room.name) }}
+      </span>
+      <span class="booking-when">{{ t.my_current }}</span>
+      <span class="booking-when" data-eta="{{ session.eta_at | iso }}">
+        {{ t.my_current_until.format(time=session.eta_at | hhmm) }}
+      </span>
+      <a class="btn btn-small" href="{{ base }}/release/{{ machine.id }}">
+        {{ t.my_finish }}
+      </a>
+    </article>
+  {% endif %}
+
   {% if bookings %}
     <ul class="bookings">
       {% for booking, machine, room in bookings %}
@@ -39,6 +55,7 @@
         </li>
       {% endfor %}
     </ul>
+  {% elif current %}
   {% elif can_book %}
     <p class="board-empty">{{ t.my_empty }}</p>
   {% else %}
@@ -48,7 +65,7 @@
   {# Отсюда же — вход в расписание каждой пары «помещение — тип», которая реально
      есть в парке. #}
   <div class="my-links">
-    {% if bookings %}
+    {% if bookings or current %}
       <a class="btn btn-small btn-wide" href="{{ base }}/status">
         {{ t.app_view_statuses }}
       </a>

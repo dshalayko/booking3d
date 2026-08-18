@@ -146,7 +146,7 @@ async def occupy(
     reservation = await _check_booking_allows(db, user, machine, duration_minutes, now)
     # Работа одна во всей системе: физически одновременно пользоваться второй
     # машиной или переговорной тот же человек не может.
-    if await _active_session_of_user(db, user.id) is not None:
+    if await active_session_of_user(db, user.id) is not None:
         raise UserBusy(t.ERR_USER_BUSY)
 
     # Правило 13 с этой стороны: у человека с бронью во всей системе одно дело —
@@ -574,7 +574,8 @@ async def _active_session_of_machine(db: AsyncSession, machine_id: int) -> Machi
     )
 
 
-async def _active_session_of_user(db: AsyncSession, user_id: int) -> MachineSession | None:
+async def active_session_of_user(db: AsyncSession, user_id: int) -> MachineSession | None:
+    """Текущая работа человека, включая ожидание снятия готовой детали."""
     return await db.scalar(
         select(MachineSession).where(
             MachineSession.user_id == user_id,

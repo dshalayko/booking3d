@@ -598,6 +598,14 @@ async def my_page(
     человек попадает на список и не понимает, случилось ли что-то только что.
     """
     can_book = await reservations_svc.can_user_book(db, user.id)
+    session = await machines_svc.active_session_of_user(db, user.id)
+    # Работа, начатая из календаря, уже отображается самой бронью через
+    # include_in_progress. Отдельной карточкой нужна только «занять сейчас».
+    current = None
+    if session is not None and session.reservation_id is None:
+        machine = await _machine(db, session.machine_id)
+        room = await _room(db, session.room_id)
+        current = (session, machine, room)
     return templates.TemplateResponse(
         request,
         "my.html",
@@ -606,6 +614,7 @@ async def my_page(
             "bookings": await reservations_svc.of_user(
                 db, user.id, include_in_progress=True
             ),
+            "current": current,
             "links": await schedule_links(db) if can_book else [],
             "can_book": can_book,
             "flash": t.FLASH_KIOSK.get(flash),

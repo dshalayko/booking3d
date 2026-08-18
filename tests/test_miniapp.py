@@ -328,6 +328,7 @@ class TestScreens:
 
         assert "P2S #1" in listing.text
         assert t.UI["my_in_progress"] in listing.text
+        assert t.UI["my_current"] not in listing.text
         assert f'/app/release/{printers[0].id}' in listing.text
         assert f'/app/schedule/{room.id}/{MachineKind.PRINTER}' not in mine.text
         assert t.UI["board_schedule_cta"] not in mine.text
@@ -338,6 +339,23 @@ class TestScreens:
 
         assert t.UI["my_in_progress"] not in finished.text
         assert f'/app/schedule/{room.id}/{MachineKind.PRINTER}' in finished.text
+
+    async def test_take_now_is_visible_in_my_bookings(
+        self, client, db, room, printers, make_user
+    ):
+        user = await make_user()
+        await machines_svc.occupy(db, user, printers[0].id, 120)
+        await db.commit()
+        await open_app(client, user)
+
+        listing = await client.get("/app/my")
+
+        assert printers[0].name in listing.text
+        assert room.name in listing.text
+        assert t.UI["my_current"] in listing.text
+        assert f'href="/app/release/{printers[0].id}"' in listing.text
+        assert 'href="/app/status"' in listing.text
+        assert t.UI["my_blocked"] not in listing.text
 
     async def test_active_booking_hides_new_booking_links(
         self, client, db, room, printers, make_user
