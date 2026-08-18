@@ -138,6 +138,12 @@ class TestSession:
         assert printers[0].name in board.text
         assert "board-page miniapp-page" in board.text
 
+        bookings = await client.get("/app/my")
+        assert (
+            f'class="btn btn-small btn-wide" '
+            f'href="/app/schedule/{room.id}/{MachineKind.PRINTER}"' in bookings.text
+        )
+
     async def test_forged_open_is_refused(self, client, make_user):
         await make_user()
 
