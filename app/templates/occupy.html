@@ -1,5 +1,6 @@
 {% extends "base.html" %}
 {% set auto_return = true %}
+{% block body_class %}duration-page{% endblock %}
 {% block title %}{{ t.occupy_title.format(machine=machine.name) }}{% endblock %}
 
 {% block content %}

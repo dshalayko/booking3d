@@ -88,6 +88,7 @@ class TestOccupy:
         assert "PIN" in response.text
         assert "до утра" in response.text or "12 ч" in response.text
         assert "Занять сейчас" in response.text
+        assert 'class="duration-page"' in response.text
         assert 'type="radio" name="minutes"' in response.text
         assert 'type="submit" name="minutes"' not in response.text
 
@@ -383,6 +384,7 @@ class TestBookScreen:
         assert response.status_code == 200
         assert "PIN" in response.text
         assert "Забронировать" in response.text
+        assert 'class="duration-page"' in response.text
 
     async def test_form_refuses_past_hour_before_pin(self, client, room, printers):
         await enroll(client, room)

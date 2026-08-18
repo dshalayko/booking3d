@@ -1,6 +1,7 @@
 {# Бронь: длительность и (на киоске) PIN. Час уже выбран в расписании. #}
 {% extends "base.html" %}
 {% set auto_return = true %}
+{% block body_class %}duration-page{% endblock %}
 {% block title %}{{ t.book_title.format(machine=machine.name) }}{% endblock %}
 
 {% block content %}
