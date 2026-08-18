@@ -651,6 +651,7 @@ class TestOwnBoard:
         page = (await client.get("/app/")).text
 
         assert f'href="/app/release/{printers[0].id}"' in page
+        assert "focused-page miniapp-page" in page
         # Занять вторую машину предлагать некуда: она есть.
         assert f'href="/app/occupy/{printers[1].id}"' not in page
         assert 'href="/app/status"' in page
