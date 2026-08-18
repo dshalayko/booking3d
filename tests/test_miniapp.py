@@ -136,6 +136,7 @@ class TestSession:
         board = await client.get("/app/")
         assert room.name not in board.text
         assert printers[0].name in board.text
+        assert "board-page miniapp-page" in board.text
 
     async def test_forged_open_is_refused(self, client, make_user):
         await make_user()

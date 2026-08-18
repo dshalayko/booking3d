@@ -1033,6 +1033,32 @@ body.admin-page { padding: 0; gap: 0; }
      карточку вообще открывают, и целиться в неё не должно быть нужно. */
   .tile .btn { grid-column: 1 / -1; margin-top: 6px; font-size: 14px; }
 
+  /* Главная доска Mini App тоже использует доступную высоту экрана. Выше
+     портретное правило намеренно возвращает обычной доске высоту по содержимому
+     ради прокрутки, но на личном экране из двух групп это оставляло пустой
+     почти половину телефона. Группы делят остаток пропорционально числу машин,
+     а карточки — высоту своей группы; минимумы сохраняют удобный размер на
+     невысоких телефонах и при необходимости оставляют прокрутку. */
+  .miniapp-page.board-page #board,
+  .miniapp-page.board-page .room,
+  .miniapp-page.board-page .room-groups,
+  .miniapp-page.board-page .group-body,
+  .miniapp-page.board-page .tiles {
+    flex: 1;
+    min-height: 0;
+  }
+  .miniapp-page.board-page .group {
+    flex: var(--machines, 1) 1 0;
+    min-height: 0;
+  }
+  .miniapp-page.board-page .tiles { grid-auto-rows: minmax(96px, 1fr); }
+  .miniapp-page.board-page .tile {
+    min-height: 96px;
+    padding: 14px 16px;
+    align-content: center;
+    row-gap: 6px;
+  }
+
   /* Экран просмотра статусов — исключение из компактной телефонной доски.
      Действий внутри карточек нет, поэтому свободную высоту отдаём самим
      статусам: группы делят экран по числу машин, а карточки — свою группу. */
