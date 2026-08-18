@@ -520,6 +520,7 @@ class TestStaticAndOffline:
         assert (await client.get("/static/manifest.webmanifest")).status_code == 200
         assert (await client.get("/static/app.css")).status_code == 200
         assert (await client.get("/static/app.js")).status_code == 200
+        assert (await client.get("/static/admin.js")).status_code == 200
 
 
 class TestSelfUpdate:
@@ -529,6 +530,8 @@ class TestSelfUpdate:
         response = await client.get(f"/room/{room.id}")
 
         assert f'data-version="{assets.VERSION}"' in response.text
+        assert f'/static/app.css?v={assets.VERSION}' in response.text
+        assert f'/static/app.js?v={assets.VERSION}' in response.text
 
     async def test_poll_answers_with_the_current_version(self, client, room, printers):
         """Именно по этому заголовку страница и узнаёт, что сервер обновился."""

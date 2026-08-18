@@ -17,7 +17,9 @@
   <meta name="theme-color" content="#12141a">
   <title>{% block title %}{{ t.app_title }}{% endblock %}</title>
   <link rel="manifest" href="/static/manifest.webmanifest">
-  <link rel="stylesheet" href="/static/app.css">
+  {# Версия в URL обходит старую копию из service worker: после деплоя новый
+     HTML не должен исполняться со старым CSS или JS даже на первом открытии. #}
+  <link rel="stylesheet" href="/static/app.css?v={{ asset_version }}">
 </head>
 {# Счётчики времени app.js дорисовывает сам, поэтому его строки едут в атрибуте.
    Не инлайновым <script>: страница не должна содержать ни одного, иначе
@@ -38,9 +40,11 @@
      допустим: Mini App живёт внутри Telegram и без интернета не открывается в
      принципе. Экраны киоска остаются автономными — они и должны читаться, когда
      связь пропала. #}
-  {% if telegram_sdk|default(false) %}
-    <script src="https://telegram.org/js/telegram-web-app.js"></script>
-  {% endif %}
-  <script src="/static/app.js"></script>
+  {% block scripts %}
+    {% if telegram_sdk|default(false) %}
+      <script src="https://telegram.org/js/telegram-web-app.js"></script>
+    {% endif %}
+    <script src="/static/app.js?v={{ asset_version }}"></script>
+  {% endblock %}
 </body>
 </html>
