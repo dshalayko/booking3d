@@ -260,6 +260,21 @@ class TestOpenAccess:
 
 
 class TestRelease:
+    async def test_release_form_uses_tablet_layout(
+        self, client, room, db, printers, make_user
+    ):
+        owner = await make_user(pin="4242")
+        await machines_svc.occupy(db, owner, printers[0].id, 60)
+        await db.commit()
+        await enroll(client, room)
+
+        response = await client.get(f"/release/{printers[0].id}")
+
+        assert response.status_code == 200
+        assert 'class="confirm-page"' in response.text
+        assert "keypad" in response.text
+        assert "Да, освободить" in response.text
+
     async def test_release_frees_printer(self, client, room, db, printers, make_user):
         machine_id = printers[0].id
         owner = await make_user(pin="4242")
