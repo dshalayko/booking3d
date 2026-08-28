@@ -1,3 +1,5 @@
+import html
+import re
 from datetime import UTC, datetime, timedelta
 
 import pytest
@@ -400,6 +402,22 @@ class TestBookScreen:
         assert "PIN" in response.text
         assert "Забронировать" in response.text
         assert 'class="duration-page"' in response.text
+
+    async def test_back_from_the_form_returns_to_the_schedule(
+        self, client, room, printers, work_slot
+    ):
+        """Ссылка «отмена» строится в шаблоне, и без номера помещения она 404-ит."""
+        await enroll(client, room)
+        start = work_slot()
+
+        form = await client.get(
+            f"/book/{printers[0].id}", params={"start": start.isoformat()}
+        )
+        back = re.search(r'href="([^"]*/schedule/[^"]+)"', form.text).group(1)
+        schedule = await client.get(html.unescape(back))
+
+        assert back.startswith(f"/schedule/{room.id}/{MachineKind.PRINTER}")
+        assert schedule.status_code == 200
 
     async def test_form_refuses_past_hour_before_pin(self, client, room, printers):
         await enroll(client, room)

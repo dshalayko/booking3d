@@ -12,7 +12,9 @@
 
 import hashlib
 import hmac
+import html
 import json
+import re
 import time
 from datetime import UTC, datetime, timedelta
 from urllib.parse import urlencode
@@ -285,6 +287,22 @@ class TestScreens:
         assert response.headers["location"] == "/app/?flash=occupied"
         db.expire_all()
         assert (await db.get(Machine, machine_id)).status == MachineStatus.PRINTING
+
+    async def test_back_from_the_form_returns_to_the_schedule(
+        self, client, room, printers, make_user
+    ):
+        """Та же ссылка, но с префиксом /app: помещение в ней тоже обязано быть."""
+        user = await make_user()
+        await open_app(client, user)
+
+        form = await client.get(
+            f"/app/book/{printers[0].id}", params={"start": tomorrow_at().isoformat()}
+        )
+        back = re.search(r'href="([^"]*/schedule/[^"]+)"', form.text).group(1)
+        schedule = await client.get(html.unescape(back))
+
+        assert back.startswith(f"/app/schedule/{room.id}/{MachineKind.PRINTER}")
+        assert schedule.status_code == 200
 
     async def test_booking_from_the_phone(self, client, db, printers, make_user):
         user = await make_user()
