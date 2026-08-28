@@ -456,11 +456,28 @@ async def book_page(
         if upcoming is not None
         else None
     )
+
+    # В сетке конкретная машина выбирается столбцом, но на телефоне это легко
+    # не заметить. На форме показываем явный переключатель машин того же типа и
+    # помещения. Недоступные в выбранный час остаются видимыми, но выбрать их
+    # нельзя — так человек понимает, куда делся знакомый принтер.
+    peers = await machines_svc.list_machines(
+        db, room_id=machine.room_id, kind=machine.kind
+    )
+    machine_options = []
+    for candidate in peers:
+        available = (
+            candidate.status != MachineStatus.BROKEN
+            and not await reservations_svc.slot_taken(db, candidate.id, starts_at)
+        )
+        machine_options.append((candidate, available))
+
     return templates.TemplateResponse(
         request,
         "book.html",
         {
             "machine": machine,
+            "machine_options": machine_options,
             "starts_at": starts_at,
             "durations": duration_options(
                 starts_at,

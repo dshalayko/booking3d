@@ -48,7 +48,10 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent
 # `rooms` вычищается вместе с остальными, а CASCADE забирает и `work_hours`:
 # помещения заводят сами тесты, и оставшаяся от миграции комната мешала бы
 # считать их — в списке помещений она была бы третьей лишней.
-TABLES = "booking_policy, users, rooms, machines, sessions, queue, reservations"
+TABLES = (
+    "feedback_requests, booking_policy, users, rooms, machines, "
+    "sessions, queue, reservations"
+)
 
 TEST_ZONE = ZoneInfo("Europe/Nicosia")
 

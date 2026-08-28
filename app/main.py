@@ -31,6 +31,7 @@ from app.services.errors import (
     ChatIdInvalid,
     ChatIdTaken,
     DomainError,
+    FeedbackInvalid,
     InvalidDuration,
     InvalidReservationTime,
     LastAdmin,
@@ -118,6 +119,7 @@ STATUS_BY_ERROR: dict[type[DomainError], int] = {
     ChatIdTaken: 409,
     ChatIdInvalid: 400,
     LastAdmin: 409,
+    FeedbackInvalid: 400,
 }
 
 

@@ -20,12 +20,13 @@ from datetime import UTC, datetime, timedelta
 from urllib.parse import urlencode
 
 import pytest
+from sqlalchemy import select
 
 from app import texts as t
 from app.bot import notify
 from app.config import settings
 from app.enums import MachineKind, MachineStatus, ReservationStatus
-from app.models import Machine, Reservation
+from app.models import FeedbackRequest, Machine, Reservation
 from app.services import booking_policy, telegram
 from app.services import machines as machines_svc
 from app.services import reservations as reservations_svc
@@ -214,6 +215,66 @@ class TestSession:
         assert 'value="/app/status"' in response.text
 
 
+class TestFeedback:
+    async def test_button_and_form_are_available_to_signed_in_user(
+        self, client, printers, make_user
+    ):
+        person = await make_user(name="d_shalayko")
+        await open_app(client, person)
+
+        home = await client.get("/app/")
+        assert 'href="/app/feedback"' in home.text
+        assert t.UI["feedback_button"] in home.text
+
+        form = await client.get("/app/feedback")
+        assert form.status_code == 200
+        assert 'name="username"' in form.text
+        assert 'value="d_shalayko"' in form.text
+        assert 'name="message"' in form.text
+
+    async def test_submission_is_saved_and_redirects_home(
+        self, client, db, printers, make_user
+    ):
+        person = await make_user(name="d_shalayko")
+        await open_app(client, person)
+
+        response = await client.post(
+            "/app/feedback",
+            data={"username": "  Dan  ", "message": "  Add another printer  "},
+        )
+
+        assert response.status_code == 303
+        assert response.headers["location"] == "/app/?flash=feedback_sent"
+        stored = await db.scalar(select(FeedbackRequest))
+        assert stored is not None
+        assert stored.user_id == person.id
+        assert stored.username == "Dan"
+        assert stored.message == "Add another printer"
+
+    async def test_empty_feedback_is_refused(self, client, db, printers, make_user):
+        person = await make_user()
+        await open_app(client, person)
+
+        response = await client.post(
+            "/app/feedback",
+            data={"username": person.name, "message": "   "},
+            headers={"accept": "text/html"},
+        )
+
+        assert response.status_code == 400
+        assert await db.scalar(select(FeedbackRequest)) is None
+
+    async def test_form_without_session_bootstraps_and_post_is_refused(self, client):
+        form = await client.get("/app/feedback")
+        assert form.status_code == 200
+        assert 'value="/app/feedback"' in form.text
+
+        action = await client.post(
+            "/app/feedback", data={"username": "x", "message": "test"}
+        )
+        assert action.status_code == 401
+
+
 class TestOpenAccess:
     """`MINIAPP_OPEN_ACCESS` — режим для проверки брон без бота и сертификата."""
 
@@ -316,6 +377,48 @@ class TestScreens:
 
         assert back.startswith(f"/app/schedule/{room.id}/{MachineKind.PRINTER}")
         assert schedule.status_code == 200
+
+    async def test_booking_form_can_switch_the_selected_printer(
+        self, client, printers, make_user
+    ):
+        user = await make_user()
+        await open_app(client, user)
+        start = tomorrow_at()
+
+        first = await client.get(
+            f"/app/book/{printers[0].id}", params={"start": start.isoformat()}
+        )
+        switched = await client.get(
+            "/app/choose-machine",
+            params={"machine_id": printers[1].id, "start": start.isoformat()},
+        )
+
+        assert t.UI["book_machine_label"] in first.text
+        assert printers[0].name in first.text and printers[1].name in first.text
+        assert f'value="{printers[0].id}"' in first.text
+        assert f'action="/app/book/{printers[1].id}"' in switched.text
+        assert t.UI["book_heading"].format(machine=printers[1].name) in switched.text
+
+    async def test_printer_booked_at_that_time_is_disabled_in_picker(
+        self, client, db, printers, make_user
+    ):
+        start = tomorrow_at()
+        other = await make_user(name="Другой")
+        await reservations_svc.book(db, other, printers[1].id, start, 60)
+        await db.commit()
+        user = await make_user()
+        await open_app(client, user)
+
+        form = await client.get(
+            f"/app/book/{printers[0].id}", params={"start": start.isoformat()}
+        )
+
+        option = re.search(
+            rf'<option value="{printers[1].id}"(?P<attrs>[^>]*)>', form.text
+        )
+        assert option is not None
+        assert "disabled" in option.group("attrs")
+        assert t.UI["book_machine_unavailable"] in form.text
 
     async def test_booking_from_the_phone(self, client, db, printers, make_user):
         user = await make_user()
@@ -487,6 +590,13 @@ class TestScreens:
             await client.get(
                 f"/app/book/{printers[1].id}",
                 params={"start": tomorrow_at(hour=12).isoformat()},
+            ),
+            await client.get(
+                "/app/choose-machine",
+                params={
+                    "machine_id": printers[1].id,
+                    "start": tomorrow_at(hour=12).isoformat(),
+                },
             ),
             await client.post(
                 f"/app/book/{printers[1].id}",

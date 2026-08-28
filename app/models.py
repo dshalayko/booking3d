@@ -74,6 +74,37 @@ class User(Base):
         return f"<User {self.id} {self.name}>"
 
 
+class FeedbackRequest(Base):
+    """Обращение из формы обратной связи Telegram Mini App.
+
+    Имя хранится снимком: администратору важно видеть именно то, что человек
+    написал в форме, даже если корпоративный логин позже переименуют. Связь с
+    учётной записью остаётся для происхождения обращения, но не держит удаление
+    тестового пользователя — тогда ``user_id`` просто обнуляется.
+    """
+
+    __tablename__ = "feedback_requests"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    user_id: Mapped[int | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
+    username: Mapped[str] = mapped_column(String(64), nullable=False)
+    message: Mapped[str] = mapped_column(Text, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+
+    __table_args__ = (
+        CheckConstraint("length(username) BETWEEN 1 AND 64", name="feedback_username_length"),
+        CheckConstraint("length(message) BETWEEN 1 AND 4000", name="feedback_message_length"),
+        Index("feedback_requests_created_at", "created_at"),
+    )
+
+    def __repr__(self) -> str:
+        return f"<FeedbackRequest {self.id} {self.username}>"
+
+
 class WorkHours(Base):
     """Часы работы помещения — одна строка на помещение.
 

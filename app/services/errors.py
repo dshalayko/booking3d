@@ -160,3 +160,7 @@ class LoginInvalid(DomainError):
 
 class LoginTaken(DomainError):
     """Логин уже носит другой человек."""
+
+
+class FeedbackInvalid(DomainError):
+    """Имя или текст обращения пустые либо не помещаются в форму."""

@@ -14,6 +14,25 @@
     <h1>{{ t.book_heading.format(machine=machine.name) }}</h1>
   </header>
 
+  {% if base and machine_options | length > 1 %}
+    <form class="machine-picker" method="get" action="{{ base }}/choose-machine">
+      <input type="hidden" name="start" value="{{ starts_at | iso }}">
+      <label for="booking_machine">{{ t.book_machine_label }}</label>
+      <div class="machine-picker-controls">
+        <select class="text-input" id="booking_machine" name="machine_id">
+          {% for option, available in machine_options %}
+            <option value="{{ option.id }}"
+                    {% if option.id == machine.id %}selected{% endif %}
+                    {% if not available %}disabled{% endif %}>
+              {{ option.name }}{% if not available %} — {{ t.book_machine_unavailable }}{% endif %}
+            </option>
+          {% endfor %}
+        </select>
+        <button class="btn btn-small" type="submit">{{ t.book_machine_apply }}</button>
+      </div>
+    </form>
+  {% endif %}
+
   <form class="sheet-body" method="post" action="{{ base }}/book/{{ machine.id }}"
         {% if needs_pin %}data-guard{% endif %}>
     <input type="hidden" name="start" value="{{ starts_at | iso }}">

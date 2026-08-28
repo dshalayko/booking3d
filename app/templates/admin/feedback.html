@@ -1,0 +1,22 @@
+{# Обращения из Mini App: новые сверху, текст сохраняет переносы пользователя. #}
+{% extends "admin/base.html" %}
+
+{% block topbar %}
+  <span class="ad-chip">{{ requests | length }}</span>
+{% endblock %}
+
+{% block admin %}
+  <section class="ad-card">
+    {% for item in requests %}
+      <article class="admin-row feedback-admin-row">
+        <div class="admin-row-main feedback-admin-main">
+          <strong>{{ item.username }}</strong>
+          <span class="admin-dim">{{ item.created_at | when }}</span>
+          <p class="feedback-admin-message">{{ item.message }}</p>
+        </div>
+      </article>
+    {% else %}
+      <p class="admin-dim">{{ t.admin_feedback_none }}</p>
+    {% endfor %}
+  </section>
+{% endblock %}

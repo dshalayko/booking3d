@@ -11,7 +11,7 @@ from app.enums import (
     ReservationStatus,
     SessionStatus,
 )
-from app.models import Machine, MachineSession, Reservation, Room, User
+from app.models import FeedbackRequest, Machine, MachineSession, Reservation, Room, User
 from app.services import activity as activity_svc
 from app.services import auth, booking_policy
 from app.services import machines as machines_svc
@@ -101,6 +101,29 @@ class TestPanel:
         response = await client.get("/admin/people")
 
         assert "Иван" in response.text
+
+    async def test_feedback_section_lists_messages_newest_first(
+        self, client, db, printers, make_user
+    ):
+        person = await make_user(name="d_shalayko", is_admin=True)
+        db.add_all(
+            [
+                FeedbackRequest(
+                    user_id=person.id, username="First", message="Old request"
+                ),
+                FeedbackRequest(
+                    user_id=person.id, username="Second", message="New request"
+                ),
+            ]
+        )
+        await db.commit()
+        await login(client)
+
+        response = await client.get("/admin/feedback")
+
+        assert response.status_code == 200
+        assert response.text.index("New request") < response.text.index("Old request")
+        assert "First" in response.text and "Second" in response.text
 
 
 class TestBookingRules:

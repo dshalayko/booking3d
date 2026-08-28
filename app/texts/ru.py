@@ -657,6 +657,8 @@ ERR_CHAT_ID_FORMAT = "Telegram chat id — целое положительное
 ERR_CHAT_ID_TAKEN = "Telegram {chat_id} уже привязан к другому человеку"
 ERR_LOGIN_FORMAT = "Логин — латиницей вида n_username, например d_shalayko"
 ERR_LOGIN_TAKEN = "Логин {login} уже занят другим человеком"
+ERR_FEEDBACK_USERNAME = "Укажите имя длиной не больше 64 символов"
+ERR_FEEDBACK_MESSAGE = "Напишите сообщение длиной не больше 4000 символов"
 
 
 # --- киоск: плашки после действия --------------------------------------------
@@ -668,6 +670,7 @@ FLASH_KIOSK = {
     "left": "Вы вышли из очереди",
     "booked": "Забронировано — напомним за час до начала",
     "booking_cancelled": "Бронь отменена",
+    "feedback_sent": "Сообщение отправлено администратору",
 }
 
 FLASH_ADMIN = {
@@ -840,6 +843,9 @@ UI = {
     "book_heading": "{machine} — забронировать",
     "book_when": "{day}, {time}",
     "book_duration_label": "На сколько",
+    "book_machine_label": "Какую машину забронировать",
+    "book_machine_apply": "Выбрать",
+    "book_machine_unavailable": "занят в это время",
     "book_submit": "Забронировать",
     "book_hint": (
         "Машину придётся занять в первые {grace} мин после начала — "
@@ -913,6 +919,8 @@ UI = {
     "admin_tab_hours": "Часы работы",
     "admin_tab_rules": "Правила бронирования",
     "admin_bookings": "Брони",
+    "admin_feedback": "Обратная связь",
+    "admin_feedback_none": "Обращений пока нет",
     "admin_bookings_none": "Брон нет",
     "admin_booking_row": "{machine}: {start} — {end}",
     "admin_booking_where": "{room}",
@@ -1004,6 +1012,13 @@ UI = {
     "app_nav_my": "Мои работы и брони",
     "app_view_statuses": "Посмотреть статус принтеров",
     "app_status_heading": "Статус оборудования",
+    "feedback_button": "Обратная связь",
+    "feedback_title": "Обратная связь",
+    "feedback_heading": "Написать администратору",
+    "feedback_username": "Имя пользователя",
+    "feedback_message": "Что нужно сделать",
+    "feedback_message_placeholder": "Опишите просьбу или проблему",
+    "feedback_submit": "Отправить",
     # admin_rooms.html
     "admin_rooms_title": "Помещения",
     "admin_rooms_add": "Добавить помещение",

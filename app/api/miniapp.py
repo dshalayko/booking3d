@@ -35,7 +35,7 @@ from app.api.render import templates
 from app.api.screens import APP
 from app.config import settings
 from app.models import Machine, User
-from app.services import auth, booking_policy, telegram
+from app.services import auth, booking_policy, feedback, telegram
 from app.services import reservations as reservations_svc
 from app.services.errors import AppSessionRequired
 
@@ -212,6 +212,34 @@ async def status_partial(request: Request, db: Db) -> Response:
     return await screens.status_partial(request, db, APP)
 
 
+# --- обратная связь ----------------------------------------------------------
+
+
+@router.get("/feedback", response_class=HTMLResponse)
+async def feedback_form(request: Request, db: Db) -> Response:
+    person = await viewer(request, db)
+    if person is None:
+        return await _bootstrap(request, db, f"{SAFE_NEXT_PREFIX}/feedback")
+    return templates.TemplateResponse(
+        request,
+        "feedback.html",
+        {"person": person, "feedback_page": True, **APP.context},
+    )
+
+
+@router.post("/feedback")
+async def feedback_action(
+    request: Request,
+    db: Db,
+    username: str = Form(""),
+    message: str = Form(""),
+) -> Response:
+    person = await actor(request, db)
+    await feedback.create(db, person, username, message)
+    await db.commit()
+    return _home("feedback_sent")
+
+
 # --- занять / освободить -----------------------------------------------------
 
 
@@ -262,6 +290,24 @@ async def book_form(request: Request, db: Db, machine_id: int, start: str = "") 
     if (
         person is not None
         and machine is not None
+        and not await reservations_svc.can_user_book(db, person.id, machine.kind)
+    ):
+        return _home()
+    return await screens.book_page(request, db, APP, machine_id, start)
+
+
+@router.get("/choose-machine")
+async def choose_machine(
+    request: Request,
+    db: Db,
+    machine_id: int,
+    start: str = "",
+) -> Response:
+    """Явно сменить машину и заново посчитать форму её бронирования."""
+    person = await actor(request, db)
+    machine = await db.get(Machine, machine_id)
+    if (
+        machine is not None
         and not await reservations_svc.can_user_book(db, person.id, machine.kind)
     ):
         return _home()

@@ -592,13 +592,24 @@ body {
 .cell-broken { background: rgba(127, 140, 141, .18); color: var(--broken); }
 
 .durations-when { margin: 0; font-size: 26px; font-weight: 700; }
+.machine-picker {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 14px 18px;
+  border-radius: var(--radius);
+  background: var(--card);
+}
+.machine-picker > label { color: var(--muted); font-size: 17px; }
+.machine-picker-controls { display: flex; gap: 10px; align-items: stretch; }
+.machine-picker-controls .text-input { flex: 1 1 auto; min-width: 0; }
 
 /* --- мои брони (Mini App) --- */
 
 .miniapp-page {
-  /* Фиксированная кнопка не должна закрывать последнюю строку расписания или
-     подтверждение формы. */
-  padding-bottom: max(92px, calc(env(safe-area-inset-bottom) + 80px));
+  /* Две фиксированные кнопки не должны закрывать последнюю строку расписания
+     или подтверждение формы. */
+  padding-bottom: max(166px, calc(env(safe-area-inset-bottom) + 154px));
 }
 .app-close-bar {
   position: fixed;
@@ -606,8 +617,12 @@ body {
   left: max(20px, env(safe-area-inset-left));
   right: max(20px, env(safe-area-inset-right));
   bottom: max(20px, env(safe-area-inset-bottom));
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
 }
 .app-close,
+.app-feedback,
 .my-links .btn-wide {
   width: 100%;
   min-height: 64px;
@@ -615,6 +630,7 @@ body {
   font-size: 20px;
 }
 .app-close { color: var(--text); }
+.app-feedback { color: var(--text); }
 .app-loading { margin: auto; font-size: 22px; color: var(--muted); }
 .status-head { flex: 0 0 auto; justify-content: space-between; }
 .status-room-name { margin: 0; font-size: 24px; }
@@ -636,6 +652,12 @@ body {
 .booking .btn { align-self: flex-start; }
 .my-links { display: flex; flex-wrap: wrap; gap: 10px; margin-top: auto; }
 .tile-booked-from { color: var(--wait); }
+.feedback-sheet { max-width: 680px; }
+.feedback-form { display: flex; flex-direction: column; gap: 10px; }
+.feedback-form label { margin-top: 4px; color: var(--muted); font-size: 17px; }
+.feedback-form .text-input { width: 100%; box-sizing: border-box; }
+.feedback-message { resize: vertical; min-height: 180px; line-height: 1.45; }
+.feedback-form .btn { margin-top: 8px; }
 /* Оранжевая: бронь на будущее — не то же самое, что занять машину сейчас, и на
    доске это должно быть видно цветом, а не только надписью. */
 .btn-schedule { width: 100%; min-height: 56px; font-size: 20px; --outline-rgb: var(--plan-rgb); color: var(--plan); }
@@ -909,6 +931,14 @@ body.admin-page { padding: 0; gap: 0; }
 
 .admin-log { margin: 0; padding-left: 20px; display: flex; flex-direction: column; gap: 6px; }
 .admin-log li { font-size: 16px; }
+.feedback-admin-main { align-items: baseline; width: 100%; }
+.feedback-admin-message {
+  flex-basis: 100%;
+  margin: 4px 0 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  line-height: 1.5;
+}
 
 /* Вход в админку: та же карточка, что и блоки внутри, — чтобы экран входа не
    выглядел куском другой системы. */
@@ -1018,7 +1048,7 @@ body.admin-page { padding: 0; gap: 0; }
       max(12px, env(safe-area-inset-left));
   }
   body.miniapp-page {
-    padding-bottom: max(82px, calc(env(safe-area-inset-bottom) + 72px));
+    padding-bottom: max(150px, calc(env(safe-area-inset-bottom) + 140px));
   }
   .app-close-bar {
     left: max(12px, env(safe-area-inset-left));
@@ -1031,10 +1061,14 @@ body.admin-page { padding: 0; gap: 0; }
      пальцем, и втрое меньше киосковых 72px, рассчитанных на тычок не глядя. */
   .btn { min-height: 44px; padding: 10px 14px; font-size: 16px; }
   .btn-small { min-height: 34px; padding: 6px 12px; font-size: 13px; }
+  .machine-picker { padding: 12px 14px; }
+  .machine-picker-controls { flex-direction: column; }
+  .machine-picker-controls .btn { min-height: 44px; }
   /* Основные действия Mini App одинаковой высоты. Правило идёт после
      `.btn-small`, иначе общий мобильный размер снова сплющит кнопку закрытия,
      ссылки расписания и переход к статусам. */
   .app-close-bar .app-close,
+  .app-close-bar .app-feedback,
   .my-links .btn-wide {
     min-height: 58px;
     padding: 14px 18px;

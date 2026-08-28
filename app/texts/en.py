@@ -659,6 +659,8 @@ ERR_CHAT_ID_FORMAT = "A Telegram chat id is a positive whole number"
 ERR_CHAT_ID_TAKEN = "Telegram {chat_id} already belongs to somebody else"
 ERR_LOGIN_FORMAT = "A login looks like n_username in Latin letters, e.g. i_ivanov"
 ERR_LOGIN_TAKEN = "The login {login} already belongs to someone else"
+ERR_FEEDBACK_USERNAME = "Enter a name no longer than 64 characters"
+ERR_FEEDBACK_MESSAGE = "Write a message no longer than 4000 characters"
 
 
 # --- kiosk: banners after an action ------------------------------------------
@@ -670,6 +672,7 @@ FLASH_KIOSK = {
     "left": "You've left the line",
     "booked": "Booked — we'll remind you an hour before",
     "booking_cancelled": "Booking cancelled",
+    "feedback_sent": "Message sent to the administrator",
 }
 
 FLASH_ADMIN = {
@@ -842,6 +845,9 @@ UI = {
     "book_heading": "{machine} — book ahead",
     "book_when": "{day}, {time}",
     "book_duration_label": "For how long",
+    "book_machine_label": "Which machine to book",
+    "book_machine_apply": "Select",
+    "book_machine_unavailable": "unavailable at this time",
     "book_submit": "Book it",
     "book_hint": (
         "Take the machine within {grace} min of the start — otherwise the booking "
@@ -914,6 +920,8 @@ UI = {
     "admin_tab_hours": "Opening hours",
     "admin_tab_rules": "Booking rules",
     "admin_bookings": "Bookings",
+    "admin_feedback": "Feedback",
+    "admin_feedback_none": "No feedback yet",
     "admin_bookings_none": "No bookings",
     "admin_booking_row": "{machine}: {start} — {end}",
     "admin_booking_where": "{room}",
@@ -1005,6 +1013,13 @@ UI = {
     "app_nav_my": "My booking",
     "app_view_statuses": "View printer status",
     "app_status_heading": "Machine status",
+    "feedback_button": "Feedback",
+    "feedback_title": "Feedback",
+    "feedback_heading": "Message the administrator",
+    "feedback_username": "Username",
+    "feedback_message": "What needs to be done",
+    "feedback_message_placeholder": "Describe your request or problem",
+    "feedback_submit": "Send",
     # admin_rooms.html
     "admin_rooms_title": "Rooms",
     "admin_rooms_add": "Add a room",

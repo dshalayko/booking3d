@@ -278,6 +278,7 @@
       var closeBar = document.querySelector("[data-tg-close-bar]");
       if (closeButton && closeBar && typeof tg.close === "function") {
         closeBar.hidden = false;
+        closeButton.hidden = false;
         closeButton.addEventListener("click", function () {
           try {
             tg.close();

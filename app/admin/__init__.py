@@ -26,12 +26,23 @@ from fastapi import APIRouter, Request
 from fastapi.responses import HTMLResponse, Response
 
 from app.admin import core
-from app.admin.sections import bookings, hours, log, machines, people, rooms, rules, summary
+from app.admin.sections import (
+    bookings,
+    feedback,
+    hours,
+    log,
+    machines,
+    people,
+    rooms,
+    rules,
+    summary,
+)
 from app.api.render import templates
 
 SECTIONS = [
     summary.SECTION,
     bookings.SECTION,
+    feedback.SECTION,
     people.SECTION,
     log.SECTION,
     rooms.SECTION,

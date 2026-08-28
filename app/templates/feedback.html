@@ -1,0 +1,27 @@
+{# Простая форма обратной связи внутри Mini App. Личность уже подтверждена
+   Telegram-сессией, поэтому логин можно подставить, не спрашивая заново. #}
+{% extends "base.html" %}
+{% block body_class %}feedback-page{% endblock %}
+{% block title %}{{ t.feedback_title }}{% endblock %}
+
+{% block content %}
+<main class="sheet feedback-sheet">
+  <header class="sheet-head">
+    <h1>{{ t.feedback_heading }}</h1>
+  </header>
+
+  <form class="feedback-form" method="post" action="/app/feedback">
+    <label for="feedback_username">{{ t.feedback_username }}</label>
+    <input class="text-input" id="feedback_username" type="text" name="username"
+           value="{{ person.name }}" maxlength="64" autocomplete="username" required>
+
+    <label for="feedback_message">{{ t.feedback_message }}</label>
+    <textarea class="text-input feedback-message" id="feedback_message" name="message"
+              maxlength="4000" rows="7" required
+              placeholder="{{ t.feedback_message_placeholder }}"></textarea>
+
+    <button class="btn btn-primary" type="submit">{{ t.feedback_submit }}</button>
+    <a class="btn btn-ghost" href="/app/">{{ t.back }}</a>
+  </form>
+</main>
+{% endblock %}
