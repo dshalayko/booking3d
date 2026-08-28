@@ -13,6 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app import texts as t
 from app.config import settings
 from app.db import SessionLocal
+from app.models import User
 from app.services import auth
 
 
@@ -30,9 +31,23 @@ def require_kiosk_device(request: Request) -> None:
         raise HTTPException(status.HTTP_403_FORBIDDEN, t.ERR_KIOSK_ONLY)
 
 
-def require_admin(request: Request) -> None:
-    if not auth.is_admin_session(request.cookies.get(auth.ADMIN_COOKIE)):
+async def require_admin(request: Request, db: Db) -> None:
+    """Пустить с ADMIN_SECRET или из Mini App администратора.
+
+    Telegram-сессия указывает на конкретного человека, поэтому роль проверяем
+    в базе при каждом запросе. Снятие ``is_admin`` отзывает доступ сразу.
+    """
+    request.state.admin_from_app = False
+    request.state.admin_user_id = None
+    if auth.is_admin_session(request.cookies.get(auth.ADMIN_COOKIE)):
+        return
+
+    user_id = auth.app_session_user_id(request.cookies.get(auth.APP_COOKIE))
+    person = await db.get(User, user_id) if user_id is not None else None
+    if person is None or not person.is_admin:
         raise HTTPException(status.HTTP_403_FORBIDDEN, t.ERR_ADMIN_LOGIN_REQUIRED)
+    request.state.admin_from_app = True
+    request.state.admin_user_id = person.id
 
 
 def kiosk_room_id(request: Request) -> int | None:

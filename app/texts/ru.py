@@ -907,9 +907,11 @@ UI = {
     "admin_nav_people": "Люди",
     "admin_nav_events": "Журнал",
     "admin_side_note": "Вход по ADMIN_SECRET. Снаружи админка закрыта, только через SSH-туннель.",
+    "admin_side_note_app": "Безопасный вход через Telegram Mini App.",
     # admin.html
     "admin_title": "Админка",
     "admin_to_board": "На экран помещений",
+    "admin_back_to_app": "Вернуться в Mini App",
     "admin_updated": "Данные на {time}",
     "admin_stat_free": "Свободно",
     "admin_stat_busy": "Занято",
@@ -1016,6 +1018,7 @@ UI = {
     # miniapp
     "app_loading": "Открываем…",
     "app_close": "Закрыть приложение",
+    "app_admin_button": "Админка",
     "app_outside_telegram_title": "Откройте из Telegram",
     "app_outside_telegram_hint": (
         "Это мини-приложение бота: расписание и брони открываются командой "

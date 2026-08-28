@@ -230,6 +230,7 @@ async def board_page(
     context = await board_context(db, room_id=room.id, viewer=viewer)
     context["flash"] = t.FLASH_KIOSK.get(flash)
     context["poll"] = f"{client.base}/partials/board/{room.id}"
+    context["app_admin"] = bool(viewer and viewer.is_admin)
     context.update(client.context)
     return templates.TemplateResponse(request, "kiosk.html", context)
 
@@ -251,6 +252,7 @@ async def status_page(
     request: Request,
     db: AsyncSession,
     client: Client,
+    viewer: User | None = None,
 ) -> Response:
     """Весь парк для просмотра из Mini App, без действий над машинами.
 
@@ -266,6 +268,7 @@ async def status_page(
         "read_only": True,
         "show_room_names": len(state.rooms) > 1,
         "status_view": True,
+        "app_admin": bool(viewer and viewer.is_admin),
         "poll": f"{client.base}/partials/status",
         **client.context,
     }
@@ -438,6 +441,7 @@ async def schedule_page(
                 else await reservations_svc.can_user_book(db, viewer.id, kind)
             ),
             "flash": t.FLASH_KIOSK.get(flash),
+            "app_admin": bool(viewer and viewer.is_admin),
             **client.context,
         },
     )
@@ -626,6 +630,7 @@ async def my_page(
             ],
             "can_book": bool(bookable_kinds),
             "flash": t.FLASH_KIOSK.get(flash),
+            "app_admin": user.is_admin,
             **client.context,
         },
     )

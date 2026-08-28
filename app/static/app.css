@@ -634,14 +634,22 @@ body {
      подтверждение формы. */
   padding-bottom: max(92px, calc(env(safe-area-inset-bottom) + 80px));
 }
+.miniapp-page.miniapp-admin-page {
+  /* У администратора над Close app стоит вторая фиксированная кнопка. */
+  padding-bottom: max(166px, calc(env(safe-area-inset-bottom) + 154px));
+}
 .app-close-bar {
   position: fixed;
   z-index: 20;
   left: max(20px, env(safe-area-inset-left));
   right: max(20px, env(safe-area-inset-right));
   bottom: max(20px, env(safe-area-inset-bottom));
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
 }
 .app-close,
+.app-admin,
 .my-links .btn-wide {
   width: 100%;
   min-height: 64px;
@@ -649,6 +657,7 @@ body {
   font-size: 20px;
 }
 .app-close { color: var(--text); }
+.app-admin { text-decoration: none; }
 .app-loading { margin: auto; font-size: 22px; color: var(--muted); }
 .status-head { flex: 0 0 auto; justify-content: space-between; }
 .status-room-name { margin: 0; font-size: 24px; }

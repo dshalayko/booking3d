@@ -155,9 +155,10 @@ async def room_board(request: Request, db: Db, room_id: int, flash: str = "") ->
 @router.get("/status", response_class=HTMLResponse)
 async def status_board(request: Request, db: Db) -> Response:
     """Весь парк только для чтения; доступен даже при активной брони."""
-    if await viewer(request, db) is None:
+    person = await viewer(request, db)
+    if person is None:
         return await _bootstrap(request, db, f"{SAFE_NEXT_PREFIX}/status")
-    return await screens.status_page(request, db, APP)
+    return await screens.status_page(request, db, APP, viewer=person)
 
 
 @router.post("/session")
@@ -223,7 +224,7 @@ async def feedback_form(request: Request, db: Db) -> Response:
     return templates.TemplateResponse(
         request,
         "feedback.html",
-        {"person": person, **APP.context},
+        {"person": person, "app_admin": person.is_admin, **APP.context},
     )
 
 

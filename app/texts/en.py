@@ -908,9 +908,11 @@ UI = {
     "admin_nav_people": "People",
     "admin_nav_events": "Activity log",
     "admin_side_note": "Access by ADMIN_SECRET. Closed from outside, SSH tunnel only.",
+    "admin_side_note_app": "Signed in securely through Telegram Mini App.",
     # admin.html
     "admin_title": "Admin",
     "admin_to_board": "Back to the rooms",
+    "admin_back_to_app": "Back to Mini App",
     "admin_updated": "As of {time}",
     "admin_stat_free": "Free",
     "admin_stat_busy": "In use",
@@ -1017,6 +1019,7 @@ UI = {
     # miniapp
     "app_loading": "Opening…",
     "app_close": "Close app",
+    "app_admin_button": "Admin panel",
     "app_outside_telegram_title": "Open it from Telegram",
     "app_outside_telegram_hint": (
         "This is the bot's mini app: the schedule and bookings open with /book "

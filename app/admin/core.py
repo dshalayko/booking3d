@@ -109,7 +109,12 @@ def render(
     return templates.TemplateResponse(
         request,
         template,
-        {"section": section, "flash": FLASH_MESSAGES.get(flash), **(context or {})},
+        {
+            "section": section,
+            "flash": FLASH_MESSAGES.get(flash),
+            "from_miniapp": bool(getattr(request.state, "admin_from_app", False)),
+            **(context or {}),
+        },
     )
 
 

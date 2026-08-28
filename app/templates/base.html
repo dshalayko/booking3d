@@ -28,7 +28,7 @@
    Авто-возврат на главный экран — свойство планшета на стене, а не страницы: он
    общий, и брошенный чужой экран должен сам вернуться к доске. В Mini App
    (`needs_pin` = false) телефон личный, и уводить человека с экрана нельзя. #}
-<body class="{% block body_class %}{% endblock %}{% if telegram_sdk|default(false) %} miniapp-page{% endif %}"
+<body class="{% block body_class %}{% endblock %}{% if telegram_sdk|default(false) %} miniapp-page{% endif %}{% if app_admin|default(false) %} miniapp-admin-page{% endif %}"
       data-texts="{{ t_js | tojson | forceescape }}"
       data-version="{{ asset_version }}"
       {%- if auto_return|default(false) and needs_pin %} data-autoreturn="60"{% endif %}>
@@ -41,6 +41,11 @@
        стоит последним и закреплено CSS у нижнего края экрана; показываем его
        только после обнаружения настоящего Telegram WebApp API. #}
     <div class="app-close-bar" data-tg-close-bar>
+      {% if app_admin|default(false) %}
+        <a class="btn btn-primary btn-small app-admin" href="/admin">
+          {{ t.app_admin_button }}
+        </a>
+      {% endif %}
       <button class="btn btn-ghost btn-small app-close" type="button" data-tg-close hidden>
         {{ t.app_close }}
       </button>

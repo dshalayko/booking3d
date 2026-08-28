@@ -50,10 +50,15 @@
        путали с разделами панели. #}
     <nav class="ad-group">
       <p class="ad-group-title">{{ t.admin_nav_screens }}</p>
-      <a class="ad-nav" href="/">{{ icon("screen") }}<span>{{ t.admin_to_board }}</span></a>
+      <a class="ad-nav" href="{{ '/app/' if from_miniapp else '/' }}">
+        {{ icon("screen") }}
+        <span>{{ t.admin_back_to_app if from_miniapp else t.admin_to_board }}</span>
+      </a>
     </nav>
 
-    <p class="ad-side-note">{{ t.admin_side_note }}</p>
+    <p class="ad-side-note">
+      {{ t.admin_side_note_app if from_miniapp else t.admin_side_note }}
+    </p>
   </aside>
 
   <main class="ad-main">

@@ -215,6 +215,52 @@ class TestSession:
         assert 'value="/app/status"' in response.text
 
 
+class TestAdminPanel:
+    async def test_admin_gets_button_and_can_manage_from_miniapp(
+        self, client, db, printers, make_user
+    ):
+        person = await make_user(name="Admin", is_admin=True)
+        await open_app(client, person)
+
+        home = await client.get("/app/")
+        assert 'class="btn btn-primary btn-small app-admin" href="/admin"' in home.text
+        assert t.UI["app_admin_button"] in home.text
+
+        panel = await client.get("/admin")
+        assert panel.status_code == 200
+        assert 'href="/app/"' in panel.text
+        assert t.UI["admin_back_to_app"] in panel.text
+
+        changed = await client.post(
+            f"/admin/machines/{printers[0].id}/break", data={"note": "Service"}
+        )
+        assert changed.status_code == 303
+        await db.refresh(printers[0])
+        assert printers[0].status == MachineStatus.BROKEN
+
+    async def test_regular_user_has_no_button_and_cannot_open_admin(
+        self, client, printers, make_user
+    ):
+        person = await make_user(is_admin=False)
+        await open_app(client, person)
+
+        home = await client.get("/app/")
+        assert 'href="/admin"' not in home.text
+        assert (await client.get("/admin")).status_code == 403
+
+    async def test_revoking_role_closes_existing_miniapp_session(
+        self, client, db, printers, make_user
+    ):
+        person = await make_user(is_admin=True)
+        await open_app(client, person)
+        assert (await client.get("/admin")).status_code == 200
+
+        person.is_admin = False
+        await db.commit()
+
+        assert (await client.get("/admin")).status_code == 403
+
+
 class TestFeedback:
     async def test_button_is_hidden_without_a_booking_but_form_stays_available_directly(
         self, client, printers, make_user
