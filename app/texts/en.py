@@ -232,7 +232,7 @@ BOT_HELP = (
     "👤 /my — my job and bookings\n"
     "🟢 /free — free up the machine I booked\n"
     "🔑 /pin — a new PIN for the tablet in the room\n\n"
-    "You take a machine from the tablet in the room with your PIN, "
+    "You can take a machine from the tablet in the room with your PIN, "
     "or right here in the bot's app (/book)."
 )
 
