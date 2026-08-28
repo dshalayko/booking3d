@@ -362,6 +362,36 @@ class TestScreens:
         assert "keypad" not in response.text
         assert 'action="/app/occupy/' in response.text
 
+    async def test_occupy_form_can_switch_between_free_printers(
+        self, client, printers, make_user
+    ):
+        user = await make_user()
+        await open_app(client, user)
+
+        first = await client.get(f"/app/occupy/{printers[0].id}")
+        switched = await client.get(
+            "/app/choose-occupy-machine", params={"machine_id": printers[1].id}
+        )
+
+        assert t.UI["book_machine_label"] in first.text
+        assert printers[0].name in first.text and printers[1].name in first.text
+        assert f'action="/app/occupy/{printers[1].id}"' in switched.text
+        assert t.UI["occupy_heading"].format(machine=printers[1].name) in switched.text
+
+    async def test_occupy_picker_is_hidden_when_only_one_printer_is_free(
+        self, client, db, printers, make_user
+    ):
+        other = await make_user(name="Другой")
+        await machines_svc.occupy(db, other, printers[1].id, 60)
+        await db.commit()
+        user = await make_user()
+        await open_app(client, user)
+
+        form = await client.get(f"/app/occupy/{printers[0].id}")
+
+        assert t.UI["book_machine_label"] not in form.text
+        assert 'action="/app/choose-occupy-machine"' not in form.text
+
     async def test_occupy_from_the_phone(self, client, db, printers, make_user):
         user = await make_user()
         machine_id = printers[0].id

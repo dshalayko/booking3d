@@ -313,11 +313,31 @@ async def occupy_page(
     else:
         limit = await reservations_svc.free_minutes(db, machine.id, now)
 
+    # Общая кнопка «занять машину» ведёт на первую свободную единицу группы.
+    # На телефоне это выглядит как автоматический выбор, поэтому при реальном
+    # выборе из нескольких машин показываем их явно. Машина в текущем окне
+    # брони остаётся отдельным сценарием «Это я»: там переключатель предлагал бы
+    # обойти собственную бронь и потому не нужен.
+    machine_options = []
+    if client.base and booking is None:
+        peers = await machines_svc.list_machines(
+            db, room_id=machine.room_id, kind=machine.kind
+        )
+        for candidate in peers:
+            if candidate.status != MachineStatus.FREE:
+                continue
+            current_booking = await reservations_svc.current_for_machine(
+                db, candidate.id, now
+            )
+            if current_booking is None:
+                machine_options.append(candidate)
+
     return templates.TemplateResponse(
         request,
         "occupy.html",
         {
             "machine": machine,
+            "machine_options": machine_options,
             "durations": duration_options(now, limit_minutes=limit),
             "booked_until": booking.ends_at if booking else None,
             **client.context,
