@@ -600,9 +600,32 @@ body {
   border-radius: var(--radius);
   background: var(--card);
 }
-.machine-picker > label { color: var(--muted); font-size: 17px; }
-.machine-picker-controls { display: flex; gap: 10px; align-items: stretch; }
-.machine-picker-controls .text-input { flex: 1 1 auto; min-width: 0; }
+.machine-picker-label { margin: 0; color: var(--muted); font-size: 17px; }
+.machine-choices {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 10px;
+}
+.machine-choice {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 64px;
+  padding: 12px 16px;
+  border: 2px solid rgba(255, 255, 255, .12);
+  border-radius: 14px;
+  background: rgba(255, 255, 255, .05);
+  color: var(--text);
+  font-size: 18px;
+  font-weight: 700;
+  text-align: center;
+  text-decoration: none;
+}
+.machine-choice-on {
+  border-color: var(--accent);
+  background: rgba(59, 130, 246, .22);
+}
+.machine-choice:active { transform: scale(.98); }
 
 /* --- мои брони (Mini App) --- */
 
@@ -1057,8 +1080,7 @@ body.admin-page { padding: 0; gap: 0; }
   .btn { min-height: 44px; padding: 10px 14px; font-size: 16px; }
   .btn-small { min-height: 34px; padding: 6px 12px; font-size: 13px; }
   .machine-picker { padding: 12px 14px; }
-  .machine-picker-controls { flex-direction: column; }
-  .machine-picker-controls .btn { min-height: 44px; }
+  .machine-choice { min-height: 52px; padding: 10px 12px; font-size: 16px; }
   /* Основные действия Mini App одинаковой высоты. Правило идёт после
      `.btn-small`, иначе общий мобильный размер снова сплющит кнопку закрытия,
      ссылки расписания и переход к статусам. */

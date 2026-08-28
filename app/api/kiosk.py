@@ -94,6 +94,14 @@ async def occupy_form(request: Request, db: Db, machine_id: int) -> Response:
     return await screens.occupy_page(request, db, KIOSK, machine_id)
 
 
+@router.get("/choose-occupy-machine", response_class=HTMLResponse)
+async def choose_occupy_machine(
+    request: Request, db: Db, machine_id: int
+) -> Response:
+    """Сменить свободную машину, сохранив планшетную форму с PIN."""
+    return await screens.occupy_page(request, db, KIOSK, machine_id)
+
+
 @router.post("/occupy/{machine_id}")
 async def occupy_action(
     request: Request,

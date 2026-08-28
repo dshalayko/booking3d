@@ -107,6 +107,35 @@ class TestOccupy:
         assert 'type="radio" name="minutes"' in response.text
         assert 'type="submit" name="minutes"' not in response.text
 
+    async def test_form_can_switch_between_free_printers_and_keeps_keypad(
+        self, client, room, printers
+    ):
+        await enroll(client, room)
+
+        first = await client.get(f"/occupy/{printers[0].id}")
+        switched = await client.get(
+            "/choose-occupy-machine", params={"machine_id": printers[1].id}
+        )
+
+        assert "Какую машину забронировать" in first.text
+        assert printers[0].name in first.text and printers[1].name in first.text
+        assert 'role="radiogroup"' in first.text
+        assert 'aria-checked="true"' in first.text
+        assert f'action="/occupy/{printers[1].id}"' in switched.text
+        assert "keypad" in switched.text
+
+    async def test_picker_is_hidden_when_only_one_printer_is_free(
+        self, client, room, db, printers, make_user
+    ):
+        await machines_svc.occupy(db, await make_user(), printers[1].id, 60)
+        await db.commit()
+        await enroll(client, room)
+
+        form = await client.get(f"/occupy/{printers[0].id}")
+
+        assert "Какую машину забронировать" not in form.text
+        assert 'href="/choose-occupy-machine' not in form.text
+
     async def test_form_refuses_busy_printer_before_pin(
         self, client, room, db, printers, make_user
     ):

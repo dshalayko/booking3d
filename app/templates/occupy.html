@@ -10,21 +10,19 @@
     <h1>{{ t.occupy_heading.format(machine=machine.name) }}</h1>
   </header>
 
-  {% if base and machine_options | length > 1 %}
-    <form class="machine-picker" method="get" action="{{ base }}/choose-occupy-machine">
-      <label for="occupy_machine">{{ t.book_machine_label }}</label>
-      <div class="machine-picker-controls">
-        <select class="text-input" id="occupy_machine" name="machine_id">
-          {% for option in machine_options %}
-            <option value="{{ option.id }}"
-                    {% if option.id == machine.id %}selected{% endif %}>
-              {{ option.name }}
-            </option>
-          {% endfor %}
-        </select>
-        <button class="btn btn-small" type="submit">{{ t.book_machine_apply }}</button>
+  {% if machine_options | length > 1 %}
+    <div class="machine-picker">
+      <p class="machine-picker-label">{{ t.book_machine_label }}</p>
+      <div class="machine-choices" role="radiogroup" aria-label="{{ t.book_machine_label }}">
+        {% for option in machine_options %}
+          <a class="machine-choice{% if option.id == machine.id %} machine-choice-on{% endif %}"
+             role="radio" aria-checked="{{ 'true' if option.id == machine.id else 'false' }}"
+             href="{{ base }}/choose-occupy-machine?machine_id={{ option.id }}">
+            {{ option.name }}
+          </a>
+        {% endfor %}
       </div>
-    </form>
+    </div>
   {% endif %}
 
   <form class="sheet-body" method="post" action="{{ base }}/occupy/{{ machine.id }}"

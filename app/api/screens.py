@@ -319,7 +319,7 @@ async def occupy_page(
     # брони остаётся отдельным сценарием «Это я»: там переключатель предлагал бы
     # обойти собственную бронь и потому не нужен.
     machine_options = []
-    if client.base and booking is None:
+    if booking is None:
         peers = await machines_svc.list_machines(
             db, room_id=machine.room_id, kind=machine.kind
         )

@@ -375,6 +375,8 @@ class TestScreens:
 
         assert t.UI["book_machine_label"] in first.text
         assert printers[0].name in first.text and printers[1].name in first.text
+        assert 'role="radiogroup"' in first.text
+        assert 'aria-checked="true"' in first.text
         assert f'action="/app/occupy/{printers[1].id}"' in switched.text
         assert t.UI["occupy_heading"].format(machine=printers[1].name) in switched.text
 
@@ -390,7 +392,7 @@ class TestScreens:
         form = await client.get(f"/app/occupy/{printers[0].id}")
 
         assert t.UI["book_machine_label"] not in form.text
-        assert 'action="/app/choose-occupy-machine"' not in form.text
+        assert 'href="/app/choose-occupy-machine' not in form.text
 
     async def test_occupy_from_the_phone(self, client, db, printers, make_user):
         user = await make_user()
@@ -437,7 +439,7 @@ class TestScreens:
 
         assert t.UI["book_machine_label"] in first.text
         assert printers[0].name in first.text and printers[1].name in first.text
-        assert f'value="{printers[0].id}"' in first.text
+        assert 'role="radiogroup"' in first.text
         assert f'action="/app/book/{printers[1].id}"' in switched.text
         assert t.UI["book_heading"].format(machine=printers[1].name) in switched.text
 
@@ -456,7 +458,7 @@ class TestScreens:
         )
 
         assert t.UI["book_machine_label"] not in form.text
-        assert 'action="/app/choose-machine"' not in form.text
+        assert 'href="/app/choose-machine' not in form.text
 
     async def test_booking_from_the_phone(self, client, db, printers, make_user):
         user = await make_user()

@@ -844,7 +844,6 @@ UI = {
     "book_when": "{day}, {time}",
     "book_duration_label": "На сколько",
     "book_machine_label": "Какую машину забронировать",
-    "book_machine_apply": "Выбрать",
     "book_submit": "Забронировать",
     "book_hint": (
         "Машину придётся занять в первые {grace} мин после начала — "
