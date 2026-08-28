@@ -278,10 +278,13 @@ async def book_action(
 ) -> Response:
     user = await actor(request, db)
     machine = await db.get(Machine, machine_id)
-    if machine is not None and not await reservations_svc.can_user_book(
-        db, user.id, machine.kind
-    ):
-        return _home()
+    if machine is not None:
+        # Возврат на главный экран сам по себе ничего не объясняет, поэтому
+        # причина уходит в бота — как и при отказе на планшете.
+        reason = await reservations_svc.block_reason(db, user.id, machine.kind)
+        if reason is not None:
+            await screens.warn_book_blocked(db, user.id, reason)
+            return _home()
     return await screens.do_book(db, APP, user, machine_id, start, minutes)
 
 

@@ -39,11 +39,14 @@ from app.services import rooms as rooms_svc
 from app.services import schedule as schedule_svc
 from app.services import workhours as workhours_svc
 from app.services.errors import (
+    AlreadyBooked,
     InvalidReservationTime,
     MachineKindUnknown,
     MachineNotAvailable,
     ReservationOverlap,
     RoomNotFound,
+    UserBusy,
+    UserLimitReached,
 )
 
 
@@ -470,6 +473,17 @@ async def book_page(
     )
 
 
+async def warn_book_blocked(db: AsyncSession, user_id: int, reason: str) -> None:
+    """Сказать в бот, почему бронь не вышла.
+
+    Отказ и так виден на экране, но с планшета человек уходит через секунду, а
+    в Mini App вместо формы его просто возвращает на главный экран. В боте
+    объяснение остаётся рядом с сообщением о том, что текущая работа
+    закончилась, — то есть там, где он и узнает, что можно бронировать снова.
+    """
+    await notify.send_to_user(db, user_id, texts.book_blocked(reason))
+
+
 async def do_book(
     db: AsyncSession,
     client: Client,
@@ -478,9 +492,13 @@ async def do_book(
     start: str,
     minutes: int,
 ) -> Response:
-    result = await reservations_svc.book(
-        db, user, machine_id, parse_start(start), minutes
-    )
+    try:
+        result = await reservations_svc.book(
+            db, user, machine_id, parse_start(start), minutes
+        )
+    except (AlreadyBooked, UserBusy, UserLimitReached) as exc:
+        await warn_book_blocked(db, user.id, str(exc))
+        raise
     await db.commit()
     room = await db.get(Room, result.room_id)
     await notify.send_to_user(

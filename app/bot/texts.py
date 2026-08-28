@@ -245,6 +245,11 @@ def booking_cancelled_by_admin(machine_name: str, starts_at: datetime) -> str:
     )
 
 
+def book_blocked(reason: str) -> str:
+    """Причина отказа приходит готовой строкой из домена — той же, что на экране."""
+    return t.BOT_BOOK_BLOCKED.format(reason=reason.rstrip("."))
+
+
 def book_invite() -> str:
     return t.BOT_BOOK_INVITE
 

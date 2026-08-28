@@ -22,6 +22,7 @@ from urllib.parse import urlencode
 import pytest
 
 from app import texts as t
+from app.bot import notify
 from app.config import settings
 from app.enums import MachineKind, MachineStatus, ReservationStatus
 from app.models import Machine, Reservation
@@ -32,6 +33,18 @@ from app.services import schedule as schedule_svc
 from app.services.errors import BadInitData
 
 BOT_TOKEN = "123456:test-token"
+
+
+@pytest.fixture
+def outbox() -> list[tuple[int, str]]:
+    sent: list[tuple[int, str]] = []
+
+    async def sender(chat_id: int, text: str) -> None:
+        sent.append((chat_id, text))
+
+    notify.set_sender(sender)
+    yield sent
+    notify.set_sender(None)
 
 
 @pytest.fixture(autouse=True)
@@ -484,6 +497,24 @@ class TestScreens:
         assert all(response.status_code == 303 for response in responses)
         assert all(response.headers["location"] == "/app/" for response in responses)
         assert len(await reservations_svc.of_user(db, user.id)) == 1
+
+    async def test_blocked_booking_is_explained_in_the_bot(
+        self, client, db, printers, make_user, outbox
+    ):
+        """Возврат на главный экран молчит — причину человек читает в боте."""
+        user = await make_user()
+        await reservations_svc.book(db, user, printers[0].id, tomorrow_at(), 60)
+        await db.commit()
+        await open_app(client, user)
+
+        response = await client.post(
+            f"/app/book/{printers[1].id}",
+            data={"start": tomorrow_at(hour=12).isoformat(), "minutes": "60"},
+        )
+
+        assert response.headers["location"] == "/app/"
+        assert outbox == [(user.tg_chat_id, outbox[0][1])]
+        assert "уже есть активная бронь" in outbox[0][1]
 
     async def test_extended_policy_keeps_more_booking_routes_open(
         self, client, db, room, printers, engravers, make_user

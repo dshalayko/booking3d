@@ -494,6 +494,16 @@ BOT_BOOKING_CANCELLED_BY_ADMIN = (
 
 BOT_MY_BOOKING = "📅 Booking: <b>{machine}</b> ({room})\n{start} — {end}"
 
+# The refusal shows on screen, but the person walks away from the tablet and
+# forgets what exactly they are waiting for. The same reason goes to the bot —
+# where the "your job is over" messages already live.
+BOT_BOOK_BLOCKED = (
+    "🔒 The booking didn't go through.\n\n"
+    "{reason}.\n\n"
+    "Once the current task is closed, you'll be able to book again. "
+    "Your bookings and jobs — /my"
+)
+
 BOT_BOOK_INVITE = "📅 The schedule and your bookings live in the app:"
 BOT_BOOK_BUTTON = "Open the schedule"
 BOT_BOOK_NO_APP = (

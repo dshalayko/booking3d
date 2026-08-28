@@ -47,6 +47,7 @@ from app.services import booking_policy, schedule
 from app.services import workhours as workhours_svc
 from app.services.errors import (
     AlreadyBooked,
+    DomainError,
     InvalidDuration,
     InvalidReservationTime,
     MachineNotAvailable,
@@ -201,11 +202,7 @@ async def book(
 
     allowed, load, multi = await booking_policy.can_book_machine(db, user.id, machine)
     if not allowed:
-        if multi:
-            raise UserLimitReached(t.ERR_USER_LIMIT_REACHED)
-        if load.has_reservation:
-            raise AlreadyBooked(t.ERR_ALREADY_BOOKED)
-        raise UserBusy(t.ERR_USER_BUSY_FREE_FIRST)
+        raise _limit_error(load, multi)
 
     await _ensure_window_free(db, machine, starts_at, ends_at)
 
@@ -338,10 +335,34 @@ async def active_of_user(db: AsyncSession, user_id: int) -> Reservation | None:
     return await db.scalar(query.order_by(Reservation.starts_at))
 
 
+def _limit_error(load: booking_policy.UserLoad, multi: bool) -> DomainError:
+    """Отказ по квоте.
+
+    Собран отдельно, потому что тот же текст уходит в бота (`block_reason`):
+    человек должен прочитать одно и то же там, где нажал, и там, где ему
+    написали.
+    """
+    if multi:
+        return UserLimitReached(t.ERR_USER_LIMIT_REACHED)
+    if load.has_reservation:
+        return AlreadyBooked(t.ERR_ALREADY_BOOKED)
+    return UserBusy(t.ERR_USER_BUSY_FREE_FIRST)
+
+
 async def can_user_book(db: AsyncSession, user_id: int, kind: str | None = None) -> bool:
     """Можно ли показывать создание брони вообще или для конкретного типа."""
     available = await booking_policy.available_kinds(db, user_id)
     return kind in available if kind is not None else bool(available)
+
+
+async def block_reason(
+    db: AsyncSession, user_id: int, kind: str | None = None
+) -> str | None:
+    """Почему бронировать нельзя прямо сейчас; None — можно."""
+    if await can_user_book(db, user_id, kind):
+        return None
+    load = await booking_policy.load(db, user_id)
+    return str(_limit_error(load, await booking_policy.enabled(db)))
 
 
 async def current_for_machine(

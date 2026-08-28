@@ -8,6 +8,7 @@ from sqlalchemy import select
 from app import assets, qr
 from app.api.kiosk import duration_options
 from app.api.render import templates
+from app.bot import notify
 from app.config import Settings, settings
 from app.enums import MachineKind, MachineStatus, ReservationStatus
 from app.models import Machine, Reservation
@@ -15,6 +16,18 @@ from app.services import auth
 from app.services import machines as machines_svc
 from app.services import reservations as reservations_svc
 from app.services import schedule as schedule_svc
+
+
+@pytest.fixture
+def outbox() -> list[tuple[int, str]]:
+    sent: list[tuple[int, str]] = []
+
+    async def sender(chat_id: int, text: str) -> None:
+        sent.append((chat_id, text))
+
+    notify.set_sender(sender)
+    yield sent
+    notify.set_sender(None)
 
 
 @pytest.fixture(autouse=True)
@@ -465,6 +478,25 @@ class TestBookScreen:
         booking = await db.scalar(select(Reservation))
         assert booking.starts_at == start
         assert booking.status == ReservationStatus.BOOKED
+
+    async def test_blocked_booking_is_explained_in_the_bot(
+        self, client, room, db, printers, make_user, work_slot, outbox
+    ):
+        """От планшета человек уходит через секунду — отказ должен остаться в боте."""
+        user = await make_user(pin="4242")
+        await reservations_svc.book(db, user, printers[0].id, work_slot(), 60)
+        await db.commit()
+        await enroll(client, room)
+
+        response = await client.post(
+            f"/book/{printers[1].id}",
+            data={"pin": "4242", "start": work_slot(12).isoformat(), "minutes": "60"},
+            headers={"accept": "text/html"},
+        )
+
+        assert response.status_code == 409
+        assert outbox == [(user.tg_chat_id, outbox[0][1])]
+        assert "уже есть активная бронь" in outbox[0][1]
 
     async def test_booking_without_pin_is_refused(
         self, client, room, db, printers, make_user, work_slot
