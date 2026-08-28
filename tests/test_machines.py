@@ -420,8 +420,10 @@ class TestPark:
         внешнем ключе, то есть пятисотой вместо внятного отказа."""
         admin = await make_user(is_admin=True)
         user = await make_user()
-        # Рабочий час завтрашнего дня: бронировать можно только в часы работы.
-        start = (datetime.now(settings.zone) + timedelta(days=1)).replace(
+        # Рабочий час следующего дня: бронировать можно только в часы работы.
+        # Отсчёт от NOON, а не от настоящих часов: `now` здесь поддельный, и
+        # начало по реальному календарю уезжает за горизонт бронирования.
+        start = (NOON.astimezone(settings.zone) + timedelta(days=1)).replace(
             hour=10, minute=0, second=0, microsecond=0
         )
         await reservations_svc.book(db, user, printers[0].id, start, 60, now=NOON)

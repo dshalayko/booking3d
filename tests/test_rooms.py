@@ -45,10 +45,14 @@ async def login(client) -> None:
 
 
 def tomorrow_at(hour: int = 10) -> datetime:
-    """Рабочий час завтрашнего дня — бронировать можно только в часы работы."""
-    from app.config import settings
+    """Рабочий час следующего дня — бронировать можно только в часы работы.
 
-    local = datetime.now(settings.zone) + timedelta(days=1)
+    Считается от `NOON`, а не от `datetime.now`: `now` в этих тестах поддельный,
+    и настоящее «завтра» рано или поздно оказывается дальше горизонта
+    бронирования от `NOON` — набор зеленеет пару недель, а потом краснеет сам
+    по себе, без единой правки кода.
+    """
+    local = NOON.astimezone(settings.zone) + timedelta(days=1)
     return local.replace(hour=hour, minute=0, second=0, microsecond=0).astimezone(UTC)
 
 
