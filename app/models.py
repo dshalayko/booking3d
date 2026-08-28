@@ -169,6 +169,30 @@ class BookingPolicy(Base):
         return f"<BookingPolicy multi={self.multi_machine_enabled}>"
 
 
+class TextOverride(Base):
+    """English interface text changed from the admin panel.
+
+    Only differences from ``app/texts/en.py`` are stored.  The source file
+    remains the canonical fallback, so a reset is a row deletion rather than a
+    second copy of the whole translation in the database.
+    """
+
+    __tablename__ = "text_overrides"
+
+    key: Mapped[str] = mapped_column(String(200), primary_key=True)
+    value: Mapped[str] = mapped_column(Text, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=func.now()
+    )
+
+    __table_args__ = (
+        CheckConstraint("length(value) <= 10000", name="text_override_value_length"),
+    )
+
+    def __repr__(self) -> str:
+        return f"<TextOverride {self.key}>"
+
+
 class Machine(Base):
     """Единица парка: 3D-принтер, гравировщик или сама переговорная.
 

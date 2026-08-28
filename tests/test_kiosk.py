@@ -420,10 +420,11 @@ class TestScheduleScreen:
 
         assert f"/schedule/{room.id}/{MachineKind.PRINTER}" in response.text
 
-    async def test_booked_hour_is_shown_on_the_board(self, client, room, db, printers, make_user):
+    async def test_booked_hour_is_shown_on_the_board(
+        self, client, room, db, printers, make_user, work_slot
+    ):
         user = await make_user(name="Анна")
-        now = datetime.now(UTC)
-        start = schedule_svc.align(now) + timedelta(days=1)
+        start = work_slot()
         await reservations_svc.book(db, user, printers[0].id, start, 120)
         await db.commit()
 

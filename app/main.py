@@ -20,8 +20,9 @@ from app.api.render import templates
 from app.bot import notify
 from app.bot.bot import attach_notifier, build_bot, start_polling
 from app.config import settings
-from app.db import engine
+from app.db import SessionLocal, engine
 from app.scheduler import create_scheduler, tick
+from app.services import text_overrides
 from app.services.errors import (
     AlreadyBooked,
     AlreadyInQueue,
@@ -129,6 +130,11 @@ async def lifespan(_: FastAPI) -> AsyncIterator[None]:
     только лишний контейнер и лишний способ рассинхронизироваться."""
     bot = None
     polling: asyncio.Task | None = None
+
+    # Admin edits live in Postgres, not in the replaceable container.  Apply
+    # them before the bot publishes its command list or sends any messages.
+    async with SessionLocal() as db:
+        await text_overrides.load_and_apply(db)
 
     if settings.tg_bot_token:
         bot = build_bot()

@@ -149,7 +149,8 @@ def confirm_delete(
 
 def redirect(flash: str, to: str = PREFIX) -> RedirectResponse:
     """303 после действия: F5 не должен повторять POST."""
-    return RedirectResponse(f"{to}?flash={flash}", status_code=status.HTTP_303_SEE_OTHER)
+    separator = "&" if "?" in to else "?"
+    return RedirectResponse(f"{to}{separator}flash={flash}", status_code=status.HTTP_303_SEE_OTHER)
 
 
 async def acting_admin(db: AsyncSession) -> User:

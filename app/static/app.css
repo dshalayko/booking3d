@@ -958,6 +958,20 @@ body.admin-page { padding: 0; gap: 0; }
   line-height: 1.5;
 }
 
+.text-editor-intro { gap: 14px; }
+.text-search { flex-wrap: wrap; }
+.text-search .text-input { flex: 1 1 320px; }
+.text-editor-list { display: flex; flex-direction: column; gap: 12px; }
+.text-editor-card { position: relative; }
+.text-editor-changed { border-left: 3px solid var(--free); }
+.text-editor-key { color: var(--text); font-size: 14px; overflow-wrap: anywhere; }
+.text-editor-placeholders { margin-left: 8px; color: var(--wait); font: 13px monospace; }
+.text-editor-value { width: 100%; min-height: 76px; resize: vertical; line-height: 1.4; }
+.text-editor-form { gap: 8px; }
+.text-editor-form .admin-actions { margin-top: 0; }
+.text-editor-reset { position: absolute; right: 20px; bottom: 18px; }
+.text-editor-pages { display: flex; justify-content: center; align-items: center; gap: 12px; padding: 8px; }
+
 /* Вход в админку: та же карточка, что и блоки внутри, — чтобы экран входа не
    выглядел куском другой системы. */
 .ad-login {

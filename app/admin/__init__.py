@@ -36,6 +36,7 @@ from app.admin.sections import (
     rooms,
     rules,
     summary,
+    texts,
 )
 from app.api.render import templates
 
@@ -49,6 +50,7 @@ SECTIONS = [
     machines.SECTION,
     hours.SECTION,
     rules.SECTION,
+    texts.SECTION,
 ]
 
 # Меню рисуется из этого же списка: шаблон оболочки берёт его отсюда, а не из

@@ -1,0 +1,64 @@
+{% extends "admin/base.html" %}
+
+{% block topbar %}
+  <a class="btn btn-small" href="/admin/texts/export">{{ t.admin_texts_export }}</a>
+{% endblock %}
+
+{% block admin %}
+  <section class="ad-card text-editor-intro">
+    <p class="admin-dim admin-hint">{{ t.admin_texts_hint }}</p>
+    <form class="admin-form text-search" method="get" action="/admin/texts">
+      <input class="text-input" type="search" name="q" value="{{ query }}"
+             placeholder="{{ t.admin_texts_search }}">
+      <button class="btn btn-small" type="submit">{{ t.admin_texts_search_submit }}</button>
+      <span class="ad-chip">{{ total }}</span>
+    </form>
+  </section>
+
+  <div class="text-editor-list">
+    {% for item in items %}
+      <section class="ad-card text-editor-card{% if item.changed %} text-editor-changed{% endif %}">
+        <div class="ad-card-head">
+          <div>
+            <code class="text-editor-key">{{ item.key }}</code>
+            {% if item.placeholders %}
+              <span class="text-editor-placeholders">
+                {% for name in item.placeholders %}{% raw %}{{% endraw %}{{ name }}{% raw %}}{% endraw %}{% if not loop.last %} {% endif %}{% endfor %}
+              </span>
+            {% endif %}
+          </div>
+          <span class="admin-status{% if item.changed %} admin-status-free{% endif %}">
+            {{ t.admin_texts_changed if item.changed else t.admin_texts_default }}
+          </span>
+        </div>
+        <form class="admin-form admin-form-column text-editor-form" method="post" action="/admin/texts">
+          <input type="hidden" name="key" value="{{ item.key }}">
+          <input type="hidden" name="q" value="{{ query }}">
+          <input type="hidden" name="page" value="{{ page }}">
+          <textarea class="text-input text-editor-value" name="value" rows="3">{{ item.value }}</textarea>
+          <div class="admin-actions">
+            <button class="btn btn-small btn-primary" type="submit">{{ t.admin_texts_save }}</button>
+          </div>
+        </form>
+        {% if item.changed %}
+          <form class="text-editor-reset" method="post" action="/admin/texts/reset">
+            <input type="hidden" name="key" value="{{ item.key }}">
+            <input type="hidden" name="q" value="{{ query }}">
+            <input type="hidden" name="page" value="{{ page }}">
+            <button class="btn btn-small" type="submit">{{ t.admin_texts_reset }}</button>
+          </form>
+        {% endif %}
+      </section>
+    {% else %}
+      <section class="ad-card"><p class="admin-dim">{{ t.admin_texts_none }}</p></section>
+    {% endfor %}
+  </div>
+
+  {% if pages > 1 %}
+    <nav class="text-editor-pages">
+      {% if page > 1 %}<a class="btn btn-small" href="/admin/texts?q={{ query_encoded }}&page={{ page - 1 }}">{{ t.admin_texts_previous }}</a>{% endif %}
+      <span class="admin-dim">{{ t.admin_texts_page.format(page=page, pages=pages) }}</span>
+      {% if page < pages %}<a class="btn btn-small" href="/admin/texts?q={{ query_encoded }}&page={{ page + 1 }}">{{ t.admin_texts_next }}</a>{% endif %}
+    </nav>
+  {% endif %}
+{% endblock %}

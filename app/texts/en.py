@@ -661,6 +661,12 @@ ERR_LOGIN_FORMAT = "A login looks like n_username in Latin letters, e.g. i_ivano
 ERR_LOGIN_TAKEN = "The login {login} already belongs to someone else"
 ERR_FEEDBACK_USERNAME = "Enter a name no longer than 64 characters"
 ERR_FEEDBACK_MESSAGE = "Write a message no longer than 4000 characters"
+ERR_TEXT_UNKNOWN = "Unknown text key: {key}"
+ERR_TEXT_LONG = "The text is too long (maximum {limit} characters)"
+ERR_TEXT_BRACES = "Check the braces: the placeholder syntax is invalid"
+ERR_TEXT_PLACEHOLDERS = (
+    "Keep all placeholders unchanged. Missing: {missing}. Extra: {extra}."
+)
 
 
 # --- kiosk: banners after an action ------------------------------------------
@@ -695,6 +701,8 @@ FLASH_ADMIN = {
     "machine_purged": "The machine is gone, history and all",
     "room_purged": "The room is gone with everything in it",
     "rules_saved": "Booking rules saved",
+    "text_saved": "Text saved",
+    "text_reset": "Text restored from en.py",
 }
 
 
@@ -917,6 +925,7 @@ UI = {
     "admin_tab_machines": "Machines",
     "admin_tab_hours": "Opening hours",
     "admin_tab_rules": "Booking rules",
+    "admin_tab_texts": "Texts",
     "admin_bookings": "Bookings",
     "admin_feedback": "Feedback",
     "admin_feedback_none": "No feedback yet",
@@ -988,6 +997,23 @@ UI = {
     "admin_rules_on": "On: 2 printers + 1 engraver",
     "admin_rules_off": "Off: one machine only",
     "admin_rules_submit": "Save rule",
+    # Editable English texts section
+    "admin_texts_title": "English texts",
+    "admin_texts_hint": (
+        "Edit the wording without a deploy. Changes are stored in the database; "
+        "placeholders such as {machine} must stay unchanged."
+    ),
+    "admin_texts_search": "Search by key or text",
+    "admin_texts_search_submit": "Search",
+    "admin_texts_export": "Download JSON",
+    "admin_texts_default": "From en.py",
+    "admin_texts_changed": "Changed",
+    "admin_texts_save": "Save",
+    "admin_texts_reset": "Reset",
+    "admin_texts_none": "No texts found",
+    "admin_texts_page": "Page {page} of {pages}",
+    "admin_texts_previous": "Previous",
+    "admin_texts_next": "Next",
     # miniapp
     "app_loading": "Opening…",
     "app_close": "Close app",

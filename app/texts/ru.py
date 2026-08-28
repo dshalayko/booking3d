@@ -659,6 +659,12 @@ ERR_LOGIN_FORMAT = "Логин — латиницей вида n_username, на�
 ERR_LOGIN_TAKEN = "Логин {login} уже занят другим человеком"
 ERR_FEEDBACK_USERNAME = "Укажите имя длиной не больше 64 символов"
 ERR_FEEDBACK_MESSAGE = "Напишите сообщение длиной не больше 4000 символов"
+ERR_TEXT_UNKNOWN = "Неизвестный ключ текста: {key}"
+ERR_TEXT_LONG = "Текст слишком длинный (максимум {limit} символов)"
+ERR_TEXT_BRACES = "Проверьте фигурные скобки: синтаксис подстановок неверный"
+ERR_TEXT_PLACEHOLDERS = (
+    "Сохраните все подстановки без изменений. Пропали: {missing}. Лишние: {extra}."
+)
 
 
 # --- киоск: плашки после действия --------------------------------------------
@@ -693,6 +699,8 @@ FLASH_ADMIN = {
     "machine_purged": "Машина удалена вместе с её историей",
     "room_purged": "Помещение удалено вместе со всем, что в нём было",
     "rules_saved": "Правила бронирования сохранены",
+    "text_saved": "Текст сохранён",
+    "text_reset": "Восстановлен текст из en.py",
 }
 
 
@@ -916,6 +924,7 @@ UI = {
     "admin_tab_machines": "Оборудование",
     "admin_tab_hours": "Часы работы",
     "admin_tab_rules": "Правила бронирования",
+    "admin_tab_texts": "Тексты",
     "admin_bookings": "Брони",
     "admin_feedback": "Обратная связь",
     "admin_feedback_none": "Обращений пока нет",
@@ -987,6 +996,23 @@ UI = {
     "admin_rules_on": "Включено: 2 принтера + 1 гравировщик",
     "admin_rules_off": "Выключено: только одна машина",
     "admin_rules_submit": "Сохранить правило",
+    # Раздел редактирования английских текстов
+    "admin_texts_title": "Английские тексты",
+    "admin_texts_hint": (
+        "Формулировки можно менять без деплоя. Изменения хранятся в базе; "
+        "подстановки вроде {machine} должны остаться без изменений."
+    ),
+    "admin_texts_search": "Поиск по ключу или тексту",
+    "admin_texts_search_submit": "Найти",
+    "admin_texts_export": "Скачать JSON",
+    "admin_texts_default": "Из en.py",
+    "admin_texts_changed": "Изменён",
+    "admin_texts_save": "Сохранить",
+    "admin_texts_reset": "Сбросить",
+    "admin_texts_none": "Тексты не найдены",
+    "admin_texts_page": "Страница {page} из {pages}",
+    "admin_texts_previous": "Назад",
+    "admin_texts_next": "Дальше",
     # miniapp
     "app_loading": "Открываем…",
     "app_close": "Закрыть приложение",

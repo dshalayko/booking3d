@@ -11,7 +11,15 @@ from app.enums import (
     ReservationStatus,
     SessionStatus,
 )
-from app.models import FeedbackRequest, Machine, MachineSession, Reservation, Room, User
+from app.models import (
+    FeedbackRequest,
+    Machine,
+    MachineSession,
+    Reservation,
+    Room,
+    TextOverride,
+    User,
+)
 from app.services import activity as activity_svc
 from app.services import auth, booking_policy
 from app.services import machines as machines_svc
@@ -149,6 +157,55 @@ class TestBookingRules:
         await client.post("/admin/rules", data={})
         db.expire_all()
         assert await booking_policy.enabled(db) is False
+
+
+class TestEditableTexts:
+    async def test_admin_can_edit_export_and_reset_english_text(
+        self, client, db, printers, make_user
+    ):
+        await make_user(is_admin=True)
+        await login(client)
+
+        page = await client.get("/admin/texts?q=UI.app_close")
+        assert page.status_code == 200
+        assert "UI.app_close" in page.text
+        assert "Close app" in page.text
+
+        saved = await client.post(
+            "/admin/texts",
+            data={"key": "UI.app_close", "value": "Exit mini app", "q": "", "page": 1},
+        )
+        assert saved.status_code == 303
+        assert (await db.get(TextOverride, "UI.app_close")).value == "Exit mini app"
+
+        exported = await client.get("/admin/texts/export")
+        assert exported.status_code == 200
+        assert exported.headers["content-disposition"] == 'attachment; filename="booking-en.json"'
+        assert exported.json()["UI.app_close"] == "Exit mini app"
+
+        reset = await client.post(
+            "/admin/texts/reset",
+            data={"key": "UI.app_close", "q": "", "page": 1},
+        )
+        assert reset.status_code == 303
+        db.expire_all()
+        assert await db.get(TextOverride, "UI.app_close") is None
+
+    async def test_placeholders_cannot_be_lost(self, client, printers, make_user):
+        await make_user(is_admin=True)
+        await login(client)
+
+        page = await client.get("/admin/texts?q=UNIT_HOURS")
+        assert page.status_code == 200
+        assert "{hours}" in page.text
+
+        response = await client.post(
+            "/admin/texts",
+            data={"key": "UNIT_HOURS", "value": "hours", "q": "", "page": 1},
+        )
+
+        assert response.status_code == 400
+        assert "hours" in response.text
 
 class TestMachineActions:
     async def test_break_cancels_print_and_tells_the_owner(
