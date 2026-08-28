@@ -847,7 +847,6 @@ UI = {
     "book_duration_label": "For how long",
     "book_machine_label": "Which machine to book",
     "book_machine_apply": "Select",
-    "book_machine_unavailable": "unavailable at this time",
     "book_submit": "Book it",
     "book_hint": (
         "Take the machine within {grace} min of the start — otherwise the booking "

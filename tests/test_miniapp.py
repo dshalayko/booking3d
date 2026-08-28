@@ -216,21 +216,33 @@ class TestSession:
 
 
 class TestFeedback:
-    async def test_button_and_form_are_available_to_signed_in_user(
+    async def test_button_is_hidden_without_a_booking_but_form_stays_available_directly(
         self, client, printers, make_user
     ):
         person = await make_user(name="d_shalayko")
         await open_app(client, person)
 
         home = await client.get("/app/")
-        assert 'href="/app/feedback"' in home.text
-        assert t.UI["feedback_button"] in home.text
+        assert 'href="/app/feedback"' not in home.text
 
         form = await client.get("/app/feedback")
         assert form.status_code == 200
         assert 'name="username"' in form.text
         assert 'value="d_shalayko"' in form.text
         assert 'name="message"' in form.text
+
+    async def test_button_is_shown_with_a_booking(
+        self, client, db, printers, make_user
+    ):
+        person = await make_user()
+        await reservations_svc.book(db, person, printers[0].id, tomorrow_at(), 60)
+        await db.commit()
+        await open_app(client, person)
+
+        home = await client.get("/app/")
+
+        assert 'href="/app/feedback"' in home.text
+        assert t.UI["feedback_button"] in home.text
 
     async def test_submission_is_saved_and_redirects_home(
         self, client, db, printers, make_user
@@ -399,7 +411,7 @@ class TestScreens:
         assert f'action="/app/book/{printers[1].id}"' in switched.text
         assert t.UI["book_heading"].format(machine=printers[1].name) in switched.text
 
-    async def test_printer_booked_at_that_time_is_disabled_in_picker(
+    async def test_picker_is_hidden_when_only_one_printer_is_free(
         self, client, db, printers, make_user
     ):
         start = tomorrow_at()
@@ -413,12 +425,8 @@ class TestScreens:
             f"/app/book/{printers[0].id}", params={"start": start.isoformat()}
         )
 
-        option = re.search(
-            rf'<option value="{printers[1].id}"(?P<attrs>[^>]*)>', form.text
-        )
-        assert option is not None
-        assert "disabled" in option.group("attrs")
-        assert t.UI["book_machine_unavailable"] in form.text
+        assert t.UI["book_machine_label"] not in form.text
+        assert 'action="/app/choose-machine"' not in form.text
 
     async def test_booking_from_the_phone(self, client, db, printers, make_user):
         user = await make_user()

@@ -73,6 +73,9 @@
       <a class="btn btn-small btn-wide" href="{{ base }}/status">
         {{ t.app_view_statuses }}
       </a>
+      <a class="btn btn-small btn-wide" href="{{ base }}/feedback">
+        {{ t.feedback_button }}
+      </a>
     {% endif %}
     {% for room, kind in links %}
       <a class="btn btn-small btn-wide" href="{{ base }}/schedule/{{ room.id }}/{{ kind }}">

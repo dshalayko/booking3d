@@ -223,7 +223,7 @@ async def feedback_form(request: Request, db: Db) -> Response:
     return templates.TemplateResponse(
         request,
         "feedback.html",
-        {"person": person, "feedback_page": True, **APP.context},
+        {"person": person, **APP.context},
     )
 
 

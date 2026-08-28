@@ -41,11 +41,6 @@
        стоит последним и закреплено CSS у нижнего края экрана; показываем его
        только после обнаружения настоящего Telegram WebApp API. #}
     <div class="app-close-bar" data-tg-close-bar>
-      {% if not feedback_page|default(false) %}
-        <a class="btn btn-ghost btn-small app-feedback" href="/app/feedback">
-          {{ t.feedback_button }}
-        </a>
-      {% endif %}
       <button class="btn btn-ghost btn-small app-close" type="button" data-tg-close hidden>
         {{ t.app_close }}
       </button>

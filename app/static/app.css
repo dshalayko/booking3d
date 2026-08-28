@@ -607,9 +607,9 @@ body {
 /* --- мои брони (Mini App) --- */
 
 .miniapp-page {
-  /* Две фиксированные кнопки не должны закрывать последнюю строку расписания
-     или подтверждение формы. */
-  padding-bottom: max(166px, calc(env(safe-area-inset-bottom) + 154px));
+  /* Фиксированная кнопка не должна закрывать последнюю строку расписания или
+     подтверждение формы. */
+  padding-bottom: max(92px, calc(env(safe-area-inset-bottom) + 80px));
 }
 .app-close-bar {
   position: fixed;
@@ -617,12 +617,8 @@ body {
   left: max(20px, env(safe-area-inset-left));
   right: max(20px, env(safe-area-inset-right));
   bottom: max(20px, env(safe-area-inset-bottom));
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
 }
 .app-close,
-.app-feedback,
 .my-links .btn-wide {
   width: 100%;
   min-height: 64px;
@@ -630,7 +626,6 @@ body {
   font-size: 20px;
 }
 .app-close { color: var(--text); }
-.app-feedback { color: var(--text); }
 .app-loading { margin: auto; font-size: 22px; color: var(--muted); }
 .status-head { flex: 0 0 auto; justify-content: space-between; }
 .status-room-name { margin: 0; font-size: 24px; }
@@ -1048,7 +1043,7 @@ body.admin-page { padding: 0; gap: 0; }
       max(12px, env(safe-area-inset-left));
   }
   body.miniapp-page {
-    padding-bottom: max(150px, calc(env(safe-area-inset-bottom) + 140px));
+    padding-bottom: max(82px, calc(env(safe-area-inset-bottom) + 72px));
   }
   .app-close-bar {
     left: max(12px, env(safe-area-inset-left));
@@ -1068,7 +1063,6 @@ body.admin-page { padding: 0; gap: 0; }
      `.btn-small`, иначе общий мобильный размер снова сплющит кнопку закрытия,
      ссылки расписания и переход к статусам. */
   .app-close-bar .app-close,
-  .app-close-bar .app-feedback,
   .my-links .btn-wide {
     min-height: 58px;
     padding: 14px 18px;

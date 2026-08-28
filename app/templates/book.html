@@ -20,11 +20,10 @@
       <label for="booking_machine">{{ t.book_machine_label }}</label>
       <div class="machine-picker-controls">
         <select class="text-input" id="booking_machine" name="machine_id">
-          {% for option, available in machine_options %}
+          {% for option in machine_options %}
             <option value="{{ option.id }}"
-                    {% if option.id == machine.id %}selected{% endif %}
-                    {% if not available %}disabled{% endif %}>
-              {{ option.name }}{% if not available %} — {{ t.book_machine_unavailable }}{% endif %}
+                    {% if option.id == machine.id %}selected{% endif %}>
+              {{ option.name }}
             </option>
           {% endfor %}
         </select>
