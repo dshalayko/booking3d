@@ -79,8 +79,10 @@ async def page(request: Request, db: Db, flash: str = "") -> Response:
 
 
 @router.post("/machines/{machine_id}/break")
-async def break_machine(db: Db, machine_id: int, note: str = Form("")) -> Response:
-    admin = await core.acting_admin(db)
+async def break_machine(
+    request: Request, db: Db, machine_id: int, note: str = Form("")
+) -> Response:
+    admin = await core.acting_admin(db, request)
     result = await machines_svc.set_broken(db, admin, machine_id, note=note.strip() or None)
     await db.commit()
 
@@ -94,21 +96,23 @@ async def break_machine(db: Db, machine_id: int, note: str = Form("")) -> Respon
 
 
 @router.post("/machines/{machine_id}/fix")
-async def fix_machine(db: Db, machine_id: int) -> Response:
-    admin = await core.acting_admin(db)
+async def fix_machine(request: Request, db: Db, machine_id: int) -> Response:
+    admin = await core.acting_admin(db, request)
     await machines_svc.clear_broken(db, admin, machine_id)
     await db.commit()
     return core.redirect("fixed")
 
 
 @router.post("/machines/{machine_id}/cancel")
-async def cancel_session(db: Db, machine_id: int, reason: str = Form("")) -> Response:
+async def cancel_session(
+    request: Request, db: Db, machine_id: int, reason: str = Form("")
+) -> Response:
     """Снять чужую работу. Причина обязательна: человек должен понять, за что."""
     reason = reason.strip()
     if not reason:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, t.ERR_REASON_REQUIRED)
 
-    admin = await core.acting_admin(db)
+    admin = await core.acting_admin(db, request)
     result = await machines_svc.release(db, admin, machine_id, reason=reason)
     await db.commit()
 

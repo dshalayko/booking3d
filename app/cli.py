@@ -255,16 +255,21 @@ async def make_admin(tg_chat_id: int, name: str) -> None:
         if user is None:
             pin = await pick_free_pin(db)
             user = User(
-                tg_chat_id=tg_chat_id, name=name, pin_digest=pin_digest(pin), is_admin=True
+                tg_chat_id=tg_chat_id,
+                name=name,
+                pin_digest=pin_digest(pin),
+                is_admin=True,
+                is_superadmin=True,
             )
             db.add(user)
             await db.commit()
-            print(f"создан админ {name} (tg {tg_chat_id}), PIN: {pin}")
+            print(f"создан суперадмин {name} (tg {tg_chat_id}), PIN: {pin}")
             print("PIN больше нигде не хранится в открытом виде — запиши его сейчас")
         else:
             user.is_admin = True
+            user.is_superadmin = True
             await db.commit()
-            print(f"{user.name} (tg {tg_chat_id}) теперь админ")
+            print(f"{user.name} (tg {tg_chat_id}) теперь суперадмин")
 
 
 def main() -> None:
@@ -301,7 +306,7 @@ def main() -> None:
     remove = sub.add_parser("remove_machine", help="удалить машину без истории")
     remove.add_argument("machine", help="id или имя")
 
-    admin = sub.add_parser("make_admin", help="выдать права админа")
+    admin = sub.add_parser("make_admin", help="выдать права суперадмина")
     admin.add_argument("tg_chat_id", type=int)
     admin.add_argument("--name", default="admin")
 

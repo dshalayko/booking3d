@@ -55,16 +55,20 @@ async def page(request: Request, db: Db, flash: str = "") -> Response:
 
 
 @router.post("/rooms")
-async def add(db: Db, name: str = Form(""), kind: str = Form("")) -> Response:
-    admin = await core.acting_admin(db)
+async def add(
+    request: Request, db: Db, name: str = Form(""), kind: str = Form("")
+) -> Response:
+    admin = await core.acting_admin(db, request)
     await rooms_svc.create(db, admin, name, kind)
     await db.commit()
     return core.redirect("room_added", SECTION.path)
 
 
 @router.post("/rooms/{room_id}/name")
-async def rename(db: Db, room_id: int, name: str = Form("")) -> Response:
-    admin = await core.acting_admin(db)
+async def rename(
+    request: Request, db: Db, room_id: int, name: str = Form("")
+) -> Response:
+    admin = await core.acting_admin(db, request)
     await rooms_svc.rename(db, admin, room_id, name)
     await db.commit()
     return core.redirect("room_renamed", SECTION.path)
@@ -84,13 +88,15 @@ async def confirm_delete(request: Request, db: Db, room_id: int) -> Response:
 
 
 @router.post("/rooms/{room_id}/delete")
-async def delete(db: Db, room_id: int, confirm: str = Form("")) -> Response:
+async def delete(
+    request: Request, db: Db, room_id: int, confirm: str = Form("")
+) -> Response:
     """Удалить помещение.
 
     Без подтверждения — старое правило: только пустую комнату. С подтверждением
     уезжает всё, что в ней стояло и что за ней записано.
     """
-    admin = await core.acting_admin(db)
+    admin = await core.acting_admin(db, request)
     if confirm:
         await purge.purge_room(db, admin, room_id)
     else:

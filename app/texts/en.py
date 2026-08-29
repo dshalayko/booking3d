@@ -655,6 +655,10 @@ ERR_LAST_ADMIN = (
     "action to the log on their behalf, and without them the admin locks itself "
     "out. Give someone else the rights first: python -m app.cli make_admin <tg_id>"
 )
+ERR_SUPERADMIN_ONLY = "Only a superadmin can manage administrator rights"
+ERR_SUPERADMIN_IMMUTABLE = "A superadmin's role cannot be changed here"
+ERR_SUPERADMIN_DELETE_ADMIN = "Only a superadmin can delete another administrator"
+ERR_LAST_SUPERADMIN = "The last superadmin cannot be deleted"
 ERR_CHAT_ID_FORMAT = "A Telegram chat id is a positive whole number"
 ERR_CHAT_ID_TAKEN = "Telegram {chat_id} already belongs to somebody else"
 ERR_LOGIN_FORMAT = "A login looks like n_username in Latin letters, e.g. i_ivanov"
@@ -703,6 +707,8 @@ FLASH_ADMIN = {
     "rules_saved": "Booking rules saved",
     "text_saved": "Text saved",
     "text_reset": "Text restored from en.py",
+    "admin_granted": "Administrator rights granted",
+    "admin_revoked": "Administrator rights removed",
 }
 
 
@@ -982,6 +988,13 @@ UI = {
         "with the bot."
     ),
     "admin_role": "admin",
+    "superadmin_role": "superadmin",
+    "admin_grant": "Make admin",
+    "admin_revoke": "Remove admin rights",
+    "admin_roles_hint": (
+        "Admins can manage the whole system. Only a superadmin can appoint or "
+        "remove other admins."
+    ),
     "admin_tg": "tg {chat_id}",
     "admin_rename": "Rename",
     "admin_new_pin": "New PIN",

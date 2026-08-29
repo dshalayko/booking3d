@@ -39,7 +39,11 @@ async def require_admin(request: Request, db: Db) -> None:
     """
     request.state.admin_from_app = False
     request.state.admin_user_id = None
+    request.state.admin_is_superadmin = False
     if auth.is_admin_session(request.cookies.get(auth.ADMIN_COOKIE)):
+        # ADMIN_SECRET — аварийный корневой доступ без личности. Ограничить его
+        # обычной ролью означало бы, что первого админа назначить некому.
+        request.state.admin_is_superadmin = True
         return
 
     user_id = auth.app_session_user_id(request.cookies.get(auth.APP_COOKIE))
@@ -48,6 +52,7 @@ async def require_admin(request: Request, db: Db) -> None:
         raise HTTPException(status.HTTP_403_FORBIDDEN, t.ERR_ADMIN_LOGIN_REQUIRED)
     request.state.admin_from_app = True
     request.state.admin_user_id = person.id
+    request.state.admin_is_superadmin = person.is_superadmin
 
 
 def kiosk_room_id(request: Request) -> int | None:

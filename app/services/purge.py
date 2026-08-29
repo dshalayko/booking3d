@@ -40,9 +40,11 @@ from app.enums import ACTIVE_SESSION_STATUSES, MachineStatus, QueueStatus
 from app.models import Machine, MachineSession, QueueEntry, Reservation, Room, User
 from app.services.errors import (
     LastAdmin,
+    LastSuperadmin,
     MachineNotAvailable,
     NotAdmin,
     RoomNotFound,
+    SuperadminRequired,
     UserNotFound,
 )
 
@@ -196,8 +198,14 @@ async def purge_person(db: AsyncSession, admin: User, user_id: int) -> str:
     if person is None:
         raise UserNotFound(t.ERR_USER_NOT_FOUND)
 
+    if person.is_admin and not admin.is_superadmin:
+        raise SuperadminRequired(t.ERR_SUPERADMIN_DELETE_ADMIN)
     if person.is_admin and await _count(db, User, User.is_admin.is_(True)) <= 1:
         raise LastAdmin(t.ERR_LAST_ADMIN)
+    if person.is_superadmin and await _count(
+        db, User, User.is_superadmin.is_(True)
+    ) <= 1:
+        raise LastSuperadmin(t.ERR_LAST_SUPERADMIN)
 
     busy = list(
         (

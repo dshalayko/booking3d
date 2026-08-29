@@ -36,6 +36,7 @@ from app.services.errors import (
     InvalidDuration,
     InvalidReservationTime,
     LastAdmin,
+    LastSuperadmin,
     LoginInvalid,
     LoginTaken,
     MachineBooked,
@@ -59,6 +60,7 @@ from app.services.errors import (
     RoomNameTaken,
     RoomNotEmpty,
     RoomNotFound,
+    SuperadminRequired,
     TooManyAttempts,
     UserBusy,
     UserLimitReached,
@@ -120,6 +122,8 @@ STATUS_BY_ERROR: dict[type[DomainError], int] = {
     ChatIdTaken: 409,
     ChatIdInvalid: 400,
     LastAdmin: 409,
+    LastSuperadmin: 409,
+    SuperadminRequired: 403,
     FeedbackInvalid: 400,
 }
 

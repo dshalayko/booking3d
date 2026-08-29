@@ -653,6 +653,10 @@ ERR_LAST_ADMIN = (
     "действие в журнал, и без него админка закроется сама на себя. "
     "Сначала выдайте права другому: python -m app.cli make_admin <tg_id>"
 )
+ERR_SUPERADMIN_ONLY = "Управлять правами администраторов может только суперадмин"
+ERR_SUPERADMIN_IMMUTABLE = "Роль суперадмина нельзя изменить здесь"
+ERR_SUPERADMIN_DELETE_ADMIN = "Удалять другого администратора может только суперадмин"
+ERR_LAST_SUPERADMIN = "Последнего суперадмина нельзя удалить"
 ERR_CHAT_ID_FORMAT = "Telegram chat id — целое положительное число"
 ERR_CHAT_ID_TAKEN = "Telegram {chat_id} уже привязан к другому человеку"
 ERR_LOGIN_FORMAT = "Логин — латиницей вида n_username, например d_shalayko"
@@ -701,6 +705,8 @@ FLASH_ADMIN = {
     "rules_saved": "Правила бронирования сохранены",
     "text_saved": "Текст сохранён",
     "text_reset": "Восстановлен текст из en.py",
+    "admin_granted": "Права администратора выданы",
+    "admin_revoked": "Права администратора сняты",
 }
 
 
@@ -981,6 +987,13 @@ UI = {
         "у бота."
     ),
     "admin_role": "админ",
+    "superadmin_role": "суперадмин",
+    "admin_grant": "Назначить админом",
+    "admin_revoke": "Снять права админа",
+    "admin_roles_hint": (
+        "Админы могут управлять всей системой. Назначать и снимать других "
+        "администраторов может только суперадмин."
+    ),
     "admin_tg": "tg {chat_id}",
     "admin_rename": "Переименовать",
     "admin_new_pin": "Новый PIN",

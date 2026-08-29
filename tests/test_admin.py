@@ -2,6 +2,7 @@
 import pytest
 from sqlalchemy import select
 
+from app import texts as t
 from app.admin import SECTIONS
 from app.bot import notify
 from app.config import settings
@@ -304,6 +305,57 @@ class TestMachineActions:
 
 
 class TestUsers:
+    async def test_superadmin_can_appoint_and_remove_an_ordinary_admin(
+        self, client, db, printers, make_user
+    ):
+        superadmin = await make_user(name="s_root", is_superadmin=True)
+        person = await make_user(name="n_operator")
+        await login(client)
+
+        page = await client.get("/admin/people")
+        assert t.UI["superadmin_role"] in page.text
+        assert f'action="/admin/users/{person.id}/admin"' in page.text
+
+        granted = await client.post(f"/admin/users/{person.id}/admin")
+        assert granted.status_code == 303
+        await db.refresh(person)
+        assert person.is_admin is True
+        assert person.is_superadmin is False
+
+        removed = await client.post(f"/admin/users/{person.id}/admin/remove")
+        assert removed.status_code == 303
+        await db.refresh(person)
+        assert person.is_admin is False
+        assert superadmin.is_superadmin is True
+
+    async def test_ordinary_admin_can_manage_everything_except_admin_roles(
+        self, client, db, printers, make_user
+    ):
+        superadmin = await make_user(name="s_root", is_superadmin=True)
+        operator = await make_user(name="a_operator", is_admin=True)
+        candidate = await make_user(name="n_candidate")
+        client.cookies.set(auth.APP_COOKIE, auth.issue_app_session(operator.id))
+
+        page = await client.get("/admin/people")
+        assert page.status_code == 200
+        assert t.UI["admin_grant"] not in page.text
+
+        denied = await client.post(f"/admin/users/{candidate.id}/admin")
+        assert denied.status_code == 403
+        await db.refresh(candidate)
+        assert candidate.is_admin is False
+
+        changed = await client.post(
+            f"/admin/machines/{printers[0].id}/break", data={"note": "check"}
+        )
+        assert changed.status_code == 303
+
+        delete_superadmin = await client.post(
+            f"/admin/users/{superadmin.id}/delete", data={"confirm": "yes"}
+        )
+        assert delete_superadmin.status_code == 403
+        assert await db.get(User, superadmin.id) is not None
+
     async def test_rename_fixes_a_typo_in_the_login(
         self, client, db, printers, make_user, outbox
     ):

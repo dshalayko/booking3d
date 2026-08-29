@@ -66,6 +66,11 @@ class User(Base):
     # и по нему нужно однозначно опознать, кто это. См. services/security.py.
     pin_digest: Mapped[str] = mapped_column(String(64), unique=True, nullable=False)
     is_admin: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=text("false"))
+    # Суперадмин отличается только управлением ролями. Все остальные действия
+    # панели у обычного администратора остаются теми же.
+    is_superadmin: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, server_default=text("false")
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )

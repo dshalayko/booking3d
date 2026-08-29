@@ -62,17 +62,23 @@ async def page(request: Request, db: Db, flash: str = "") -> Response:
 
 @router.post("/machines")
 async def add(
-    db: Db, name: str = Form(""), kind: str = Form(""), room_id: int = Form(0)
+    request: Request,
+    db: Db,
+    name: str = Form(""),
+    kind: str = Form(""),
+    room_id: int = Form(0),
 ) -> Response:
-    admin = await core.acting_admin(db)
+    admin = await core.acting_admin(db, request)
     await machines_svc.create(db, admin, room_id, name, kind)
     await db.commit()
     return core.redirect("machine_added", SECTION.path)
 
 
 @router.post("/machines/{machine_id}/name")
-async def rename(db: Db, machine_id: int, name: str = Form("")) -> Response:
-    admin = await core.acting_admin(db)
+async def rename(
+    request: Request, db: Db, machine_id: int, name: str = Form("")
+) -> Response:
+    admin = await core.acting_admin(db, request)
     await machines_svc.rename(db, admin, machine_id, name)
     await db.commit()
     return core.redirect("machine_renamed", SECTION.path)
@@ -93,7 +99,9 @@ async def confirm_delete(request: Request, db: Db, machine_id: int) -> Response:
 
 
 @router.post("/machines/{machine_id}/delete")
-async def delete(db: Db, machine_id: int, confirm: str = Form("")) -> Response:
+async def delete(
+    request: Request, db: Db, machine_id: int, confirm: str = Form("")
+) -> Response:
     """Удалить машину.
 
     Без подтверждения работает старое правило: удаляется только машина без
@@ -101,7 +109,7 @@ async def delete(db: Db, machine_id: int, confirm: str = Form("")) -> Response:
     с экрана `confirm_delete` и означает «да, вместе с историей» — оно и есть
     единственный способ снести машину, за которой что-то записано.
     """
-    admin = await core.acting_admin(db)
+    admin = await core.acting_admin(db, request)
     if confirm:
         await purge.purge_machine(db, admin, machine_id)
     else:

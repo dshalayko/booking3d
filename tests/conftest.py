@@ -273,14 +273,18 @@ def make_user(db: AsyncSession) -> Callable[..., Awaitable[User]]:
     counter = itertools.count(1)
 
     async def _make(
-        name: str | None = None, is_admin: bool = False, pin: str | None = None
+        name: str | None = None,
+        is_admin: bool = False,
+        is_superadmin: bool = False,
+        pin: str | None = None,
     ) -> User:
         number = next(counter)
         user = User(
             tg_chat_id=1000 + number,
             name=name or f"Человек {number}",
             pin_digest=pin_digest(pin or f"{number:04d}"),
-            is_admin=is_admin,
+            is_admin=is_admin or is_superadmin,
+            is_superadmin=is_superadmin,
         )
         db.add(user)
         await db.commit()

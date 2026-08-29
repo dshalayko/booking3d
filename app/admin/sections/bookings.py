@@ -38,10 +38,12 @@ async def page(request: Request, db: Db, flash: str = "") -> Response:
 
 
 @router.post("/bookings/{reservation_id}/cancel")
-async def cancel(db: Db, reservation_id: int, reason: str = Form("")) -> Response:
+async def cancel(
+    request: Request, db: Db, reservation_id: int, reason: str = Form("")
+) -> Response:
     """Снять чужую бронь. Человек узнаёт об этом сообщением — своё окно он
     считал занятым и мог планировать вокруг него."""
-    admin = await core.acting_admin(db)
+    admin = await core.acting_admin(db, request)
     result = await reservations_svc.cancel(
         db, admin, reservation_id, reason=reason.strip() or None
     )

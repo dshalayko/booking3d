@@ -126,6 +126,14 @@ class LastAdmin(DomainError):
     панели, и без него админка закрылась бы сама на себя."""
 
 
+class LastSuperadmin(DomainError):
+    """Последний суперадмин должен оставаться в системе."""
+
+
+class SuperadminRequired(DomainError):
+    """Назначать администраторов может только суперадмин."""
+
+
 class UserNotFound(DomainError):
     """Человека с таким номером нет."""
 

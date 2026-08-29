@@ -33,11 +33,14 @@
 
     <section class="ad-card">
       <div class="ad-card-head"><h2>{{ t.admin_nav_people }}</h2></div>
+      <p class="admin-dim admin-hint">{{ t.admin_roles_hint }}</p>
       {% for user in users %}
         <div class="admin-row">
           <div class="admin-row-main">
             <strong>{{ user.name }}</strong>
-            {% if user.is_admin %}
+            {% if user.is_superadmin %}
+              <span class="admin-status admin-status-superadmin">{{ t.superadmin_role }}</span>
+            {% elif user.is_admin %}
               <span class="admin-status admin-status-admin">{{ t.admin_role }}</span>
             {% endif %}
             <span class="admin-dim">{{ t.admin_tg.format(chat_id=user.tg_chat_id) }}</span>
@@ -53,11 +56,26 @@
             <form method="post" action="/admin/users/{{ user.id }}/pin">
               <button class="btn btn-small" type="submit">{{ t.admin_new_pin }}</button>
             </form>
+            {% if can_manage_admins and not user.is_superadmin %}
+              {% if user.is_admin %}
+                <form method="post" action="/admin/users/{{ user.id }}/admin/remove">
+                  <button class="btn btn-small" type="submit">{{ t.admin_revoke }}</button>
+                </form>
+              {% else %}
+                <form method="post" action="/admin/users/{{ user.id }}/admin">
+                  <button class="btn btn-small btn-primary" type="submit">
+                    {{ t.admin_grant }}
+                  </button>
+                </form>
+              {% endif %}
+            {% endif %}
             {# Ведёт на подтверждение: там видно, сколько работ и брон уедет
                вместе с человеком. #}
-            <a class="btn btn-small btn-danger-ghost" href="/admin/users/{{ user.id }}/delete">
-              {{ t.admin_people_delete }}
-            </a>
+            {% if not user.is_superadmin and (can_manage_admins or not user.is_admin) %}
+              <a class="btn btn-small btn-danger-ghost" href="/admin/users/{{ user.id }}/delete">
+                {{ t.admin_people_delete }}
+              </a>
+            {% endif %}
           </div>
         </div>
       {% else %}

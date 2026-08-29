@@ -43,9 +43,13 @@ async def page(request: Request, db: Db, flash: str = "") -> Response:
 
 @router.post("/users")
 async def add(
-    db: Db, login: str = Form(""), tg_chat_id: int = Form(0), pin: str = Form("")
+    request: Request,
+    db: Db,
+    login: str = Form(""),
+    tg_chat_id: int = Form(0),
+    pin: str = Form(""),
 ) -> Response:
-    admin = await core.acting_admin(db)
+    admin = await core.acting_admin(db, request)
     await users_svc.create(db, admin, login, tg_chat_id, pin)
     await db.commit()
     return core.redirect("person_added", SECTION.path)
@@ -101,17 +105,33 @@ async def confirm_delete(request: Request, db: Db, user_id: int) -> Response:
 
 
 @router.post("/users/{user_id}/delete")
-async def delete(db: Db, user_id: int) -> Response:
+async def delete(request: Request, db: Db, user_id: int) -> Response:
     """Удалить человека.
 
     Подтверждения от формы здесь не требуется: у человека нет «пустого»
     состояния, в котором удаление безопасно, — работы и брони есть почти у
     каждого. Единственный отказ — на последнем админе (см. services/purge.py).
     """
-    admin = await core.acting_admin(db)
+    admin = await core.acting_admin(db, request)
     await purge.purge_person(db, admin, user_id)
     await db.commit()
     return core.redirect("person_removed", SECTION.path)
+
+
+@router.post("/users/{user_id}/admin")
+async def make_admin(request: Request, db: Db, user_id: int) -> Response:
+    admin = await core.acting_admin(db, request)
+    await users_svc.set_admin(db, admin, user_id, True)
+    await db.commit()
+    return core.redirect("admin_granted", SECTION.path)
+
+
+@router.post("/users/{user_id}/admin/remove")
+async def remove_admin(request: Request, db: Db, user_id: int) -> Response:
+    admin = await core.acting_admin(db, request)
+    await users_svc.set_admin(db, admin, user_id, False)
+    await db.commit()
+    return core.redirect("admin_revoked", SECTION.path)
 
 
 async def _person(db: Db, user_id: int) -> User:

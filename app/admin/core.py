@@ -113,6 +113,9 @@ def render(
             "section": section,
             "flash": FLASH_MESSAGES.get(flash),
             "from_miniapp": bool(getattr(request.state, "admin_from_app", False)),
+            "can_manage_admins": bool(
+                getattr(request.state, "admin_is_superadmin", False)
+            ),
             **(context or {}),
         },
     )
@@ -158,13 +161,32 @@ def redirect(flash: str, to: str = PREFIX) -> RedirectResponse:
     return RedirectResponse(f"{to}{separator}flash={flash}", status_code=status.HTTP_303_SEE_OTHER)
 
 
-async def acting_admin(db: AsyncSession) -> User:
+async def acting_admin(db: AsyncSession, request: Request | None = None) -> User:
     """От чьего имени пишутся действия админки.
 
     Личности за секретом нет, поэтому берём первого админа в базе — он попадёт
     в журнал как тот, кто снял работу.
     """
-    admin = await db.scalar(select(User).where(User.is_admin.is_(True)).order_by(User.id))
+    user_id = (
+        getattr(request.state, "admin_user_id", None) if request is not None else None
+    )
+    admin = await db.get(User, user_id) if user_id is not None else None
+    if admin is not None and admin.is_admin:
+        return admin
+    admin = await db.scalar(
+        select(User)
+        .where(User.is_admin.is_(True))
+        .order_by(User.is_superadmin.desc(), User.id)
+    )
+    if (
+        admin is not None
+        and request is not None
+        and getattr(request.state, "admin_is_superadmin", False)
+        and not admin.is_superadmin
+    ):
+        # Аварийный вход по ADMIN_SECRET остаётся корневым даже у старой базы,
+        # где миграция роли почему-либо не успела повысить прежнего админа.
+        admin.is_superadmin = True
     if admin is None:
         raise HTTPException(status.HTTP_409_CONFLICT, t.ERR_NO_ADMIN_IN_DB)
     return admin

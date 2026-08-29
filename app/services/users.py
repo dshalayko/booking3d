@@ -23,6 +23,8 @@ from app.services.errors import (
     LoginTaken,
     NotAdmin,
     PinTaken,
+    SuperadminRequired,
+    UserNotFound,
 )
 from app.services.security import is_valid_pin_format, pin_digest
 
@@ -84,6 +86,26 @@ async def list_people(db: AsyncSession) -> list[User]:
     """Все зарегистрированные, по логину. Список нужен и разделу «Люди», и
     цифрам на «Сводке» — выборка одна, и жить ей лучше здесь."""
     return list((await db.scalars(select(User).order_by(User.name))).all())
+
+
+async def set_admin(
+    db: AsyncSession, actor: User, user_id: int, enabled: bool
+) -> User:
+    """Назначить или снять обычного администратора.
+
+    Суперадминов этот экран не создаёт и не изменяет: их роль — корень
+    полномочий, который появляется при миграции или через аварийную CLI-команду.
+    """
+    if not actor.is_superadmin:
+        raise SuperadminRequired(t.ERR_SUPERADMIN_ONLY)
+    person = await db.get(User, user_id, with_for_update=True)
+    if person is None:
+        raise UserNotFound(t.ERR_USER_NOT_FOUND)
+    if person.is_superadmin:
+        raise SuperadminRequired(t.ERR_SUPERADMIN_IMMUTABLE)
+    person.is_admin = enabled
+    await db.flush()
+    return person
 
 
 async def rename(db: AsyncSession, user: User, value: str) -> str:
