@@ -69,6 +69,11 @@
   {# Отсюда же — вход в расписание каждой пары «помещение — тип», которая реально
      есть в парке. #}
   <div class="my-links">
+    {% if app_admin|default(false) %}
+      <a class="btn btn-small btn-wide" href="{{ base }}/slicer">
+        {{ t.slicer_button }}
+      </a>
+    {% endif %}
     {% if bookings or currents %}
       <a class="btn btn-small btn-wide" href="{{ base }}/status">
         {{ t.app_view_statuses }}

@@ -1,0 +1,70 @@
+{# Оценка STL доступна только внутри подписанной Telegram-сессии. Файл уходит
+   прямо нашему FastAPI, а не через sendData бота: модели гораздо больше его
+   лимита и сервер всё равно должен передать их PrusaSlicer. #}
+{% extends "base.html" %}
+{% block body_class %}slicer-page{% endblock %}
+{% block title %}{{ t.slicer_title }}{% endblock %}
+
+{% block content %}
+<main class="sheet slicer-sheet">
+  <header class="sheet-head">
+    <h1>{{ t.slicer_heading }}</h1>
+  </header>
+
+  <p class="slicer-hint">{{ t.slicer_hint }}</p>
+
+  {% if error %}
+    <div class="banner banner-error slicer-error">{{ error }}</div>
+  {% endif %}
+
+  {% if estimate %}
+    <section class="slicer-result">
+      <span class="slicer-result-label">{{ t.slicer_result }}</span>
+      <strong class="slicer-time">{{ duration }}</strong>
+      {% if estimate.filament_g is not none %}
+        <span>{{ t.slicer_result_filament.format(grams=estimate.filament_g|round(1), meters=(estimate.filament_mm / 1000)|round(1)) }}</span>
+      {% else %}
+        <span>{{ t.slicer_result_filament_length.format(meters=(estimate.filament_mm / 1000)|round(1)) }}</span>
+      {% endif %}
+      <span class="slicer-profile">
+        {{ t.slicer_result_profile.format(layer=estimate.layer_height, infill=estimate.infill_percent) }}
+      </span>
+      <small>{{ t.slicer_result_note }}</small>
+    </section>
+  {% endif %}
+
+  <form class="slicer-form" method="post" action="/app/slicer"
+        enctype="multipart/form-data" data-slicer-form>
+    <label for="slicer_file">{{ t.slicer_file }}</label>
+    <input class="text-input slicer-file" id="slicer_file" type="file" name="model"
+           accept=".stl,model/stl,application/sla" required>
+
+    <div class="slicer-options">
+      <label>
+        <span>{{ t.slicer_layer }}</span>
+        <select class="text-input" name="layer_height">
+          {% for value in layer_heights %}
+            <option value="{{ '%.2f'|format(value) }}"{% if value == selected_layer %} selected{% endif %}>
+              {{ '%.2f'|format(value) }} mm
+            </option>
+          {% endfor %}
+        </select>
+      </label>
+      <label>
+        <span>{{ t.slicer_infill }}</span>
+        <select class="text-input" name="infill_percent">
+          {% for value in infill_percents %}
+            <option value="{{ value }}"{% if value == selected_infill %} selected{% endif %}>{{ value }}%</option>
+          {% endfor %}
+        </select>
+      </label>
+    </div>
+
+    <p class="slicer-working" data-slicer-working hidden>{{ t.slicer_working }}</p>
+    <button class="btn btn-primary" type="submit" data-slicer-submit>
+      {{ t.slicer_another if estimate else t.slicer_submit }}
+    </button>
+    <a class="btn btn-ghost" href="/app/">{{ t.back }}</a>
+  </form>
+</main>
+{% endblock %}

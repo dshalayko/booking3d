@@ -31,6 +31,7 @@ from app.services import booking_policy, telegram
 from app.services import machines as machines_svc
 from app.services import reservations as reservations_svc
 from app.services import schedule as schedule_svc
+from app.services import slicer as slicer_svc
 from app.services.errors import BadInitData
 
 BOT_TOKEN = "123456:test-token"
@@ -213,6 +214,87 @@ class TestSession:
 
         assert response.status_code == 200
         assert 'value="/app/status"' in response.text
+
+
+class TestSlicer:
+    async def test_without_session_opens_bootstrap(self, client):
+        response = await client.get("/app/slicer")
+
+        assert response.status_code == 200
+        assert 'value="/app/slicer"' in response.text
+
+    async def test_form_is_linked_from_miniapp(self, client, printers, make_user):
+        person = await make_user(is_admin=True)
+        await open_app(client, person)
+
+        home = await client.get("/app/")
+        form = await client.get("/app/slicer")
+
+        assert 'href="/app/slicer"' in home.text
+        assert 'accept=".stl,model/stl,application/sla"' in form.text
+        assert 'enctype="multipart/form-data"' in form.text
+
+    async def test_returns_estimate(self, client, printers, make_user, monkeypatch):
+        person = await make_user(is_admin=True)
+        await open_app(client, person)
+
+        async def estimate(data: bytes, *, layer_height: float, infill_percent: int):
+            assert data.startswith(b"solid cube")
+            assert layer_height == 0.2
+            assert infill_percent == 15
+            return slicer_svc.SliceEstimate(
+                seconds=3881,
+                display_time="1h 4m 41s",
+                filament_mm=4521.7,
+                filament_g=13.37,
+                layer_height=layer_height,
+                infill_percent=infill_percent,
+            )
+
+        monkeypatch.setattr(slicer_svc, "estimate_stl", estimate)
+        response = await client.post(
+            "/app/slicer",
+            data={"layer_height": "0.20", "infill_percent": "15"},
+            files={
+                "model": (
+                    "cube.stl",
+                    b"solid cube\nfacet normal 0 0 1\nendfacet\nendsolid cube\n",
+                    "model/stl",
+                )
+            },
+        )
+
+        assert response.status_code == 200
+        assert "1 ч 5 мин" in response.text
+        assert "13.4" in response.text
+        assert "4.5" in response.text
+
+    async def test_refuses_other_extension(self, client, printers, make_user):
+        person = await make_user(is_admin=True)
+        await open_app(client, person)
+
+        response = await client.post(
+            "/app/slicer",
+            files={"model": ("cube.3mf", b"PK\x03\x04", "application/octet-stream")},
+        )
+
+        assert response.status_code == 400
+        assert t.ERR_SLICER_FILE_TYPE in response.text
+
+    async def test_regular_user_cannot_see_or_open_slicer(self, client, printers, make_user):
+        person = await make_user()
+        await open_app(client, person)
+
+        home = await client.get("/app/")
+        page = await client.get("/app/slicer")
+        action = await client.post(
+            "/app/slicer",
+            files={"model": ("cube.stl", b"solid cube\nendsolid cube\n", "model/stl")},
+        )
+
+        assert 'href="/app/slicer"' not in home.text
+        assert page.status_code == 403
+        assert action.status_code == 403
 
 
 class TestAdminPanel:

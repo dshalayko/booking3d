@@ -665,6 +665,16 @@ ERR_LOGIN_FORMAT = "A login looks like n_username in Latin letters, e.g. i_ivano
 ERR_LOGIN_TAKEN = "The login {login} already belongs to someone else"
 ERR_FEEDBACK_USERNAME = "Enter a name no longer than 64 characters"
 ERR_FEEDBACK_MESSAGE = "Write a message no longer than 4000 characters"
+ERR_SLICER_FILE_REQUIRED = "Choose an STL file"
+ERR_SLICER_FILE_TYPE = "Only files with the .stl extension are supported"
+ERR_SLICER_EMPTY = "The STL file is empty"
+ERR_SLICER_INVALID_STL = "The file is not a valid ASCII or binary STL"
+ERR_SLICER_TOO_LARGE = "The STL file is larger than the {limit} MB limit"
+ERR_SLICER_OPTIONS = "Choose one of the offered layer and infill values"
+ERR_SLICER_UNAVAILABLE = "PrusaSlicer is not installed on the server"
+ERR_SLICER_TIMEOUT = "The model took too long — try a simpler STL"
+ERR_SLICER_FAILED = "PrusaSlicer could not slice this model"
+ERR_SLICER_NO_ESTIMATE = "PrusaSlicer did not return a time estimate"
 ERR_TEXT_UNKNOWN = "Unknown text key: {key}"
 ERR_TEXT_LONG = "The text is too long (maximum {limit} characters)"
 ERR_TEXT_BRACES = "Check the braces: the placeholder syntax is invalid"
@@ -1060,6 +1070,28 @@ UI = {
     "feedback_message": "What needs to be done",
     "feedback_message_placeholder": "Describe your request or problem",
     "feedback_submit": "Send",
+    "slicer_button": "Estimate print time",
+    "slicer_title": "STL print estimate",
+    "slicer_heading": "Estimated print time",
+    "slicer_hint": (
+        "Upload an STL. The estimate uses PLA, a 0.4 mm nozzle and no supports. "
+        "Model position and size come from the file; STL units are treated as millimetres."
+    ),
+    "slicer_file": "STL file",
+    "slicer_layer": "Layer height",
+    "slicer_infill": "Infill",
+    "slicer_submit": "Estimate",
+    "slicer_working": "Slicing the model — this may take up to two minutes…",
+    "slicer_result": "Estimate result",
+    "slicer_result_time": "{hours} h {minutes} min",
+    "slicer_result_filament": "Filament: about {grams} g ({meters} m)",
+    "slicer_result_filament_length": "Filament: about {meters} m",
+    "slicer_result_profile": "PLA · 0.4 mm nozzle · {layer} mm layer · {infill}% infill",
+    "slicer_result_note": (
+        "This is a generic-profile estimate, not measured printer time. "
+        "Supports are not included."
+    ),
+    "slicer_another": "Estimate another file",
     # admin_rooms.html
     "admin_rooms_title": "Rooms",
     "admin_rooms_add": "Add a room",

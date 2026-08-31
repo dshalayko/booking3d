@@ -685,6 +685,30 @@ body {
 .feedback-form .text-input { width: 100%; box-sizing: border-box; }
 .feedback-message { resize: vertical; min-height: 180px; line-height: 1.45; }
 .feedback-form .btn { margin-top: 8px; }
+.board-tools { display: flex; justify-content: flex-end; margin: 0 0 10px; }
+.slicer-sheet { max-width: 680px; }
+.slicer-hint { margin: 0; color: var(--muted); font-size: 17px; line-height: 1.45; }
+.slicer-error { position: static; }
+.slicer-form { display: flex; flex-direction: column; gap: 12px; }
+.slicer-form > label,
+.slicer-options label { display: flex; flex-direction: column; gap: 7px; color: var(--muted); }
+.slicer-file { width: 100%; box-sizing: border-box; }
+.slicer-options { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.slicer-options .text-input { width: 100%; box-sizing: border-box; }
+.slicer-working { margin: 0; color: var(--wait); text-align: center; }
+.slicer-result {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 20px;
+  border: 1px solid rgba(46, 204, 113, .35);
+  border-radius: var(--radius);
+  background: rgba(46, 204, 113, .08);
+}
+.slicer-result-label { color: var(--muted); }
+.slicer-time { font-size: 36px; line-height: 1.1; }
+.slicer-profile,
+.slicer-result small { color: var(--muted); }
 /* Оранжевая: бронь на будущее — не то же самое, что занять машину сейчас, и на
    доске это должно быть видно цветом, а не только надписью. */
 .btn-schedule { width: 100%; min-height: 56px; font-size: 20px; --outline-rgb: var(--plan-rgb); color: var(--plan); }

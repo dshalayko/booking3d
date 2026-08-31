@@ -663,6 +663,16 @@ ERR_LOGIN_FORMAT = "Логин — латиницей вида n_username, на�
 ERR_LOGIN_TAKEN = "Логин {login} уже занят другим человеком"
 ERR_FEEDBACK_USERNAME = "Укажите имя длиной не больше 64 символов"
 ERR_FEEDBACK_MESSAGE = "Напишите сообщение длиной не больше 4000 символов"
+ERR_SLICER_FILE_REQUIRED = "Выберите STL-файл"
+ERR_SLICER_FILE_TYPE = "Поддерживается только файл с расширением .stl"
+ERR_SLICER_EMPTY = "STL-файл пуст"
+ERR_SLICER_INVALID_STL = "Файл не похож на корректный ASCII или binary STL"
+ERR_SLICER_TOO_LARGE = "STL-файл больше допустимых {limit} МБ"
+ERR_SLICER_OPTIONS = "Выберите предложенные значения слоя и заполнения"
+ERR_SLICER_UNAVAILABLE = "На сервере не установлен PrusaSlicer"
+ERR_SLICER_TIMEOUT = "Модель не успела обработаться — попробуйте более простой STL"
+ERR_SLICER_FAILED = "PrusaSlicer не смог нарезать эту модель"
+ERR_SLICER_NO_ESTIMATE = "PrusaSlicer не вернул оценку времени"
 ERR_TEXT_UNKNOWN = "Неизвестный ключ текста: {key}"
 ERR_TEXT_LONG = "Текст слишком длинный (максимум {limit} символов)"
 ERR_TEXT_BRACES = "Проверьте фигурные скобки: синтаксис подстановок неверный"
@@ -1059,6 +1069,28 @@ UI = {
     "feedback_message": "Что нужно сделать",
     "feedback_message_placeholder": "Опишите просьбу или проблему",
     "feedback_submit": "Отправить",
+    "slicer_button": "Рассчитать время печати",
+    "slicer_title": "Расчёт печати STL",
+    "slicer_heading": "Примерное время печати",
+    "slicer_hint": (
+        "Загрузите STL. Расчёт выполняется для PLA, сопла 0,4 мм и без поддержек. "
+        "Положение и размер модели берутся из файла; единицы STL считаются миллиметрами."
+    ),
+    "slicer_file": "STL-файл",
+    "slicer_layer": "Высота слоя",
+    "slicer_infill": "Заполнение",
+    "slicer_submit": "Рассчитать",
+    "slicer_working": "Нарезаем модель — это может занять до двух минут…",
+    "slicer_result": "Результат расчёта",
+    "slicer_result_time": "{hours} ч {minutes} мин",
+    "slicer_result_filament": "Пластика: примерно {grams} г ({meters} м)",
+    "slicer_result_filament_length": "Пластика: примерно {meters} м",
+    "slicer_result_profile": "PLA · сопло 0,4 мм · слой {layer} мм · заполнение {infill}%",
+    "slicer_result_note": (
+        "Это оценка по базовому профилю, не фактическое время принтера. "
+        "Поддержки в расчёт не включены."
+    ),
+    "slicer_another": "Рассчитать другой файл",
     # admin_rooms.html
     "admin_rooms_title": "Помещения",
     "admin_rooms_add": "Добавить помещение",

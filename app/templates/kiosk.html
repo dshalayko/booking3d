@@ -13,6 +13,12 @@
     </header>
   {% endif %}
 
+  {% if telegram_sdk|default(false) and app_admin|default(false) and not status_view|default(false) %}
+    <div class="board-tools">
+      <a class="btn btn-small btn-outline" href="/app/slicer">{{ t.slicer_button }}</a>
+    </div>
+  {% endif %}
+
   {# Адрес опроса приходит из обработчика (`poll`) и соответствует открытой
      доске помещения или общему экрану статусов. #}
   <main id="board" data-poll="{{ poll }}" data-interval="10">

@@ -91,6 +91,13 @@ class Settings(BaseSettings):
     # что после него придут.
     reservation_remind_minutes: int = 60
 
+    # --- оценка времени печати STL ---
+    # В production-образе бинарник ставит Dockerfile. Имя настраиваемое, чтобы
+    # локально можно было указать путь к PrusaSlicer.app, не меняя код.
+    prusa_slicer_bin: str = "prusa-slicer"
+    slicer_max_file_mb: int = 50
+    slicer_timeout_seconds: int = 120
+
     @cached_property
     def zone(self) -> ZoneInfo:
         return ZoneInfo(self.tz)

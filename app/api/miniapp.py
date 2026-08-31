@@ -23,7 +23,9 @@ JavaScript-объекте `window.Telegram.WebApp`, серверу его нуж
 зеленели бы, ничего не проверяя, — та же ловушка, что с `KIOSK_OPEN_ACCESS`.
 """
 
-from fastapi import APIRouter, Form, Request, status
+from typing import Annotated
+
+from fastapi import APIRouter, File, Form, HTTPException, Request, UploadFile, status
 from fastapi.responses import HTMLResponse, RedirectResponse, Response
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -37,6 +39,7 @@ from app.config import settings
 from app.models import Machine, User
 from app.services import auth, booking_policy, feedback, telegram
 from app.services import reservations as reservations_svc
+from app.services import slicer as slicer_svc
 from app.services.errors import AppSessionRequired
 
 router = APIRouter(prefix="/app")
@@ -239,6 +242,104 @@ async def feedback_action(
     await feedback.create(db, person, username, message)
     await db.commit()
     return _home("feedback_sent")
+
+
+# --- оценка STL -------------------------------------------------------------
+
+
+def _slicer_context(person: User, **extra) -> dict:
+    return {
+        "app_admin": person.is_admin,
+        "layer_heights": slicer_svc.ALLOWED_LAYER_HEIGHTS,
+        "infill_percents": slicer_svc.ALLOWED_INFILL_PERCENTS,
+        "selected_layer": 0.20,
+        "selected_infill": 15,
+        "estimate": None,
+        "duration": "",
+        "error": "",
+        **APP.context,
+        **extra,
+    }
+
+
+@router.get("/slicer", response_class=HTMLResponse)
+async def slicer_form(request: Request, db: Db) -> Response:
+    person = await viewer(request, db)
+    if person is None:
+        return await _bootstrap(request, db, f"{SAFE_NEXT_PREFIX}/slicer")
+    if not person.is_admin:
+        raise HTTPException(status.HTTP_403_FORBIDDEN, t.ERR_ADMIN_ONLY)
+    return templates.TemplateResponse(request, "slicer.html", _slicer_context(person))
+
+
+@router.post("/slicer", response_class=HTMLResponse)
+async def slicer_action(
+    request: Request,
+    db: Db,
+    model: Annotated[UploadFile | None, File()] = None,
+    layer_height: str = Form("0.20"),
+    infill_percent: str = Form("15"),
+) -> Response:
+    person = await actor(request, db)
+    if not person.is_admin:
+        raise HTTPException(status.HTTP_403_FORBIDDEN, t.ERR_ADMIN_ONLY)
+
+    try:
+        selected_layer = float(layer_height)
+        selected_infill = int(infill_percent)
+        slicer_svc.validate_options(selected_layer, selected_infill)
+
+        if model is None or not model.filename:
+            raise slicer_svc.SlicerError(t.ERR_SLICER_FILE_REQUIRED)
+        if not model.filename.lower().endswith(".stl"):
+            raise slicer_svc.SlicerError(t.ERR_SLICER_FILE_TYPE)
+
+        limit = settings.slicer_max_file_mb * 1024 * 1024
+        data = await model.read(limit + 1)
+        if len(data) > limit:
+            raise slicer_svc.SlicerError(
+                t.ERR_SLICER_TOO_LARGE.format(limit=settings.slicer_max_file_mb)
+            )
+
+        estimate = await slicer_svc.estimate_stl(
+            data,
+            layer_height=selected_layer,
+            infill_percent=selected_infill,
+        )
+    except (ValueError, slicer_svc.SlicerError) as exc:
+        error = str(exc) if isinstance(exc, slicer_svc.SlicerError) else t.ERR_SLICER_OPTIONS
+        return templates.TemplateResponse(
+            request,
+            "slicer.html",
+            _slicer_context(
+                person,
+                error=error,
+                selected_layer=selected_layer if "selected_layer" in locals() else 0.20,
+                selected_infill=selected_infill if "selected_infill" in locals() else 15,
+            ),
+            status_code=status.HTTP_400_BAD_REQUEST,
+        )
+    finally:
+        if model is not None:
+            await model.close()
+
+    hours, remainder = divmod(estimate.seconds, 3600)
+    minutes = (remainder + 59) // 60
+    if minutes == 60:
+        hours += 1
+        minutes = 0
+    duration = t.UI["slicer_result_time"].format(hours=hours, minutes=minutes)
+    return templates.TemplateResponse(
+        request,
+        "slicer.html",
+        _slicer_context(
+            person,
+            estimate=estimate,
+            duration=duration,
+            selected_layer=selected_layer,
+            selected_infill=selected_infill,
+        ),
+    )
 
 
 # --- занять / освободить -----------------------------------------------------

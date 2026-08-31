@@ -191,6 +191,19 @@
     });
   });
 
+  // --- расчёт STL ---------------------------------------------------------
+  // Обычная multipart-форма оставляет страницу без SPA, но на большой модели
+  // ответ приходит не сразу. Показываем, что запрос принят, и защищаем от
+  // повторного запуска двумя быстрыми нажатиями.
+  document.querySelectorAll("[data-slicer-form]").forEach(function (form) {
+    form.addEventListener("submit", function () {
+      var button = form.querySelector("[data-slicer-submit]");
+      var working = form.querySelector("[data-slicer-working]");
+      if (button) button.disabled = true;
+      if (working) working.hidden = false;
+    });
+  });
+
   // --- авто-возврат и автоскрытие -----------------------------------------
 
   var seconds = parseInt(document.body.dataset.autoreturn, 10);
