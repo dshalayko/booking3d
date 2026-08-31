@@ -36,8 +36,8 @@
   <form class="slicer-form" method="post" action="/app/slicer"
         enctype="multipart/form-data" data-slicer-form>
     <label for="slicer_file">{{ t.slicer_file }}</label>
-    <input class="text-input slicer-file" id="slicer_file" type="file" name="model"
-           accept=".stl,model/stl,application/sla" required>
+    {# Do not set accept: iOS/Telegram greys out STL files because UTType does not know STL. #}
+    <input class="text-input slicer-file" id="slicer_file" type="file" name="model" required>
 
     <div class="slicer-options">
       <label>

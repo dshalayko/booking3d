@@ -231,7 +231,9 @@ class TestSlicer:
         form = await client.get("/app/slicer")
 
         assert 'href="/app/slicer"' in home.text
-        assert 'accept=".stl,model/stl,application/sla"' in form.text
+        # iOS/Telegram does not recognise the STL UTType and disables files when
+        # the input has an accept filter. Extension and contents are checked server-side.
+        assert "accept=" not in form.text
         assert 'enctype="multipart/form-data"' in form.text
 
     async def test_returns_estimate(self, client, printers, make_user, monkeypatch):
