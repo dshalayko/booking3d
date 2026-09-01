@@ -22,7 +22,7 @@ from app.models import (
     User,
 )
 from app.services import activity as activity_svc
-from app.services import auth, booking_policy
+from app.services import auth, booking_policy, feature_flags
 from app.services import machines as machines_svc
 from app.services import queue as queue_svc
 from app.services import reservations as reservations_svc
@@ -158,6 +158,29 @@ class TestBookingRules:
         await client.post("/admin/rules", data={})
         db.expire_all()
         assert await booking_policy.enabled(db) is False
+
+
+class TestExperimentalFeatures:
+    async def test_admin_can_hide_and_show_slicer(self, client, db, printers, make_user):
+        await make_user(is_admin=True)
+        await login(client)
+
+        page = await client.get("/admin/features")
+        assert page.status_code == 200
+        assert "Расчёт времени печати STL" in page.text
+        assert "checked" in page.text
+
+        disabled = await client.post("/admin/features/slicer", data={})
+        assert disabled.status_code == 303
+        assert disabled.headers["location"] == "/admin/features?flash=features_saved"
+        db.expire_all()
+        assert await feature_flags.slicer_enabled(db) is False
+
+        await client.post(
+            "/admin/features/slicer", data={"slicer_enabled": "on"}
+        )
+        db.expire_all()
+        assert await feature_flags.slicer_enabled(db) is True
 
 
 class TestEditableTexts:

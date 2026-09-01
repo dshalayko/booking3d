@@ -635,6 +635,7 @@ ERR_APP_BAD_INIT_DATA = "Couldn't confirm the app was opened from Telegram"
 ERR_APP_SESSION_REQUIRED = "Open the schedule again with /book in the chat with the bot"
 ERR_APP_NOT_REGISTERED = "Send /start to the bot — it asks for your login and hands you a PIN"
 ERR_ADMIN_ONLY = "Admins only"
+ERR_SLICER_DISABLED = "Print-time estimation is currently disabled"
 ERR_ADMIN_LOGIN_REQUIRED = "Please log in as an admin"
 ERR_BAD_ENROLL_SECRET = "Wrong setup secret"
 ERR_BAD_ADMIN_SECRET = "Wrong secret"
@@ -715,6 +716,7 @@ FLASH_ADMIN = {
     "machine_purged": "The machine is gone, history and all",
     "room_purged": "The room is gone with everything in it",
     "rules_saved": "Booking rules saved",
+    "features_saved": "Experimental feature settings saved",
     "text_saved": "Text saved",
     "text_reset": "Text restored from en.py",
     "admin_granted": "Administrator rights granted",
@@ -1022,6 +1024,17 @@ UI = {
     "admin_rules_on": "On: 2 printers + 1 engraver",
     "admin_rules_off": "Off: one machine only",
     "admin_rules_submit": "Save rule",
+    # Experimental features section
+    "admin_tab_features": "Experimental features",
+    "admin_features_slicer_title": "STL print-time estimation",
+    "admin_features_slicer_label": "Show the estimation button to administrators",
+    "admin_features_slicer_hint": (
+        "Enables the button in the Telegram Mini App and access to the estimator. "
+        "The feature remains available to administrators only."
+    ),
+    "admin_features_on": "On",
+    "admin_features_off": "Off",
+    "admin_features_submit": "Save",
     # Editable English texts section
     "admin_texts_title": "English texts",
     "admin_texts_hint": (

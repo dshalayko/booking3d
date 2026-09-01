@@ -174,6 +174,29 @@ class BookingPolicy(Base):
         return f"<BookingPolicy multi={self.multi_machine_enabled}>"
 
 
+class FeatureFlags(Base):
+    """Экспериментальные функции, которые администратор включает без деплоя.
+
+    Строка одна (`id = 1`). Новые тестовые возможности добавляются колонками,
+    чтобы их состояние переживало перезапуск приложения и обновление сервера.
+    """
+
+    __tablename__ = "feature_flags"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    slicer_enabled: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, server_default=text("true")
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=func.now()
+    )
+
+    __table_args__ = (CheckConstraint("id = 1", name="feature_flags_singleton"),)
+
+    def __repr__(self) -> str:
+        return f"<FeatureFlags slicer={self.slicer_enabled}>"
+
+
 class TextOverride(Base):
     """English interface text changed from the admin panel.
 

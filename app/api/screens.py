@@ -32,7 +32,7 @@ from app.config import settings
 from app.enums import MachineKind, MachineStatus
 from app.models import Machine, Room, User
 from app.services import board as board_svc
-from app.services import booking_policy
+from app.services import booking_policy, feature_flags
 from app.services import machines as machines_svc
 from app.services import reservations as reservations_svc
 from app.services import rooms as rooms_svc
@@ -231,6 +231,9 @@ async def board_page(
     context["flash"] = t.FLASH_KIOSK.get(flash)
     context["poll"] = f"{client.base}/partials/board/{room.id}"
     context["app_admin"] = bool(viewer and viewer.is_admin)
+    context["slicer_enabled"] = bool(
+        viewer and viewer.is_admin and await feature_flags.slicer_enabled(db)
+    )
     context.update(client.context)
     return templates.TemplateResponse(request, "kiosk.html", context)
 
@@ -631,6 +634,9 @@ async def my_page(
             "can_book": bool(bookable_kinds),
             "flash": t.FLASH_KIOSK.get(flash),
             "app_admin": user.is_admin,
+            "slicer_enabled": bool(
+                user.is_admin and await feature_flags.slicer_enabled(db)
+            ),
             **client.context,
         },
     )

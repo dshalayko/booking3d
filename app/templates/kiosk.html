@@ -13,7 +13,8 @@
     </header>
   {% endif %}
 
-  {% if telegram_sdk|default(false) and app_admin|default(false) and not status_view|default(false) %}
+  {% if telegram_sdk|default(false) and app_admin|default(false)
+        and slicer_enabled|default(false) and not status_view|default(false) %}
     <div class="board-tools">
       <a class="btn btn-small btn-outline" href="/app/slicer">{{ t.slicer_button }}</a>
     </div>

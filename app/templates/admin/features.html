@@ -1,0 +1,26 @@
+{% extends "admin/base.html" %}
+
+{% block admin %}
+  <section class="ad-card ad-card-narrow">
+    <div class="ad-card-head">
+      <h2>{{ t.admin_features_slicer_title }}</h2>
+      <span class="ad-card-note">
+        {{ t.admin_features_on if slicer_enabled else t.admin_features_off }}
+      </span>
+    </div>
+
+    <p class="admin-dim admin-hint">{{ t.admin_features_slicer_hint }}</p>
+
+    <form class="admin-form admin-rule-form" method="post" action="/admin/features/slicer">
+      <label class="admin-switch">
+        <input type="checkbox" name="slicer_enabled" value="on"
+               {% if slicer_enabled %}checked{% endif %}>
+        <span class="admin-switch-track" aria-hidden="true"></span>
+        <span>{{ t.admin_features_slicer_label }}</span>
+      </label>
+      <button class="btn btn-small btn-primary" type="submit">
+        {{ t.admin_features_submit }}
+      </button>
+    </form>
+  </section>
+{% endblock %}

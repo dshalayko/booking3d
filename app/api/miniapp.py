@@ -37,7 +37,7 @@ from app.api.render import templates
 from app.api.screens import APP
 from app.config import settings
 from app.models import Machine, User
-from app.services import auth, booking_policy, feedback, telegram
+from app.services import auth, booking_policy, feature_flags, feedback, telegram
 from app.services import reservations as reservations_svc
 from app.services import slicer as slicer_svc
 from app.services.errors import AppSessionRequired
@@ -269,6 +269,8 @@ async def slicer_form(request: Request, db: Db) -> Response:
         return await _bootstrap(request, db, f"{SAFE_NEXT_PREFIX}/slicer")
     if not person.is_admin:
         raise HTTPException(status.HTTP_403_FORBIDDEN, t.ERR_ADMIN_ONLY)
+    if not await feature_flags.slicer_enabled(db):
+        raise HTTPException(status.HTTP_404_NOT_FOUND, t.ERR_SLICER_DISABLED)
     return templates.TemplateResponse(request, "slicer.html", _slicer_context(person))
 
 
@@ -283,6 +285,8 @@ async def slicer_action(
     person = await actor(request, db)
     if not person.is_admin:
         raise HTTPException(status.HTTP_403_FORBIDDEN, t.ERR_ADMIN_ONLY)
+    if not await feature_flags.slicer_enabled(db):
+        raise HTTPException(status.HTTP_404_NOT_FOUND, t.ERR_SLICER_DISABLED)
 
     try:
         selected_layer = float(layer_height)

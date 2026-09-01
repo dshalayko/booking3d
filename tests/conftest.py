@@ -49,7 +49,7 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent
 # помещения заводят сами тесты, и оставшаяся от миграции комната мешала бы
 # считать их — в списке помещений она была бы третьей лишней.
 TABLES = (
-    "text_overrides, feedback_requests, booking_policy, users, rooms, machines, "
+    "text_overrides, feature_flags, feedback_requests, booking_policy, users, rooms, machines, "
     "sessions, queue, reservations"
 )
 

@@ -27,7 +27,7 @@ from app.bot import notify
 from app.config import settings
 from app.enums import MachineKind, MachineStatus, ReservationStatus
 from app.models import FeedbackRequest, Machine, Reservation
-from app.services import booking_policy, telegram
+from app.services import booking_policy, feature_flags, telegram
 from app.services import machines as machines_svc
 from app.services import reservations as reservations_svc
 from app.services import schedule as schedule_svc
@@ -297,6 +297,25 @@ class TestSlicer:
         assert 'href="/app/slicer"' not in home.text
         assert page.status_code == 403
         assert action.status_code == 403
+
+    async def test_disabled_slicer_is_hidden_and_closed(
+        self, client, db, printers, make_user
+    ):
+        person = await make_user(is_admin=True)
+        await feature_flags.save_slicer(db, False)
+        await db.commit()
+        await open_app(client, person)
+
+        home = await client.get("/app/")
+        page = await client.get("/app/slicer")
+        action = await client.post(
+            "/app/slicer",
+            files={"model": ("cube.stl", b"solid cube\nendsolid cube\n", "model/stl")},
+        )
+
+        assert 'href="/app/slicer"' not in home.text
+        assert page.status_code == 404
+        assert action.status_code == 404
 
 
 class TestAdminPanel:

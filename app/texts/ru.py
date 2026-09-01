@@ -635,6 +635,7 @@ ERR_APP_BAD_INIT_DATA = "Не удалось подтвердить, что пр
 ERR_APP_SESSION_REQUIRED = "Откройте расписание заново командой /book в чате с ботом"
 ERR_APP_NOT_REGISTERED = "Напишите боту /start — он спросит логин и выдаст PIN"
 ERR_ADMIN_ONLY = "Действие доступно только админу"
+ERR_SLICER_DISABLED = "Расчёт времени печати сейчас выключен"
 ERR_ADMIN_LOGIN_REQUIRED = "Нужен вход администратора"
 ERR_BAD_ENROLL_SECRET = "Неверный секрет регистрации"
 ERR_BAD_ADMIN_SECRET = "Неверный секрет"
@@ -713,6 +714,7 @@ FLASH_ADMIN = {
     "machine_purged": "Машина удалена вместе с её историей",
     "room_purged": "Помещение удалено вместе со всем, что в нём было",
     "rules_saved": "Правила бронирования сохранены",
+    "features_saved": "Настройки тестовых функций сохранены",
     "text_saved": "Текст сохранён",
     "text_reset": "Восстановлен текст из en.py",
     "admin_granted": "Права администратора выданы",
@@ -1021,6 +1023,17 @@ UI = {
     "admin_rules_on": "Включено: 2 принтера + 1 гравировщик",
     "admin_rules_off": "Выключено: только одна машина",
     "admin_rules_submit": "Сохранить правило",
+    # Раздел тестовых функций
+    "admin_tab_features": "Тестовые функции",
+    "admin_features_slicer_title": "Расчёт времени печати STL",
+    "admin_features_slicer_label": "Показывать кнопку расчёта администраторам",
+    "admin_features_slicer_hint": (
+        "Включает кнопку в Telegram Mini App и доступ к форме расчёта. "
+        "Функция остаётся доступна только администраторам."
+    ),
+    "admin_features_on": "Включено",
+    "admin_features_off": "Выключено",
+    "admin_features_submit": "Сохранить",
     # Раздел редактирования английских текстов
     "admin_texts_title": "Английские тексты",
     "admin_texts_hint": (
