@@ -46,7 +46,8 @@ class TestRegistration:
         answer = await commands.register(db, CHAT, "i_petrov")
 
         assert answer.pin and "i_petrov" in answer.text
-        user = await auth.user_by_pin(db, _pin_from(answer.text))
+        assert not re.search(r"<b>\d{4}</b>", answer.text)
+        user = await auth.user_by_pin(db, answer.pin)
         assert user.tg_chat_id == CHAT
         assert user.name == "i_petrov"
 
@@ -79,7 +80,7 @@ class TestRegistration:
     async def test_unregistered_text_is_read_as_login(self, db):
         answer = await commands.text_message(db, CHAT, "i_petrov")
 
-        assert answer.pin and _pin_from(answer.text)
+        assert answer.pin and not re.search(r"<b>\d{4}</b>", answer.text)
         assert (await user_of(db, CHAT)).name == "i_petrov"
 
     async def test_unregistered_command_is_not_read_as_login(self, db):
@@ -94,7 +95,7 @@ class TestRegistration:
         assert await commands.text_message(db, CHAT, "привет") == commands.Reply(texts.HELP)
 
     async def test_start_twice_does_not_reset_pin(self, db):
-        pin = _pin_from(await register(db))
+        pin = await register(db)
 
         second = await commands.start(db, CHAT)
 
@@ -102,10 +103,11 @@ class TestRegistration:
         assert (await auth.user_by_pin(db, pin)).tg_chat_id == CHAT
 
     async def test_new_pin_kills_the_old_one(self, db):
-        old = _pin_from(await register(db))
+        old = await register(db)
 
-        new = _pin_from((await commands.new_pin(db, CHAT)).text)
+        new = (await commands.new_pin(db, CHAT)).pin
 
+        assert new is not None
         assert new != old
         assert (await auth.user_by_pin(db, new)).tg_chat_id == CHAT
         with pytest.raises(AuthFailed):
@@ -127,8 +129,12 @@ class TestPinnedMessage:
     async def test_message_with_pin_is_pinned(self):
         message = FakeMessage()
 
-        await bot_module._answer(message, commands.Reply("PIN: 1234", pin=True))
+        await bot_module._answer(message, commands.Reply("Готово", pin="1234"))
 
+        assert [sent.text for sent in message.sent] == [
+            "Готово",
+            "🔑 Ваш PIN: <b>1234</b>",
+        ]
         assert message.sent[-1].pinned
         # Прошлый PIN откреплён, иначе наверху чата их окажется два.
         assert message.chat.unpinned == 1
@@ -145,16 +151,17 @@ class TestPinnedMessage:
         """В группе бот не администратор, а PIN там и так у всех на виду."""
         message = FakeMessage(chat_type=ChatType.GROUP)
 
-        await bot_module._answer(message, commands.Reply("PIN: 1234", pin=True))
+        await bot_module._answer(message, commands.Reply("Готово", pin="1234"))
 
+        assert message.sent[-1].text == "🔑 Ваш PIN: <b>1234</b>"
         assert not message.sent[-1].pinned
 
     async def test_failed_pin_does_not_lose_the_message(self):
         message = FakeMessage(pin_fails=True)
 
-        await bot_module._answer(message, commands.Reply("PIN: 1234", pin=True))
+        await bot_module._answer(message, commands.Reply("Готово", pin="1234"))
 
-        assert message.sent[-1].text == "PIN: 1234"
+        assert message.sent[-1].text == "🔑 Ваш PIN: <b>1234</b>"
 
 
 class TestStatus:
@@ -297,7 +304,9 @@ class TestKindsInBot:
 async def register(db, chat_id: int = CHAT, login: str = "i_petrov") -> str:
     """Оба шага регистрации: /start, потом логин ответным сообщением."""
     await commands.start(db, chat_id)
-    return (await commands.register(db, chat_id, login)).text
+    pin = (await commands.register(db, chat_id, login)).pin
+    assert pin is not None
+    return pin
 
 
 class FakeChat:
@@ -337,10 +346,3 @@ class FakeMessage:
 
 async def user_of(db, chat_id: int) -> User | None:
     return await db.scalar(select(User).where(User.tg_chat_id == chat_id))
-
-
-def _pin_from(answer: str) -> str:
-    """Достать PIN из сообщения бота: единственные четыре цифры в жирном."""
-    bold = re.findall(r"<b>(\d{4})</b>", answer)
-    assert len(bold) == 1, f"в сообщении не один PIN: {answer}"
-    return bold[0]

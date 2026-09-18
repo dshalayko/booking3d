@@ -272,10 +272,8 @@ BOT_LOGIN_TAKEN = (
 
 BOT_WELCOME = (
     "✅ You're all set — signed up as <b>{login}</b>.\n\n"
-    "Your PIN: <b>{pin}</b>\n"
-    "You'll need it to book machines from the tablet in the room.\n"
-    "I've pinned this message to the top of the chat so the PIN stays at hand. "
-    "I won't show it again, I can only issue a new one via /pin.\n\n"
+    "I'll send your PIN next in a separate message and pin it to the top of the chat. "
+    "You'll need it to book machines from the tablet in the room.\n\n"
     "{help}"
 )
 
@@ -286,10 +284,11 @@ BOT_ALREADY_REGISTERED = (
 )
 
 BOT_PIN_CHANGED = (
-    "🔑 Your new PIN: <b>{pin}</b>\n\n"
-    "The old one stops working now. This message is pinned at the top of the chat "
-    "in place of the previous one."
+    "🔑 Your old PIN no longer works.\n\n"
+    "I'll send the new one next and pin it in place of the previous one."
 )
+
+BOT_PIN_MESSAGE = "🔑 Your PIN: <b>{pin}</b>"
 
 BOT_NAME_CHANGED = (
     "✏️ An admin fixed your login.\n\n"

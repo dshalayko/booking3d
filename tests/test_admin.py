@@ -480,8 +480,10 @@ class TestUsers:
         assert response.status_code == 303
         # PIN не должен попасть в URL редиректа — он оседает в логах и истории
         assert "4242" not in response.headers["location"]
-        message = [text for chat, text in outbox if chat == person_chat][0]
-        new_pin = message.split("<b>")[1].split("</b>")[0]
+        messages = [text for chat, text in outbox if chat == person_chat]
+        assert len(messages) == 2
+        assert "4242" not in messages[0]
+        new_pin = messages[-1].split("<b>")[1].split("</b>")[0]
         db.expire_all()
         assert (await auth.user_by_pin(db, new_pin)).id == person_id
 

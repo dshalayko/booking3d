@@ -25,16 +25,15 @@ from app.services.users import normalize_login
 
 @dataclass(frozen=True)
 class Reply:
-    """Текст ответа и признак «в нём выдан PIN».
+    """Текст ответа и PIN, который нужно отправить отдельным сообщением.
 
-    Признак нужен проводке: сообщение с PIN-ом она закрепляет наверху чата,
-    чтобы четыре цифры не утонули в переписке. Искать PIN в готовом тексте
-    регулярным выражением значило бы держать формат фразы в двух местах —
-    поэтому о PIN-е говорит тот, кто его выдал.
+    PIN не прячем внутри большого ответа: проводка отправляет его следом короткой
+    карточкой и закрепляет именно её. Так код остаётся последним сообщением в
+    чате и не теряется среди справки и уведомлений.
     """
 
     text: str
-    pin: bool = False
+    pin: str | None = None
 
 
 async def start(db: AsyncSession, chat_id: int) -> str:
@@ -67,7 +66,7 @@ async def register(db: AsyncSession, chat_id: int, value: str) -> Reply:
     pin = await auth.pick_free_pin(db)
     db.add(User(tg_chat_id=chat_id, name=login, pin_digest=auth.pin_digest(pin)))
     await db.commit()
-    return Reply(texts.welcome(login, pin), pin=True)
+    return Reply(texts.welcome(login), pin=pin)
 
 
 async def text_message(db: AsyncSession, chat_id: int, value: str) -> Reply:
@@ -90,7 +89,7 @@ async def new_pin(db: AsyncSession, chat_id: int) -> Reply:
 
     pin = await auth.assign_pin(db, user)
     await db.commit()
-    return Reply(texts.pin_changed(pin), pin=True)
+    return Reply(texts.pin_changed(), pin=pin)
 
 
 def app_url() -> str | None:

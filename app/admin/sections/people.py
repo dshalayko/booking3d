@@ -83,7 +83,9 @@ async def reset_pin(db: Db, user_id: int) -> Response:
     pin = await auth.assign_pin(db, person)
     await db.commit()
     # PIN уходит только в Telegram: в редиректе он попал бы в логи и историю.
-    await notify.send_to_user(db, user_id, texts.pin_changed(pin))
+    await notify.send_pin_to_user(
+        db, user_id, texts.pin_changed(), texts.pin_message(pin)
+    )
     return core.redirect("pin_reset", SECTION.path)
 
 

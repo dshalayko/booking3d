@@ -63,16 +63,20 @@ def login_taken(login: str) -> str:
     return t.BOT_LOGIN_TAKEN.format(login=login)
 
 
-def welcome(login: str, pin: str) -> str:
-    return t.BOT_WELCOME.format(login=login, pin=pin, help=t.BOT_HELP)
+def welcome(login: str) -> str:
+    return t.BOT_WELCOME.format(login=login, help=t.BOT_HELP)
 
 
 def already_registered(name: str) -> str:
     return t.BOT_ALREADY_REGISTERED.format(name=name, help=t.BOT_HELP)
 
 
-def pin_changed(pin: str) -> str:
-    return t.BOT_PIN_CHANGED.format(pin=pin)
+def pin_changed() -> str:
+    return t.BOT_PIN_CHANGED
+
+
+def pin_message(pin: str) -> str:
+    return t.BOT_PIN_MESSAGE.format(pin=pin)
 
 
 def name_changed(previous: str, login: str) -> str:

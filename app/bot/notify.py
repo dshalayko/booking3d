@@ -21,7 +21,7 @@ from app.models import User
 
 logger = logging.getLogger(__name__)
 
-Sender = Callable[[int, str], Awaitable[None]]
+Sender = Callable[[int, str], Awaitable[object | None]]
 
 _sender: Sender | None = None
 
@@ -37,15 +37,20 @@ def is_configured() -> bool:
 
 async def send(chat_id: int, text: str) -> bool:
     """Отправить сообщение. Возвращает, дошло ли — но не бросает исключений."""
+    delivered, _ = await _deliver(chat_id, text)
+    return delivered
+
+
+async def _deliver(chat_id: int, text: str) -> tuple[bool, object | None]:
+    """Отправить и сохранить объект Telegram-сообщения, если проводка его вернула."""
     if _sender is None:
         logger.debug("бот не настроен, сообщение в %s не отправлено", chat_id)
-        return False
+        return False, None
     try:
-        await _sender(chat_id, text)
-        return True
+        return True, await _sender(chat_id, text)
     except Exception:  # заблокировал бота, удалил чат, Telegram лежит
         logger.warning("не удалось отправить сообщение в %s", chat_id, exc_info=True)
-        return False
+        return False, None
 
 
 async def send_to_user(db: AsyncSession, user_id: int, text: str) -> bool:
@@ -53,6 +58,30 @@ async def send_to_user(db: AsyncSession, user_id: int, text: str) -> bool:
     if chat_id is None:
         return False
     return await send(chat_id, text)
+
+
+async def send_pin_to_user(
+    db: AsyncSession, user_id: int, text: str, pin_text: str
+) -> bool:
+    """Отправить пояснение и следом отдельную закреплённую карточку с PIN."""
+    chat_id = await db.scalar(select(User.tg_chat_id).where(User.id == user_id))
+    if chat_id is None:
+        return False
+
+    intro_delivered, _ = await _deliver(chat_id, text)
+    pin_delivered, sent = await _deliver(chat_id, pin_text)
+    if not pin_delivered:
+        return False
+
+    # Тестовые и альтернативные отправители могут не возвращать Telegram Message.
+    # В бою bot.send_message возвращает его, и карточку можно сразу закрепить.
+    if sent is not None and hasattr(sent, "pin"):
+        try:
+            await sent.chat.unpin_all_messages()
+            await sent.pin(disable_notification=True)
+        except Exception:  # закрепление — удобство, доставка PIN важнее
+            logger.warning("не удалось закрепить сообщение с PIN-ом", exc_info=True)
+    return intro_delivered
 
 
 async def send_broadcast(chat_ids: list[int], text: str) -> tuple[int, int]:

@@ -106,15 +106,18 @@ async def handle_anything_else(message: Message) -> None:
 
 
 async def _answer(message: Message, reply: commands.Reply) -> None:
-    """Ответить и, если в ответе выдан PIN, закрепить его наверху чата.
+    """Ответить, затем отправить PIN отдельным сообщением и закрепить его.
 
-    Иначе четыре цифры быстро уезжают вверх за уведомлениями, и человек идёт за
-    новым PIN-ом вместо того, чтобы занять принтер. Закреплять
+    Короткая карточка с четырьмя цифрами всегда уходит последней, поэтому код не
+    теряется внутри приветствия или справки. Закреплять
     в личном чате бот может без всяких прав — в отличие от групп, где для этого
     нужно быть администратором; поэтому в группе даже не пробуем.
     """
-    sent = await message.answer(reply.text)
-    if not reply.pin or message.chat.type != ChatType.PRIVATE:
+    await message.answer(reply.text)
+    if reply.pin is None:
+        return
+    sent = await message.answer(texts.pin_message(reply.pin))
+    if message.chat.type != ChatType.PRIVATE:
         return
     try:
         # Сначала снимаем прошлый пин: старый PIN уже не работает, а наверху
