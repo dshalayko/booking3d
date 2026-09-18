@@ -28,6 +28,7 @@ from fastapi.responses import HTMLResponse, Response
 from app.admin import core
 from app.admin.sections import (
     bookings,
+    broadcasts,
     features,
     feedback,
     hours,
@@ -46,6 +47,7 @@ SECTIONS = [
     bookings.SECTION,
     feedback.SECTION,
     people.SECTION,
+    broadcasts.SECTION,
     log.SECTION,
     rooms.SECTION,
     machines.SECTION,

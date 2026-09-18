@@ -1,0 +1,28 @@
+{% extends "admin/base.html" %}
+{% block admin %}
+  {% if result %}<div class="banner banner-ok" role="status">{{ result }}</div>{% endif %}
+  {% if error %}<div class="banner" role="alert">{{ error }}</div>{% endif %}
+  {% if not configured %}<div class="banner" role="alert">{{ t.broadcast_not_configured }}</div>{% endif %}
+  <section class="ad-card ad-card-narrow">
+    <p class="admin-dim">{{ t.broadcast_hint }}</p>
+    <form class="admin-form admin-form-column" method="post" action="/admin/broadcasts">
+      <fieldset class="broadcast-audience">
+        <legend>{{ t.broadcast_recipients }}</legend>
+        <label><input type="radio" name="audience" value="selected" {% if audience != 'all' %}checked{% endif %}> {{ t.broadcast_selected }}</label>
+        <label><input type="radio" name="audience" value="all" {% if audience == 'all' %}checked{% endif %}> {{ t.broadcast_all }}</label>
+        <p class="admin-dim">{{ t.broadcast_selection_hint }}</p>
+        <div class="broadcast-recipients">
+        {% for user in users if user.tg_chat_id > 0 %}
+          <label class="admin-row">
+            <input type="checkbox" name="user_ids" value="{{ user.id }}" {% if user.id in selected %}checked{% endif %}>
+            <span>{{ user.name }} <span class="admin-dim">{{ t.admin_tg.format(chat_id=user.tg_chat_id) }}</span></span>
+          </label>
+        {% else %}<p>{{ t.broadcast_no_users }}</p>{% endfor %}
+        </div>
+      </fieldset>
+      <label for="broadcast-message">{{ t.broadcast_text }}</label>
+      <textarea class="text-input" id="broadcast-message" name="message" rows="8" maxlength="4096" required>{{ message }}</textarea>
+      <button class="btn btn-primary" type="submit" {% if not configured or not users %}disabled{% endif %}>{{ t.broadcast_send }}</button>
+    </form>
+  </section>
+{% endblock %}

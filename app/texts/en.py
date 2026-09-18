@@ -793,6 +793,30 @@ API_TITLE = "Machine and meeting room booking"
 # Available in Jinja as `t.<key>`, registered in app/api/render.py.
 
 UI = {
+    'admin_nav_broadcasts': 'Broadcasts',
+    'broadcast_send_all_link': 'Message all users',
+    'broadcast_send': 'Send message',
+    'broadcast_recipients': 'Recipients',
+    'broadcast_selected': 'Selected users',
+    'broadcast_all': 'All bot users',
+    'broadcast_selection_hint': (
+        'Select one or more users. In All mode, every user in the list receives the '
+        'message.'
+    ),
+    'broadcast_text': 'Message text',
+    'broadcast_hint': (
+        'Plain text, up to 4096 characters. Wait for the delivery result: large '
+        'broadcasts may take several minutes. The bot can only message people who have '
+        'started a conversation with it and have not blocked it.'
+    ),
+    'broadcast_result': 'Sent: {sent}. Failed: {failed}.',
+    'broadcast_not_configured': 'The bot is not connected. Sending is unavailable.',
+    'broadcast_invalid_text': 'Enter a message between 1 and 4096 characters.',
+    'broadcast_invalid_audience': 'Choose a delivery mode.',
+    'broadcast_choose_users': 'Select at least one recipient.',
+    'broadcast_missing_users': 'Some recipients are no longer available. Refresh the list.',
+    'broadcast_no_users': 'There are no users to message.',
+
     # base.html
     "lang": LANG,
     "app_title": "Coworking",

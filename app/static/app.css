@@ -931,6 +931,13 @@ body.admin-page { padding: 0; gap: 0; }
 .admin-form-column { flex-direction: column; align-items: stretch; gap: 6px; }
 .admin-form-column .btn { margin-top: 8px; }
 .admin-form-column .admin-dim { margin-top: 6px; }
+.broadcast-audience { min-width: 0; border: 0; padding: 0; }
+.broadcast-audience > label { display: flex; align-items: center; gap: 8px; margin: 12px 0; }
+.broadcast-recipients { max-height: 320px; overflow-y: auto; }
+.broadcast-recipients .admin-row { justify-content: flex-start; flex-wrap: nowrap; }
+.broadcast-recipients input { flex: 0 0 auto; }
+.broadcast-recipients span { overflow-wrap: anywhere; }
+#broadcast-message { resize: vertical; min-width: 0; }
 .admin-rule-form { flex-direction: column; align-items: flex-start; gap: 16px; }
 .admin-switch {
   display: inline-flex;
