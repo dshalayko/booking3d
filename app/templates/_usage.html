@@ -1,0 +1,11 @@
+{% if usage is defined and usage and usage.enabled %}
+  <div class="banner">
+    <p>{{ usage.message }}</p>
+    {% if usage.can_forfeit_remainder %}
+      <p>{{ t.usage_remainder }}</p>
+      <form method="post" action="/app/usage/cooldown">
+        <button class="btn btn-small">{{ t.usage_forfeit }}</button>
+      </form>
+    {% endif %}
+  </div>
+{% endif %}

@@ -10,6 +10,8 @@
    Адреса действий идут через `base`: пусто у киоска, `/app` у Mini App
    (см. api/render.py). #}
 
+{% include "_usage.html" %}
+
 {% for room in rooms %}
   <article class="room">
     {% if show_room_names|default(false) %}

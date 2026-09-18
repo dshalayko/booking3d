@@ -204,6 +204,9 @@ async def book(
     if not allowed:
         raise _limit_error(load, multi)
 
+    from app.services import usage_limits
+
+    await usage_limits.check(db, user.id, machine, duration_minutes, now)
     await _ensure_window_free(db, machine, starts_at, ends_at)
 
     reservation = Reservation(

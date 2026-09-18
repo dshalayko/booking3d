@@ -14,7 +14,7 @@ from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
 from app.config import settings
 from app.db import SessionLocal
-from app.services import reminders
+from app.services import reminders, usage_limits
 
 logger = logging.getLogger(__name__)
 
@@ -23,6 +23,8 @@ async def tick() -> None:
     try:
         async with SessionLocal() as db:
             await reminders.reconcile(db)
+        async with SessionLocal() as db:
+            await usage_limits.reconcile(db)
     except Exception:  # один упавший тик не должен ронять планировщик
         logger.exception("сверка состояния упала")
 

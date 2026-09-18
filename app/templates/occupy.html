@@ -4,6 +4,7 @@
 {% block title %}{{ t.occupy_title.format(machine=machine.name) }}{% endblock %}
 
 {% block content %}
+{% include "_usage.html" %}
 <main class="sheet">
   <header class="sheet-head">
     <a class="btn btn-small btn-ghost" href="{{ base }}/">{{ t.cancel }}</a>

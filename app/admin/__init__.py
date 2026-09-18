@@ -32,6 +32,7 @@ from app.admin.sections import (
     features,
     feedback,
     hours,
+    limits,
     log,
     machines,
     people,
@@ -53,6 +54,7 @@ SECTIONS = [
     machines.SECTION,
     hours.SECTION,
     rules.SECTION,
+    limits.SECTION,
     features.SECTION,
     texts.SECTION,
 ]

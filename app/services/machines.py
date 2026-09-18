@@ -34,7 +34,7 @@ from app.enums import (
     SessionStatus,
 )
 from app.models import Machine, MachineSession, QueueEntry, Reservation, User
-from app.services import booking_policy, reservations, rooms, schedule
+from app.services import booking_policy, reservations, rooms, schedule, usage_limits
 from app.services.errors import (
     AlreadyBooked,
     InvalidDuration,
@@ -153,6 +153,8 @@ async def occupy(
             raise UserBusy(t.ERR_USER_BUSY)
         raise AlreadyBooked(t.ERR_OCCUPY_WHILE_BOOKED)
 
+    await usage_limits.check(db, user.id, machine, duration_minutes, now, reservation)
+
     # eta_at считается обычным сложением: работа может идти и ночью.
     session = MachineSession(
         machine_id=machine.id,
@@ -205,6 +207,12 @@ async def release(
     `printing` — как `cancelled` (сняли на середине).
     """
     now = now or _utcnow()
+    owner_id = await db.scalar(select(MachineSession.user_id).where(
+        MachineSession.machine_id == machine_id,
+        MachineSession.status.in_(ACTIVE_SESSION_STATUSES),
+    ))
+    if owner_id is not None:
+        await db.scalar(select(User.id).where(User.id == owner_id).with_for_update())
     machine = await _lock_machine(db, machine_id)
 
     if machine.status == MachineStatus.BROKEN:
@@ -291,6 +299,12 @@ async def set_broken(
         raise NotAdmin(t.ERR_ADMIN_ONLY)
 
     now = now or _utcnow()
+    owner_id = await db.scalar(select(MachineSession.user_id).where(
+        MachineSession.machine_id == machine_id,
+        MachineSession.status.in_(ACTIVE_SESSION_STATUSES),
+    ))
+    if owner_id is not None:
+        await db.scalar(select(User.id).where(User.id == owner_id).with_for_update())
     machine = await _lock_machine(db, machine_id)
 
     session = await _active_session_of_machine(db, machine.id)

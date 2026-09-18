@@ -32,7 +32,7 @@ from app.config import settings
 from app.enums import MachineKind, MachineStatus
 from app.models import Machine, Room, User
 from app.services import board as board_svc
-from app.services import booking_policy, feature_flags
+from app.services import booking_policy, feature_flags, usage_limits
 from app.services import machines as machines_svc
 from app.services import reservations as reservations_svc
 from app.services import rooms as rooms_svc
@@ -205,13 +205,12 @@ async def board_context(
     state = await board_svc.build(db, room_id=room_id)
 
     bookable_kinds = (
-        set(MachineKind)
-        if viewer is None
-        else await booking_policy.available_kinds(db, viewer.id)
+        set(MachineKind) if viewer is None else await booking_policy.available_kinds(db, viewer.id)
     )
     return {
         "rooms": state.rooms,
         "now": state.now,
+        "usage": await usage_limits.balance(db, viewer.id) if viewer else None,
         "can_book": bool(bookable_kinds),
         "bookable_kinds": bookable_kinds,
     }
@@ -299,7 +298,11 @@ async def status_partial(request: Request, db: AsyncSession, client: Client) -> 
 
 
 async def occupy_page(
-    request: Request, db: AsyncSession, client: Client, machine_id: int
+    request: Request,
+    db: AsyncSession,
+    client: Client,
+    machine_id: int,
+    viewer: User | None = None,
 ) -> Response:
     machine = await _machine(db, machine_id)
 
@@ -326,25 +329,33 @@ async def occupy_page(
     # обойти собственную бронь и потому не нужен.
     machine_options = []
     if booking is None:
-        peers = await machines_svc.list_machines(
-            db, room_id=machine.room_id, kind=machine.kind
-        )
+        peers = await machines_svc.list_machines(db, room_id=machine.room_id, kind=machine.kind)
         for candidate in peers:
             if candidate.status != MachineStatus.FREE:
                 continue
-            current_booking = await reservations_svc.current_for_machine(
-                db, candidate.id, now
-            )
+            current_booking = await reservations_svc.current_for_machine(db, candidate.id, now)
             if current_booking is None:
                 machine_options.append(candidate)
 
+    usage = await usage_limits.form_limit(db, viewer, machine, now, booking)
+    if usage:
+        limit = (
+            min(limit, usage.available_minutes) if limit is not None else usage.available_minutes
+        )
+    options = duration_options(now, limit_minutes=limit)
+    if usage and limit and limit >= 15 and limit <= machines_svc.MAX_DURATION_MINUTES:
+        if all(option.minutes != limit for option in options):
+            options.append(
+                schedule_svc.DurationOption(limit, t.UI["usage_minutes"].format(n=limit))
+            )
     return templates.TemplateResponse(
         request,
         "occupy.html",
         {
             "machine": machine,
             "machine_options": machine_options,
-            "durations": duration_options(now, limit_minutes=limit),
+            "durations": options,
+            "usage": usage,
             "booked_until": booking.ends_at if booking else None,
             **client.context,
         },
@@ -392,9 +403,7 @@ async def release_page(
     )
 
 
-async def do_release(
-    db: AsyncSession, client: Client, user: User, machine_id: int
-) -> Response:
+async def do_release(db: AsyncSession, client: Client, user: User, machine_id: int) -> Response:
     result = await machines_svc.release(db, user, machine_id)
     await db.commit()
 
@@ -451,7 +460,12 @@ async def schedule_page(
 
 
 async def book_page(
-    request: Request, db: AsyncSession, client: Client, machine_id: int, start: str
+    request: Request,
+    db: AsyncSession,
+    client: Client,
+    machine_id: int,
+    start: str,
+    viewer: User | None = None,
 ) -> Response:
     machine = await _machine(db, machine_id)
     if machine.status == MachineStatus.BROKEN:
@@ -488,9 +502,7 @@ async def book_page(
     # не заметить. На форме показываем явный переключатель машин того же типа и
     # помещения, только когда на этот час действительно есть выбор. Занятые и
     # сломанные варианты в переключатель не попадают.
-    peers = await machines_svc.list_machines(
-        db, room_id=machine.room_id, kind=machine.kind
-    )
+    peers = await machines_svc.list_machines(db, room_id=machine.room_id, kind=machine.kind)
     machine_options = []
     for candidate in peers:
         available = (
@@ -500,10 +512,16 @@ async def book_page(
         if available:
             machine_options.append(candidate)
 
+    usage = await usage_limits.form_limit(db, viewer, machine, now)
+    if usage:
+        limit = (
+            min(limit, usage.available_minutes) if limit is not None else usage.available_minutes
+        )
     return templates.TemplateResponse(
         request,
         "book.html",
         {
+            "usage": usage,
             "machine": machine,
             "machine_options": machine_options,
             "starts_at": starts_at,
@@ -538,9 +556,7 @@ async def do_book(
     minutes: int,
 ) -> Response:
     try:
-        result = await reservations_svc.book(
-            db, user, machine_id, parse_start(start), minutes
-        )
+        result = await reservations_svc.book(db, user, machine_id, parse_start(start), minutes)
     except (AlreadyBooked, UserBusy, UserLimitReached) as exc:
         await warn_book_blocked(db, user.id, str(exc))
         raise
@@ -617,26 +633,22 @@ async def my_page(
         machine = await _machine(db, session.machine_id)
         room = await _room(db, session.room_id)
         currents.append((session, machine, room))
+    usage = await usage_limits.balance(db, user.id)
     return templates.TemplateResponse(
         request,
         "my.html",
         {
             "person": user,
-            "bookings": await reservations_svc.of_user(
-                db, user.id, include_in_progress=True
-            ),
+            "bookings": await reservations_svc.of_user(db, user.id, include_in_progress=True),
+            "usage": usage,
             "currents": currents,
             "links": [
-                (room, kind)
-                for room, kind in await schedule_links(db)
-                if kind in bookable_kinds
+                (room, kind) for room, kind in await schedule_links(db) if kind in bookable_kinds
             ],
             "can_book": bool(bookable_kinds),
             "flash": t.FLASH_KIOSK.get(flash),
             "app_admin": user.is_admin,
-            "slicer_enabled": bool(
-                user.is_admin and await feature_flags.slicer_enabled(db)
-            ),
+            "slicer_enabled": bool(user.is_admin and await feature_flags.slicer_enabled(db)),
             **client.context,
         },
     )

@@ -77,16 +77,12 @@ async def _has_booking(db: AsyncSession, person: User | None) -> bool:
     """
     if person is None:
         return False
-    return bool(
-        await reservations_svc.of_user(db, person.id, include_in_progress=True)
-    )
+    return bool(await reservations_svc.of_user(db, person.id, include_in_progress=True))
 
 
 def _home(flash: str = "") -> RedirectResponse:
     suffix = f"?flash={flash}" if flash else ""
-    return RedirectResponse(
-        f"{SAFE_NEXT_PREFIX}/{suffix}", status_code=status.HTTP_303_SEE_OTHER
-    )
+    return RedirectResponse(f"{SAFE_NEXT_PREFIX}/{suffix}", status_code=status.HTTP_303_SEE_OTHER)
 
 
 async def _bootstrap(
@@ -150,9 +146,7 @@ async def room_board(request: Request, db: Db, room_id: int, flash: str = "") ->
         and not await reservations_svc.can_user_book(db, person.id)
     ):
         return _home()
-    return await screens.board_page(
-        request, db, APP, room_id, flash, viewer=person
-    )
+    return await screens.board_page(request, db, APP, room_id, flash, viewer=person)
 
 
 @router.get("/status", response_class=HTMLResponse)
@@ -206,9 +200,7 @@ async def open_session(
 
 @router.get("/partials/board/{room_id}", response_class=HTMLResponse)
 async def board_partial(request: Request, db: Db, room_id: int) -> Response:
-    return await screens.board_partial(
-        request, db, APP, room_id, viewer=await viewer(request, db)
-    )
+    return await screens.board_partial(request, db, APP, room_id, viewer=await viewer(request, db))
 
 
 @router.get("/partials/status", response_class=HTMLResponse)
@@ -351,16 +343,14 @@ async def slicer_action(
 
 @router.get("/occupy/{machine_id}", response_class=HTMLResponse)
 async def occupy_form(request: Request, db: Db, machine_id: int) -> Response:
-    return await screens.occupy_page(request, db, APP, machine_id)
+    return await screens.occupy_page(request, db, APP, machine_id, viewer=await actor(request, db))
 
 
 @router.get("/choose-occupy-machine", response_class=HTMLResponse)
-async def choose_occupy_machine(
-    request: Request, db: Db, machine_id: int
-) -> Response:
+async def choose_occupy_machine(request: Request, db: Db, machine_id: int) -> Response:
     """Сменить свободную сейчас машину и пересчитать её длительности."""
     await actor(request, db)
-    return await screens.occupy_page(request, db, APP, machine_id)
+    return await screens.occupy_page(request, db, APP, machine_id, viewer=await actor(request, db))
 
 
 @router.post("/occupy/{machine_id}")
@@ -408,7 +398,7 @@ async def book_form(request: Request, db: Db, machine_id: int, start: str = "") 
         and not await reservations_svc.can_user_book(db, person.id, machine.kind)
     ):
         return _home()
-    return await screens.book_page(request, db, APP, machine_id, start)
+    return await screens.book_page(request, db, APP, machine_id, start, viewer=person)
 
 
 @router.get("/choose-machine")
@@ -421,12 +411,11 @@ async def choose_machine(
     """Явно сменить машину и заново посчитать форму её бронирования."""
     person = await actor(request, db)
     machine = await db.get(Machine, machine_id)
-    if (
-        machine is not None
-        and not await reservations_svc.can_user_book(db, person.id, machine.kind)
+    if machine is not None and not await reservations_svc.can_user_book(
+        db, person.id, machine.kind
     ):
         return _home()
-    return await screens.book_page(request, db, APP, machine_id, start)
+    return await screens.book_page(request, db, APP, machine_id, start, viewer=person)
 
 
 @router.post("/book/{machine_id}")
@@ -478,3 +467,13 @@ async def _test_person(db: AsyncSession, user_id: int | None) -> User | None:
     if user_id is not None:
         return await db.get(User, user_id)
     return await db.scalar(select(User).order_by(User.name).limit(1))
+
+
+@router.post("/usage/cooldown")
+async def start_remainder_cooldown(request: Request, db: Db) -> Response:
+    from app.services import usage_limits
+
+    person = await actor(request, db)
+    await usage_limits.start_small_remainder_cooldown(db, person.id)
+    await db.commit()
+    return _home()

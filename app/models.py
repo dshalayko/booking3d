@@ -405,3 +405,44 @@ class Reservation(Base):
 
     def __repr__(self) -> str:
         return f"<Reservation {self.id} machine={self.machine_id} {self.status}>"
+
+
+class UsagePolicy(Base):
+    __tablename__ = "usage_policy"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    limit_minutes: Mapped[int] = mapped_column(nullable=False, default=300)
+    cooldown_hours: Mapped[int] = mapped_column(nullable=False, default=168)
+    activated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    __table_args__ = (
+        CheckConstraint("id = 1", name="usage_policy_singleton"),
+        CheckConstraint("limit_minutes > 0 AND cooldown_hours > 0", name="usage_policy_positive"),
+    )
+
+
+class UsageAccount(Base):
+    __tablename__ = "usage_accounts"
+    user_id: Mapped[int] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), primary_key=True
+    )
+    limit_minutes: Mapped[int | None] = mapped_column()
+    unlimited: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    bonus_minutes: Mapped[int] = mapped_column(nullable=False, default=0)
+    cycle_start: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    cooldown_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    notified_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    __table_args__ = (
+        CheckConstraint("limit_minutes IS NULL OR limit_minutes > 0", name="usage_account_limit"),
+        CheckConstraint("bonus_minutes >= 0", name="usage_account_bonus"),
+    )
+
+
+class UsageAudit(Base):
+    __tablename__ = "usage_audit"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    actor_id: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
+    user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+    details: Mapped[str] = mapped_column(Text, nullable=False)

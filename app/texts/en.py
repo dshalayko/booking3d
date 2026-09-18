@@ -1218,3 +1218,74 @@ JS = {
     "eta_over": "time's up, check how it came out",
     "done_ago": "finished {ago} ago",
 }
+
+
+USAGE_DISABLED = "Usage limits are disabled."
+USAGE_UNLIMITED = "Unlimited equipment usage."
+USAGE_COOLDOWN = (
+    "Your usage limit is exhausted. You can use equipment and book again on {until} ({zone})."
+)
+USAGE_BALANCE = (
+    "Available: {available} min. Used: {used} min. Reserved: {held} min. Limit: {limit} min."
+)
+USAGE_INSUFFICIENT = "Not enough time for a {minutes} min session."
+USAGE_INVALID = "Check the limit, cooldown and reason for the change."
+
+UI.update(
+    {
+        "usage_title": "Usage limits",
+        "usage_enabled": "Enable for all users",
+        "usage_limit": "Time allowance, minutes (300 = 5 hours)",
+        "usage_cooldown": "Cooldown, hours (168 = 7 days)",
+        "usage_hint": (
+            "Printers and engravers share one allowance. Cooldown starts when all time "
+            "is consumed. Work and bookings created before activation are exempt. "
+            "Cooldown duration changes apply to new cooldowns."
+        ),
+        "usage_save": "Save",
+        "usage_reason": "Reason for change",
+        "usage_default": "Default allowance",
+        "usage_custom": "Personal allowance",
+        "usage_unlimited": "Unlimited",
+        "usage_bonus": "Add minutes",
+        "usage_reset": "Clear cooldown and restore allowance",
+        "usage_reset_hint": (
+            "Reset starts accounting from now. Future bookings and remaining active work "
+            "still reserve time."
+        ),
+        "usage_history": "Change history",
+        "usage_person": "User",
+        "usage_all": "All users",
+        "usage_off_hint": (
+            "Re-enabling starts fresh accounting for everyone. Personal limits are kept; "
+            "earlier work and bookings are exempt from the new accounting period."
+        ),
+    }
+)
+FLASH_ADMIN["usage_saved"] = "Usage limits updated."
+
+UI.update(
+    {
+        "usage_minutes": "{n} min",
+        "usage_remainder": (
+            "The remainder is below the 15-minute minimum. "
+            "You can forfeit it and start cooldown now."
+        ),
+        "usage_forfeit": "Forfeit remainder and start cooldown",
+    }
+)
+
+UI.update({
+    'usage_action_policy': 'Global settings',
+    'usage_action_settings': 'Personal settings',
+    'usage_action_bonus': 'Extra minutes',
+    'usage_action_reset': 'Allowance reset',
+    'usage_field_enabled': 'Enabled',
+    'usage_field_limit_minutes': 'Allowance, min',
+    'usage_field_cooldown_hours': 'Cooldown, hours',
+    'usage_field_activated_at': 'Accounting since',
+    'usage_field_unlimited': 'Unlimited',
+    'usage_field_bonus_minutes': 'Extra minutes',
+    'usage_field_cycle_start': 'Current cycle since',
+    'usage_field_cooldown_until': 'Cooldown ends',
+})

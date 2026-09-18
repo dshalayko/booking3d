@@ -47,6 +47,7 @@
             <span class="admin-dim">{{ t.admin_tg.format(chat_id=user.tg_chat_id) }}</span>
           </div>
           <div class="admin-actions">
+            <a class="btn btn-small" href="/admin/limits?user_id={{ user.id }}#user-{{ user.id }}">{{ t.usage_title }}</a>
             <a class="btn btn-small" href="/admin/broadcasts?user_id={{ user.id }}">{{ t.broadcast_send }}</a>
             {# Логин человек вводит сам при регистрации, и опечатку в нём иначе не
                исправить: бот второй раз логин не спрашивает. #}

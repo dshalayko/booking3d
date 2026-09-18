@@ -14,6 +14,8 @@
     <h1>{{ t.my_heading }}</h1>
   </header>
 
+  {% include "_usage.html" %}
+
   {% if currents %}
     <div class="bookings">
       {% for session, machine, room in currents %}
