@@ -45,6 +45,7 @@ from app.enums import (
 from app.models import Machine, MachineSession, Reservation, Room, User
 from app.services import booking_policy, schedule
 from app.services import workhours as workhours_svc
+from app.services.durations import hours_text
 from app.services.errors import (
     AlreadyBooked,
     DomainError,
@@ -164,7 +165,7 @@ async def book(
     ):
         raise InvalidDuration(
             t.ERR_RESERVATION_DURATION.format(
-                min_minutes=settings.reservation_min_minutes,
+                min_minutes=hours_text(settings.reservation_min_minutes),
                 max_hours=schedule.MAX_DURATION_MINUTES // 60,
             )
         )
@@ -172,7 +173,7 @@ async def book(
     starts_at = starts_at.astimezone(UTC)
     if not schedule.is_aligned(starts_at):
         raise InvalidReservationTime(
-            t.ERR_RESERVATION_NOT_ALIGNED.format(step=settings.reservation_slot_minutes)
+            t.ERR_RESERVATION_NOT_ALIGNED.format(step=hours_text(settings.reservation_slot_minutes))
         )
     if starts_at <= now:
         raise InvalidReservationTime(t.ERR_RESERVATION_PAST)

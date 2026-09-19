@@ -283,7 +283,7 @@ class TestDelivery:
 class TestTexts:
     @pytest.mark.parametrize(
         ("minutes", "expected"),
-        [(30, "30 мин"), (60, "1 ч"), (252, "4 ч 12 мин"), (0, "0 мин")],
+        [(30, "0,5 ч"), (60, "1 ч"), (252, "4,2 ч"), (0, "0 ч")],
     )
     def test_humanize(self, minutes, expected):
         assert texts.humanize(minutes) == expected

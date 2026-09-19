@@ -44,7 +44,10 @@
             <label class="duration-choice">
               <input class="duration-radio" type="radio" name="minutes"
                      value="{{ option.minutes }}" required>
-              <span class="btn btn-duration">{{ option.label }}</span>
+              <span class="btn btn-duration">
+              <span>{{ option.label }}</span>
+              {% if option.detail %}<small class="duration-detail">{{ option.detail }}</small>{% endif %}
+            </span>
             </label>
           {% endfor %}
         </div>

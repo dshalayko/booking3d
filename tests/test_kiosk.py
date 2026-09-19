@@ -653,7 +653,7 @@ class TestDurations:
 
         options = duration_options(evening)
 
-        night = [option for option in options if option.label == "до утра"][0]
+        night = [option for option in options if option.label.startswith("до утра")][0]
         assert night.minutes == 11 * 60  # с 22:00 до 09:00
 
     def test_night_option_hidden_right_before_morning(self):
@@ -661,7 +661,7 @@ class TestDurations:
 
         labels = [option.label for option in duration_options(early)]
 
-        assert "до утра" not in labels
+        assert not any(label.startswith("до утра") for label in labels)
 
     def test_options_stop_at_the_next_booking(self):
         """Кнопка, ведущая к отказу, хуже отсутствующей: PIN уже введён."""

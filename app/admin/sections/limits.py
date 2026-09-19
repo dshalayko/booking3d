@@ -13,6 +13,7 @@ from app.admin import core
 from app.api.deps import Db
 from app.models import UsageAccount, UsageAudit, UsagePolicy, User
 from app.services import usage_limits
+from app.services.durations import hours_text, minutes_from_hours
 from app.services.errors import DomainError, UserNotFound
 
 router = core.section_router()
@@ -31,6 +32,14 @@ def snapshot(item):
     else:
         keys = ("limit_minutes", "unlimited", "bonus_minutes", "cycle_start", "cooldown_until")
     return {key: str(getattr(item, key)) for key in keys}
+
+
+def display_value(key, value):
+    if value is None or value == "None":
+        return "—"
+    if key in {"limit_minutes", "bonus_minutes"}:
+        return hours_text(int(value))
+    return value
 
 
 def audit(db, actor, user_id, action, before, after, reason):
@@ -89,7 +98,11 @@ async def page(request: Request, db: Db, user_id: int | None = None, flash: str 
                 "action": t.UI["usage_action_" + details["action"]],
                 "reason": details["reason"],
                 "changes": [
-                    (t.UI["usage_field_" + key], value, details["after"].get(key))
+                    (
+                        t.UI["usage_field_" + key],
+                        display_value(key, value),
+                        display_value(key, details["after"].get(key)),
+                    )
                     for key, value in details["before"].items()
                     if value != details["after"].get(key)
                 ],
@@ -109,11 +122,22 @@ async def save(
     request: Request,
     db: Db,
     enabled: str = Form(""),
-    limit_minutes: int = Form(...),
+    limit_minutes: int | None = Form(None),
+    limit_hours: str | None = Form(None),
     cooldown_hours: int = Form(...),
     reason: str = Form(...),
 ) -> Response:
-    if not 1 <= limit_minutes <= 525600 or not 1 <= cooldown_hours <= 8760 or not reason.strip():
+    if limit_hours is not None:
+        try:
+            limit_minutes = minutes_from_hours(limit_hours)
+        except ValueError as exc:
+            raise DomainError(t.USAGE_INVALID) from exc
+    if (
+        limit_minutes is None
+        or not 1 <= limit_minutes <= 525600
+        or not 1 <= cooldown_hours <= 8760
+        or not reason.strip()
+    ):
         raise DomainError(t.USAGE_INVALID)
     actor = await core.acting_admin(db, request)
     now = datetime.now(UTC)
@@ -162,8 +186,17 @@ async def change_user(
     mode: str = Form("default"),
     limit_minutes: int = Form(300),
     bonus_minutes: int = Form(0),
+    limit_hours: str | None = Form(None),
+    bonus_hours: str | None = Form(None),
     reason: str = Form(...),
 ) -> Response:
+    try:
+        if limit_hours is not None:
+            limit_minutes = minutes_from_hours(limit_hours)
+        if bonus_hours is not None:
+            bonus_minutes = minutes_from_hours(bonus_hours)
+    except ValueError as exc:
+        raise DomainError(t.USAGE_INVALID) from exc
     if (
         action not in {"settings", "bonus", "reset"}
         or mode not in {"default", "custom", "unlimited"}

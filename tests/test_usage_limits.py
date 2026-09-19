@@ -281,8 +281,67 @@ async def test_miniapp_shows_balance_and_fitting_durations(
     await enable(db, minutes=80, now=datetime.now(UTC) - timedelta(minutes=1))
     await client.post("/app/session", data={"init_data": ""})
     response = await client.get("/app/")
-    assert response.status_code == 200 and "Доступно: 80 мин." in response.text
+    assert response.status_code == 200 and "Доступно: 1,33 ч." in response.text
     response = await client.get(f"/app/occupy/{printers[0].id}")
     assert response.status_code == 200
     assert 'value="80"' in response.text
     assert 'value="120"' not in response.text
+
+
+async def test_admin_accepts_hours_and_preserves_minute_storage(client, db, make_user):
+    user = await make_user(is_admin=True)
+    await client.post("/admin/login", data={"secret": settings.admin_secret})
+    response = await client.post(
+        "/admin/limits",
+        data={
+            "enabled": "on",
+            "limit_hours": "6.5",
+            "cooldown_hours": 48,
+            "reason": "hours",
+        },
+    )
+    assert response.status_code == 303
+    assert (await db.get(UsagePolicy, 1)).limit_minutes == 390
+    response = await client.post(
+        f"/admin/limits/users/{user.id}",
+        data={
+            "mode": "custom",
+            "limit_hours": "4,25",
+            "reason": "personal",
+        },
+    )
+    assert response.status_code == 303
+    response = await client.post(
+        f"/admin/limits/users/{user.id}",
+        data={
+            "action": "bonus",
+            "bonus_hours": "0.5",
+            "reason": "extra",
+        },
+    )
+    assert response.status_code == 303
+    state = await usage_limits.balance(db, user.id)
+    assert state.limit_minutes == 285
+    page = await client.get("/admin/limits")
+    assert 'name="limit_hours"' in page.text and 'value="6.5"' in page.text
+    assert 'name="bonus_hours"' in page.text
+    assert "Лимит, ч: 6,5" in page.text or "Лимит, ч:" in page.text
+    assert "мин." not in state.message
+
+
+@pytest.mark.parametrize("value", ["NaN", "Infinity", "-1", "8761", "abc", ""])
+async def test_admin_rejects_invalid_hours(client, db, make_user, value):
+    await make_user(is_admin=True)
+    await enable(db)
+    await client.post("/admin/login", data={"secret": settings.admin_secret})
+    response = await client.post(
+        "/admin/limits",
+        data={
+            "enabled": "on",
+            "limit_hours": value,
+            "cooldown_hours": 168,
+            "reason": "invalid",
+        },
+    )
+    assert response.status_code in (400, 422)
+    assert (await db.get(UsagePolicy, 1)).limit_minutes == 300

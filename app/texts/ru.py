@@ -44,9 +44,7 @@ LANG = "ru"  # атрибут <html lang>
 TIME_FORMAT = "%H:%M"
 DATETIME_FORMAT = "%d.%m %H:%M"
 
-UNIT_MINUTES = "{minutes} мин"
 UNIT_HOURS = "{hours} ч"
-UNIT_HOURS_MINUTES = "{hours} ч {minutes} мин"
 
 # Дни недели в полосе календаря, начиная с понедельника: `date.weekday()` даёт
 # индекс прямо в этот список. Названия месяцев не нужны — горизонт две недели,
@@ -386,7 +384,7 @@ BOT_QUEUE_LEAVE_PICK = (
 
 BOT_QUEUE_JOINED = (
     "⏳ Вы в очереди на {kind} ({room}), номер {position}.\n\n"
-    "Когда машина освободится, я напишу — на подтверждение будет 30 минут."
+    "Когда машина освободится, я напишу — на подтверждение будет 0,5 часа."
 )
 BOT_QUEUE_ALREADY = "⏳ Вы уже в очереди, номер {position}.\n\nВыйти — /leave"
 BOT_QUEUE_LEFT = "🚪 Вы вышли из очереди."
@@ -411,7 +409,7 @@ BOT_MACHINE_FALLBACK = "машина"
 
 BOT_OCCUPIED = (
     "🔴 Вы заняли <b>{machine}</b> примерно на {left} (до {time}).\n\n"
-    "Я напишу за 15 минут до конца."
+    "Я напишу за 0,25 часа до конца."
 )
 BOT_RELEASED = "🟢 <b>{machine}</b> — освобождено."
 
@@ -483,7 +481,7 @@ BOT_BOOKING_STARTED_BUSY = (
 
 BOT_BOOKING_MISSED = (
     "⌛️ Бронь на <b>{machine}</b> снята: было свободно, "
-    "а вы не заняли за {minutes} мин.\n\n"
+    "а вы не заняли за {minutes} ч.\n\n"
     "Забронировать заново — /book"
 )
 
@@ -554,18 +552,18 @@ ERR_MACHINE_RESERVED = "{machine}: придержано за первым в о�
 ERR_MACHINE_RELEASE_FORBIDDEN = "Снять активную работу может только тот, кто её начал"
 ERR_QUEUE_WAIT_YOUR_TURN = "Есть очередь — дождитесь своего предложения"
 
-ERR_DURATION = "Длительность должна быть от {min_minutes} минут до {max_hours} часов"
+ERR_DURATION = "Длительность должна быть от {min_minutes} до {max_hours} часов"
 
 ERR_MACHINE_BOOKED_NOW = "{machine}: забронировано до {time}"
 ERR_MACHINE_BOOKED_LATER = (
-    "{machine}: забронировано с {time} — сейчас можно занять максимум на {minutes} мин"
+    "{machine}: забронировано с {time} — сейчас можно занять максимум на {minutes} ч"
 )
 
 
 # --- отказы: брони -----------------------------------------------------------
 
-ERR_RESERVATION_DURATION = "Бронировать можно от {min_minutes} минут до {max_hours} часов"
-ERR_RESERVATION_NOT_ALIGNED = "Начало брони кратно {step} минутам"
+ERR_RESERVATION_DURATION = "Бронировать можно от {min_minutes} до {max_hours} часов"
+ERR_RESERVATION_NOT_ALIGNED = "Начало брони кратно {step} ч"
 ERR_RESERVATION_PAST = "Это время уже прошло"
 ERR_RESERVATION_HORIZON = "Бронировать можно не дальше чем на {days} дней вперёд"
 ERR_RESERVATION_OVERLAP = "{machine}: это время уже забронировано (с {time})"
@@ -732,6 +730,7 @@ DURATION_LABELS = {
     720: "12 ч",
 }
 DURATION_NIGHT = "до утра"
+DURATION_NIGHT_DETAIL = "{time} · {hours} ч"
 
 
 # --- киоск: экраны подтверждения ---------------------------------------------
@@ -745,7 +744,7 @@ CONFIRM_RELEASE_SUBMIT = "Да, освободить"
 CONFIRM_QUEUE_JOIN_TITLE = "Встать в очередь?"
 CONFIRM_QUEUE_JOIN_HINT = (
     "Когда машина освободится, уведомление придёт в Telegram "
-    "первому в очереди. На подтверждение будет 30 минут."
+    "первому в очереди. На подтверждение будет 0,5 часа."
 )
 CONFIRM_QUEUE_JOIN_SUBJECT = "Очередь на {title} — {room}"
 CONFIRM_QUEUE_JOIN_SUBMIT = "Встать в очередь"
@@ -804,7 +803,7 @@ UI = {
     'broadcast_text': 'Текст сообщения',
     'broadcast_hint': (
         'Обычный текст до 4096 символов. Дождитесь результата отправки: большая рассылка '
-        'может занять несколько минут. Бот может писать только тем, кто уже начал с ним '
+        'может занять некоторое время. Бот может писать только тем, кто уже начал с ним '
         'диалог и не заблокировал его.'
     ),
     'broadcast_result': 'Отправлено: {sent}. Не удалось отправить: {failed}.',
@@ -896,7 +895,7 @@ UI = {
     "book_machine_label": "Какую машину забронировать",
     "book_submit": "Забронировать",
     "book_hint": (
-        "Машину придётся занять в первые {grace} мин после начала — "
+        "Машину придётся занять в первые {grace} ч после начала — "
         "иначе бронь снимется и уйдёт очереди. Напомним за час."
     ),
     "book_no_slots": "До следующей брони слишком мало времени — выберите другой час",
@@ -1117,9 +1116,9 @@ UI = {
     "slicer_layer": "Высота слоя",
     "slicer_infill": "Заполнение",
     "slicer_submit": "Рассчитать",
-    "slicer_working": "Нарезаем модель — это может занять до двух минут…",
+    "slicer_working": "Нарезаем модель — это займёт некоторое время…",
     "slicer_result": "Результат расчёта",
-    "slicer_result_time": "{hours} ч {minutes} мин",
+    "slicer_result_time": "{hours} ч",
     "slicer_result_filament": "Пластика: примерно {grams} г ({meters} м)",
     "slicer_result_filament_length": "Пластика: примерно {meters} м",
     "slicer_result_profile": "PLA · сопло 0,4 мм · слой {layer} мм · заполнение {infill}%",
@@ -1211,9 +1210,7 @@ UI = {
 # счётчики времени перерисовываются каждые 30 секунд без запроса к серверу.
 
 JS = {
-    "unit_minutes": UNIT_MINUTES,
     "unit_hours": UNIT_HOURS,
-    "unit_hours_minutes": UNIT_HOURS_MINUTES,
     "eta_left": "осталось ~{left}",
     "eta_over": "время вышло, проверьте результат",
     "done_ago": "готово {ago} назад",
@@ -1227,17 +1224,17 @@ USAGE_COOLDOWN = (
     "можно {until} ({zone})."
 )
 USAGE_BALANCE = (
-    "Доступно: {available} мин. Использовано: {used} мин. Зарезервировано: "
-    "{held} мин. Лимит: {limit} мин."
+    "Доступно: {available} ч. Использовано: {used} ч. Зарезервировано: "
+    "{held} ч. Лимит: {limit} ч."
 )
-USAGE_INSUFFICIENT = "Недостаточно времени для работы на {minutes} мин."
+USAGE_INSUFFICIENT = "Недостаточно времени для работы на {minutes} ч."
 USAGE_INVALID = "Проверьте значения лимита, cooldown и причину изменения."
 
 UI.update(
     {
         "usage_title": "Лимиты использования",
         "usage_enabled": "Включить для всех пользователей",
-        "usage_limit": "Запас времени, минуты (300 = 5 часов)",
+        "usage_limit": "Запас времени, часы",
         "usage_cooldown": "Cooldown, часы (168 = 7 суток)",
         "usage_hint": (
             "Принтеры и гравировщики используют общий запас времени. Cooldown начинается "
@@ -1250,7 +1247,7 @@ UI.update(
         "usage_default": "Общий лимит",
         "usage_custom": "Персональный лимит",
         "usage_unlimited": "Безлимит",
-        "usage_bonus": "Добавить минуты",
+        "usage_bonus": "Добавить часы",
         "usage_reset": "Снять cooldown и восстановить лимит",
         "usage_reset_hint": (
             "Сброс начинает новый учёт с текущего момента. Будущие брони и оставшееся "
@@ -1269,9 +1266,8 @@ FLASH_ADMIN["usage_saved"] = "Лимиты обновлены."
 
 UI.update(
     {
-        "usage_minutes": "{n} мин",
         "usage_remainder": (
-            "Остаток меньше минимальных 15 минут. "
+            "Остаток меньше минимальных 0,25 часа. "
             "Можно отказаться от него и начать cooldown сейчас."
         ),
         "usage_forfeit": "Отказаться от остатка и начать cooldown",
@@ -1281,14 +1277,14 @@ UI.update(
 UI.update({
     'usage_action_policy': 'Общие настройки',
     'usage_action_settings': 'Персональные настройки',
-    'usage_action_bonus': 'Добавлены минуты',
+    'usage_action_bonus': 'Добавлены часы',
     'usage_action_reset': 'Сброс лимита',
     'usage_field_enabled': 'Включено',
-    'usage_field_limit_minutes': 'Лимит, мин',
+    'usage_field_limit_minutes': 'Лимит, ч',
     'usage_field_cooldown_hours': 'Cooldown, часы',
     'usage_field_activated_at': 'Начало учёта',
     'usage_field_unlimited': 'Безлимит',
-    'usage_field_bonus_minutes': 'Добавочные минуты',
+    'usage_field_bonus_minutes': 'Добавочные часы',
     'usage_field_cycle_start': 'Начало текущего цикла',
     'usage_field_cooldown_until': 'Окончание cooldown',
 })

@@ -93,12 +93,10 @@
   // --- счётчики времени ----------------------------------------------------
 
   function humanize(totalMinutes) {
-    var minutes = Math.abs(totalMinutes);
-    var hours = Math.floor(minutes / 60);
-    var rest = minutes % 60;
-    if (hours && rest) return fmt(T.unit_hours_minutes, { hours: hours, minutes: rest });
-    if (hours) return fmt(T.unit_hours, { hours: hours });
-    return fmt(T.unit_minutes, { minutes: rest });
+    var hours = Math.abs(totalMinutes) / 60;
+    var value = hours > 0 && hours < 0.005 ? "<0.01" : Number(hours.toFixed(2)).toString();
+    if (document.documentElement.lang === "ru") value = value.replace(".", ",");
+    return fmt(T.unit_hours, { hours: value });
   }
 
   function renderTimes() {

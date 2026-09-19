@@ -16,6 +16,7 @@ from app import texts as t
 from app.config import settings
 from app.enums import MachineStatus
 from app.services.board import Board
+from app.services.durations import hours_text
 
 # Планировщик и старые импорты ждут эти имена здесь.
 HELP = t.BOT_HELP
@@ -33,13 +34,7 @@ def when(value: datetime | None) -> str:
 
 
 def humanize(minutes: int) -> str:
-    minutes = abs(int(minutes))
-    hours, rest = divmod(minutes, 60)
-    if hours and rest:
-        return t.UNIT_HOURS_MINUTES.format(hours=hours, minutes=rest)
-    if hours:
-        return t.UNIT_HOURS.format(hours=hours)
-    return t.UNIT_MINUTES.format(minutes=rest)
+    return t.UNIT_HOURS.format(hours=hours_text(abs(int(minutes))))
 
 
 def left_until(moment: datetime, now: datetime) -> str:
@@ -236,7 +231,7 @@ def booking_started_busy(machine_name: str) -> str:
 
 
 def booking_missed(machine_name: str, minutes: int) -> str:
-    return t.BOT_BOOKING_MISSED.format(machine=machine_name, minutes=minutes)
+    return t.BOT_BOOKING_MISSED.format(machine=machine_name, minutes=hours_text(minutes))
 
 
 def booking_cancelled(machine_name: str, starts_at: datetime) -> str:

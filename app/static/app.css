@@ -439,7 +439,8 @@ body {
   opacity: 0;
   pointer-events: none;
 }
-.btn-duration { width: 100%; min-height: 88px; font-size: 28px; background: var(--card); }
+.btn-duration { width: 100%; height: 100%; min-height: 88px; font-size: 28px; background: var(--card); flex-direction: column; gap: 4px; }
+.duration-detail { font-size: 0.7em; font-weight: 500; white-space: nowrap; }
 .duration-radio:focus-visible + .btn-duration { outline: 3px solid var(--accent); outline-offset: 3px; }
 .duration-radio:checked + .btn-duration {
   background: var(--accent);

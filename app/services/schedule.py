@@ -18,6 +18,7 @@ from datetime import UTC, date, datetime, time, timedelta
 
 from app import texts as t
 from app.config import settings
+from app.services.durations import hours_text
 
 # Границы длительности одной работы — общие для «занять сейчас» и для брони:
 # машина не знает, чем её заняли, и 15 минут остаются 15 минутами в обоих
@@ -65,6 +66,7 @@ class DayOption:
 class DurationOption:
     minutes: int
     label: str
+    detail: str = ""
 
 
 def local(moment: datetime) -> datetime:
@@ -206,7 +208,13 @@ def duration_options(
     # «До утра» показываем, только если это не тот же вариант, что уже есть
     # кнопкой: в 21:00 «до утра» и «12 ч» — одно и то же.
     if night not in t.DURATION_LABELS:
-        options.append(DurationOption(minutes=night, label=t.DURATION_NIGHT))
+        options.append(DurationOption(
+            minutes=night,
+            label=t.DURATION_NIGHT,
+            detail=t.DURATION_NIGHT_DETAIL.format(
+                time=local(morning_after(start)).strftime(t.TIME_FORMAT), hours=hours_text(night),
+            ),
+        ))
 
     fitting = [
         option

@@ -40,6 +40,7 @@ from app.models import Machine, User
 from app.services import auth, booking_policy, feature_flags, feedback, telegram
 from app.services import reservations as reservations_svc
 from app.services import slicer as slicer_svc
+from app.services.durations import hours_text
 from app.services.errors import AppSessionRequired
 
 router = APIRouter(prefix="/app")
@@ -319,12 +320,7 @@ async def slicer_action(
         if model is not None:
             await model.close()
 
-    hours, remainder = divmod(estimate.seconds, 3600)
-    minutes = (remainder + 59) // 60
-    if minutes == 60:
-        hours += 1
-        minutes = 0
-    duration = t.UI["slicer_result_time"].format(hours=hours, minutes=minutes)
+    duration = t.UI["slicer_result_time"].format(hours=hours_text(estimate.seconds / 60))
     return templates.TemplateResponse(
         request,
         "slicer.html",

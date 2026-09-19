@@ -45,9 +45,7 @@ LANG = "en"  # <html lang> attribute
 TIME_FORMAT = "%H:%M"
 DATETIME_FORMAT = "%d %b %H:%M"
 
-UNIT_MINUTES = "{minutes} min"
 UNIT_HOURS = "{hours} h"
-UNIT_HOURS_MINUTES = "{hours} h {minutes} min"
 
 # Weekdays for the calendar strip, Monday first: `date.weekday()` indexes
 # straight into this tuple.
@@ -383,7 +381,7 @@ BOT_QUEUE_LEAVE_PICK = (
 
 BOT_QUEUE_JOINED = (
     "⏳ You're in line for {kind} ({room}), number {position}.\n\n"
-    "I'll message you when one frees up — you'll have 30 minutes to claim it."
+    "I'll message you when one frees up — you'll have 0.5 hours to claim it."
 )
 BOT_QUEUE_ALREADY = "⏳ You're already in line, number {position}.\n\nStep out — /leave"
 BOT_QUEUE_LEFT = "🚪 You've left the line."
@@ -410,7 +408,7 @@ BOT_MACHINE_FALLBACK = "the machine"
 
 BOT_OCCUPIED = (
     "🔴 You've booked <b>{machine}</b> for about {left} (until {time}).\n\n"
-    "I'll remind you 15 minutes before it ends."
+    "I'll remind you 0.25 hours before it ends."
 )
 BOT_RELEASED = "🟢 <b>{machine}</b> is free again."
 
@@ -481,7 +479,7 @@ BOT_BOOKING_STARTED_BUSY = (
 
 BOT_BOOKING_MISSED = (
     "⌛️ Your booking on <b>{machine}</b> is dropped: it sat free and you "
-    "didn't take it within {minutes} min.\n\n"
+    "didn't take it within {minutes} h.\n\n"
     "Book again — /book"
 )
 
@@ -553,18 +551,18 @@ ERR_MACHINE_RELEASE_FORBIDDEN = (
 )
 ERR_QUEUE_WAIT_YOUR_TURN = "There's a line — wait for your turn"
 
-ERR_DURATION = "Pick between {min_minutes} minutes and {max_hours} hours"
+ERR_DURATION = "Pick between {min_minutes} and {max_hours} hours"
 
 ERR_MACHINE_BOOKED_NOW = "{machine} is booked until {time}"
 ERR_MACHINE_BOOKED_LATER = (
-    "{machine} is booked from {time} — right now you can take it for {minutes} min at most"
+    "{machine} is booked from {time} — right now you can take it for {minutes} h at most"
 )
 
 
 # --- refusals: bookings ahead ------------------------------------------------
 
-ERR_RESERVATION_DURATION = "Book between {min_minutes} minutes and {max_hours} hours"
-ERR_RESERVATION_NOT_ALIGNED = "A booking starts on a {step}-minute mark"
+ERR_RESERVATION_DURATION = "Book between {min_minutes} and {max_hours} hours"
+ERR_RESERVATION_NOT_ALIGNED = "A booking starts on a {step}-hour mark"
 ERR_RESERVATION_PAST = "That time has already passed"
 ERR_RESERVATION_HORIZON = "You can book up to {days} days ahead"
 ERR_RESERVATION_OVERLAP = "{machine} is already booked for that time (from {time})"
@@ -733,6 +731,7 @@ DURATION_LABELS = {
     720: "12 h",
 }
 DURATION_NIGHT = "until morning"
+DURATION_NIGHT_DETAIL = "{time} · {hours} h"
 
 
 # --- kiosk: confirmation screens ---------------------------------------------
@@ -746,7 +745,7 @@ CONFIRM_RELEASE_SUBMIT = "Yes, free it up"
 CONFIRM_QUEUE_JOIN_TITLE = "Join the line?"
 CONFIRM_QUEUE_JOIN_HINT = (
     "When a machine frees up, the first person in line gets a message on Telegram "
-    "and 30 minutes to claim it."
+    "and 0.5 hours to claim it."
 )
 CONFIRM_QUEUE_JOIN_SUBJECT = "Line for {title} — {room}"
 CONFIRM_QUEUE_JOIN_SUBMIT = "Join the line"
@@ -805,7 +804,7 @@ UI = {
     'broadcast_text': 'Message text',
     'broadcast_hint': (
         'Plain text, up to 4096 characters. Wait for the delivery result: large '
-        'broadcasts may take several minutes. The bot can only message people who have '
+        'broadcasts may take a little while. The bot can only message people who have '
         'started a conversation with it and have not blocked it.'
     ),
     'broadcast_result': 'Sent: {sent}. Failed: {failed}.',
@@ -897,7 +896,7 @@ UI = {
     "book_machine_label": "Which machine to book",
     "book_submit": "Book it",
     "book_hint": (
-        "Take the machine within {grace} min of the start — otherwise the booking "
+        "Take the machine within {grace} h of the start — otherwise the booking "
         "is dropped and goes to the line. We'll remind you an hour before."
     ),
     "book_no_slots": "Too little time before the next booking — pick another hour",
@@ -1117,9 +1116,9 @@ UI = {
     "slicer_layer": "Layer height",
     "slicer_infill": "Infill",
     "slicer_submit": "Estimate",
-    "slicer_working": "Slicing the model — this may take up to two minutes…",
+    "slicer_working": "Slicing the model — this may take a little while…",
     "slicer_result": "Estimate result",
-    "slicer_result_time": "{hours} h {minutes} min",
+    "slicer_result_time": "{hours} h",
     "slicer_result_filament": "Filament: about {grams} g ({meters} m)",
     "slicer_result_filament_length": "Filament: about {meters} m",
     "slicer_result_profile": "PLA · 0.4 mm nozzle · {layer} mm layer · {infill}% infill",
@@ -1211,9 +1210,7 @@ UI = {
 # the server.
 
 JS = {
-    "unit_minutes": UNIT_MINUTES,
     "unit_hours": UNIT_HOURS,
-    "unit_hours_minutes": UNIT_HOURS_MINUTES,
     "eta_left": "~{left} left",
     "eta_over": "time's up, check how it came out",
     "done_ago": "finished {ago} ago",
@@ -1226,16 +1223,16 @@ USAGE_COOLDOWN = (
     "Your usage limit is exhausted. You can use equipment and book again on {until} ({zone})."
 )
 USAGE_BALANCE = (
-    "Available: {available} min. Used: {used} min. Reserved: {held} min. Limit: {limit} min."
+    "Available: {available} h. Used: {used} h. Reserved: {held} h. Limit: {limit} h."
 )
-USAGE_INSUFFICIENT = "Not enough time for a {minutes} min session."
+USAGE_INSUFFICIENT = "Not enough time for a {minutes} h session."
 USAGE_INVALID = "Check the limit, cooldown and reason for the change."
 
 UI.update(
     {
         "usage_title": "Usage limits",
         "usage_enabled": "Enable for all users",
-        "usage_limit": "Time allowance, minutes (300 = 5 hours)",
+        "usage_limit": "Time allowance, hours",
         "usage_cooldown": "Cooldown, hours (168 = 7 days)",
         "usage_hint": (
             "Printers and engravers share one allowance. Cooldown starts when all time "
@@ -1247,7 +1244,7 @@ UI.update(
         "usage_default": "Default allowance",
         "usage_custom": "Personal allowance",
         "usage_unlimited": "Unlimited",
-        "usage_bonus": "Add minutes",
+        "usage_bonus": "Add hours",
         "usage_reset": "Clear cooldown and restore allowance",
         "usage_reset_hint": (
             "Reset starts accounting from now. Future bookings and remaining active work "
@@ -1266,9 +1263,8 @@ FLASH_ADMIN["usage_saved"] = "Usage limits updated."
 
 UI.update(
     {
-        "usage_minutes": "{n} min",
         "usage_remainder": (
-            "The remainder is below the 15-minute minimum. "
+            "The remainder is below the 0.25-hour minimum. "
             "You can forfeit it and start cooldown now."
         ),
         "usage_forfeit": "Forfeit remainder and start cooldown",
@@ -1278,14 +1274,14 @@ UI.update(
 UI.update({
     'usage_action_policy': 'Global settings',
     'usage_action_settings': 'Personal settings',
-    'usage_action_bonus': 'Extra minutes',
+    'usage_action_bonus': 'Extra hours',
     'usage_action_reset': 'Allowance reset',
     'usage_field_enabled': 'Enabled',
-    'usage_field_limit_minutes': 'Allowance, min',
+    'usage_field_limit_minutes': 'Allowance, h',
     'usage_field_cooldown_hours': 'Cooldown, hours',
     'usage_field_activated_at': 'Accounting since',
     'usage_field_unlimited': 'Unlimited',
-    'usage_field_bonus_minutes': 'Extra minutes',
+    'usage_field_bonus_minutes': 'Extra hours',
     'usage_field_cycle_start': 'Current cycle since',
     'usage_field_cooldown_until': 'Cooldown ends',
 })

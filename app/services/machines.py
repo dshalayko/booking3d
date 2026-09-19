@@ -35,6 +35,7 @@ from app.enums import (
 )
 from app.models import Machine, MachineSession, QueueEntry, Reservation, User
 from app.services import booking_policy, reservations, rooms, schedule, usage_limits
+from app.services.durations import hours_text
 from app.services.errors import (
     AlreadyBooked,
     InvalidDuration,
@@ -128,7 +129,7 @@ async def occupy(
     if not MIN_DURATION_MINUTES <= duration_minutes <= MAX_DURATION_MINUTES:
         raise InvalidDuration(
             t.ERR_DURATION.format(
-                min_minutes=MIN_DURATION_MINUTES, max_hours=MAX_DURATION_MINUTES // 60
+                min_minutes=hours_text(MIN_DURATION_MINUTES), max_hours=MAX_DURATION_MINUTES // 60
             )
         )
 
@@ -549,7 +550,7 @@ async def _check_booking_allows(
             t.ERR_MACHINE_BOOKED_LATER.format(
                 machine=machine.name,
                 time=_hhmm(upcoming.starts_at),
-                minutes=max(0, available),
+                minutes=hours_text(max(0, available)),
             )
         )
     return None

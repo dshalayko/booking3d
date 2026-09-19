@@ -38,6 +38,7 @@ from app.services import reservations as reservations_svc
 from app.services import rooms as rooms_svc
 from app.services import schedule as schedule_svc
 from app.services import workhours as workhours_svc
+from app.services.durations import hours_text
 from app.services.errors import (
     AlreadyBooked,
     InvalidReservationTime,
@@ -346,7 +347,7 @@ async def occupy_page(
     if usage and limit and limit >= 15 and limit <= machines_svc.MAX_DURATION_MINUTES:
         if all(option.minutes != limit for option in options):
             options.append(
-                schedule_svc.DurationOption(limit, t.UI["usage_minutes"].format(n=limit))
+                schedule_svc.DurationOption(limit, t.UNIT_HOURS.format(hours=hours_text(limit)))
             )
     return templates.TemplateResponse(
         request,
@@ -530,7 +531,7 @@ async def book_page(
                 limit_minutes=limit,
                 minimum=settings.reservation_min_minutes,
             ),
-            "grace": settings.reservation_grace_minutes,
+            "grace": hours_text(settings.reservation_grace_minutes),
             **client.context,
         },
     )

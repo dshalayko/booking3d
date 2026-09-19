@@ -267,7 +267,7 @@ class TestSlicer:
         )
 
         assert response.status_code == 200
-        assert "1 ч 5 мин" in response.text
+        assert "1,08 ч" in response.text
         assert "13.4" in response.text
         assert "4.5" in response.text
 

@@ -22,6 +22,7 @@ from app.models import (
     UsagePolicy,
     User,
 )
+from app.services.durations import hours_text
 from app.services.errors import DomainError
 
 KINDS = (MachineKind.PRINTER, MachineKind.ENGRAVER)
@@ -73,10 +74,10 @@ class Balance:
                 zone=str(settings.zone),
             )
         return t.USAGE_BALANCE.format(
-            available=self.available_minutes,
-            used=self.used_minutes,
-            held=self.held_minutes,
-            limit=self.limit_minutes,
+            available=hours_text(self.available_minutes),
+            used=hours_text(self.used_seconds / 60),
+            held=hours_text(self.held_seconds / 60),
+            limit=hours_text(self.limit_minutes),
         )
 
 
@@ -205,7 +206,9 @@ async def check(db, user_id, machine, minutes, now, reservation=None):
     if state.cooldown_until:
         raise DomainError(state.message)
     if minutes > state.available_minutes:
-        raise DomainError(t.USAGE_INSUFFICIENT.format(minutes=minutes) + " " + state.message)
+        raise DomainError(
+            t.USAGE_INSUFFICIENT.format(minutes=hours_text(minutes)) + " " + state.message
+        )
 
 
 async def reconcile(db: AsyncSession, now: datetime | None = None):

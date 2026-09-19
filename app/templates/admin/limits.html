@@ -5,7 +5,7 @@
   <p class="admin-dim">{{ t.usage_hint }}</p>
   <form class="admin-form admin-form-column" method="post" action="/admin/limits">
     <label><input type="checkbox" name="enabled" {% if policy.enabled %}checked{% endif %}> {{ t.usage_enabled }}</label>
-    <label>{{ t.usage_limit }}<input class="text-input" type="number" name="limit_minutes" min="1" max="525600" value="{{ policy.limit_minutes }}" required></label>
+    <label>{{ t.usage_limit }}<input class="text-input" type="number" name="limit_hours" min="0.02" max="8760" step="0.01" value="{{ policy.limit_minutes | hours_value }}" required></label>
     <label>{{ t.usage_cooldown }}<input class="text-input" type="number" name="cooldown_hours" min="1" max="8760" value="{{ policy.cooldown_hours }}" required></label>
     <input class="text-input" name="reason" placeholder="{{ t.usage_reason }}" maxlength="1000" required>
     <button class="btn btn-small btn-primary">{{ t.usage_save }}</button>
@@ -24,13 +24,13 @@
       <option value="custom" {% if account and account.limit_minutes and not account.unlimited %}selected{% endif %}>{{ t.usage_custom }}</option>
       <option value="unlimited" {% if account and account.unlimited %}selected{% endif %}>{{ t.usage_unlimited }}</option>
     </select>
-    <label>{{ t.usage_limit }}<input class="text-input" name="limit_minutes" type="number" min="1" max="525600" value="{{ account.limit_minutes if account and account.limit_minutes else policy.limit_minutes }}" required></label>
+    <label>{{ t.usage_limit }}<input class="text-input" name="limit_hours" type="number" min="0.02" max="8760" step="0.01" value="{{ (account.limit_minutes if account and account.limit_minutes else policy.limit_minutes) | hours_value }}" required></label>
     <input class="text-input" name="reason" placeholder="{{ t.usage_reason }}" maxlength="1000" required>
     <button class="btn btn-small">{{ t.usage_save }}</button>
   </form>
   <form class="admin-form" method="post" action="/admin/limits/users/{{ person.id }}">
     <input type="hidden" name="action" value="bonus">
-    <label>{{ t.usage_bonus }}<input class="text-input" name="bonus_minutes" type="number" min="1" max="525600" required></label>
+    <label>{{ t.usage_bonus }}<input class="text-input" name="bonus_hours" type="number" min="0.02" max="8760" step="0.01" required></label>
     <input class="text-input" name="reason" placeholder="{{ t.usage_reason }}" maxlength="1000" required>
     <button class="btn btn-small">{{ t.usage_bonus }}</button>
   </form>
