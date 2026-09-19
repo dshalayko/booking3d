@@ -666,14 +666,14 @@ body {
    MINIAPP_OPEN_ACCESS нельзя было принять за обычный экран входа. */
 .banner-warn { color: var(--wait); }
 .usage-card {
-  width: min(100%, 560px);
+  width: min(100%, 520px);
   margin: 0 auto;
-  padding: 10px 12px;
+  padding: 8px 10px;
   border: 1px solid rgba(255, 255, 255, .08);
-  border-radius: 18px;
+  border-radius: 16px;
   background: rgba(255, 255, 255, .045);
   color: var(--text);
-  font-size: 15px;
+  font-size: 14px;
 }
 .usage-card p { margin: 0; text-align: center; }
 .usage-card p + p,
@@ -681,21 +681,21 @@ body {
 .usage-metrics {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 6px;
+  gap: 5px;
   align-items: stretch;
 }
 .usage-metric {
   min-width: 0;
-  padding: 8px 6px;
-  border-radius: 13px;
+  padding: 6px 5px;
+  border-radius: 12px;
   background: rgba(255, 255, 255, .05);
   text-align: center;
 }
 .usage-label {
   display: block;
-  margin-bottom: 2px;
+  margin-bottom: 1px;
   color: var(--muted);
-  font-size: 11px;
+  font-size: 10px;
   font-weight: 700;
   letter-spacing: .04em;
   text-transform: uppercase;
@@ -705,14 +705,14 @@ body {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-size: 16px;
+  font-size: 15px;
   line-height: 1.1;
 }
 .usage-limit {
   grid-column: 1 / -1;
   color: var(--muted);
   text-align: center;
-  font-size: 12px;
+  font-size: 11px;
   font-weight: 700;
 }
 .app-people { display: flex; flex-direction: column; gap: 10px; }
@@ -1278,6 +1278,9 @@ body.admin-page { padding: 0; gap: 0; }
   body.miniapp-page {
     padding-bottom: max(82px, calc(env(safe-area-inset-bottom) + 72px));
   }
+  body.miniapp-page.miniapp-admin-page {
+    padding-bottom: max(188px, calc(env(safe-area-inset-bottom) + 178px));
+  }
   .app-close-bar {
     left: max(12px, env(safe-area-inset-left));
     right: max(12px, env(safe-area-inset-right));
@@ -1295,11 +1298,24 @@ body.admin-page { padding: 0; gap: 0; }
      `.btn-small`, иначе общий мобильный размер снова сплющит кнопку закрытия,
      ссылки расписания и переход к статусам. */
   .app-close-bar .app-close,
+  .app-close-bar .app-admin,
   .my-links .btn-wide {
     min-height: 58px;
     padding: 14px 18px;
     font-size: 18px;
   }
+  .usage-card {
+    padding: 6px 8px;
+    border-radius: 15px;
+  }
+  .usage-metrics { gap: 4px; }
+  .usage-metric {
+    padding: 5px 4px;
+    border-radius: 11px;
+  }
+  .usage-label { font-size: 9px; }
+  .usage-metric strong { font-size: 14px; }
+  .usage-limit { font-size: 10px; }
 
   /* --- главный экран --- */
 
@@ -1368,12 +1384,18 @@ body.admin-page { padding: 0; gap: 0; }
     flex: var(--machines, 1) 1 0;
     min-height: 0;
   }
-  .miniapp-page.board-page .tiles { grid-auto-rows: minmax(96px, 1fr); }
+  .miniapp-page.board-page .tiles { grid-auto-rows: minmax(96px, auto); }
   .miniapp-page.board-page .tile {
     min-height: 96px;
     padding: 14px 16px;
     align-content: center;
     row-gap: 6px;
+    overflow: hidden;
+  }
+  .miniapp-page.board-page .tile-printing,
+  .miniapp-page.board-page .tile-done_wait,
+  .miniapp-page.board-page .tile-reserved {
+    min-height: 136px;
   }
 
   /* Экран просмотра статусов — исключение из компактной телефонной доски.
