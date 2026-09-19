@@ -1,4 +1,5 @@
 import asyncio
+import json
 from datetime import UTC, datetime, timedelta
 
 import pytest
@@ -6,7 +7,7 @@ from sqlalchemy import select
 
 from app.bot import notify
 from app.config import settings
-from app.models import Reservation, UsageAudit, UsagePolicy
+from app.models import Reservation, UsageAccount, UsageAudit, UsagePolicy
 from app.services import booking_policy, machines, reservations, usage_limits
 from app.services.errors import DomainError
 
@@ -331,6 +332,37 @@ async def test_admin_accepts_hours_and_preserves_minute_storage(client, db, make
     assert 'name="bonus_hours"' in page.text
     assert "Лимит, ч: 6,5" in page.text or "Лимит, ч:" in page.text
     assert "мин." not in state.message
+
+
+async def test_admin_limits_do_not_require_reason(client, db, make_user):
+    await make_user(is_admin=True)
+    user = await make_user()
+    await client.post("/admin/login", data={"secret": settings.admin_secret})
+    response = await client.post(
+        "/admin/limits",
+        data={"enabled": "on", "limit_hours": "5", "cooldown_hours": 168},
+    )
+    assert response.status_code == 303
+    response = await client.post(
+        f"/admin/limits/users/{user.id}",
+        data={"mode": "custom", "limit_hours": "2"},
+    )
+    assert response.status_code == 303
+    assert (await db.get(UsageAccount, user.id)).limit_minutes == 120
+    response = await client.post(
+        f"/admin/limits/users/{user.id}",
+        data={"action": "bonus", "bonus_hours": "0.5"},
+    )
+    assert response.status_code == 303
+    state = await usage_limits.balance(db, user.id)
+    assert state.limit_minutes == 150
+    events = list(await db.scalars(select(UsageAudit).order_by(UsageAudit.id)))
+    assert len(events) == 3
+    assert all(json.loads(event.details)["reason"] for event in events)
+    page = await client.get(f"/admin/limits?user_id={user.id}")
+    assert page.status_code == 200
+    assert 'name="reason"' not in page.text
+    assert "Reason for change" not in page.text
 
 
 @pytest.mark.parametrize("value", ["NaN", "Infinity", "-1", "8761", "abc", ""])

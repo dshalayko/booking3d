@@ -251,6 +251,27 @@
     if (event.key === "Escape") setAdminMenu(false);
   });
 
+  // --- формы лимитов -------------------------------------------------------
+  // Число часов относится только к персональному лимиту. В режиме "Default"
+  // пользователь наследует общий лимит, поэтому поле отключаем, чтобы оно не
+  // выглядело как сохраняемое значение.
+
+  document.querySelectorAll("[data-usage-mode]").forEach(function (mode) {
+    var form = mode.closest("form");
+    var limit = form ? form.querySelector("[data-usage-limit]") : null;
+    if (!limit) return;
+
+    function syncLimit() {
+      var custom = mode.value === "custom";
+      limit.disabled = !custom;
+      limit.required = custom;
+      limit.closest("label").classList.toggle("usage-limit-disabled", !custom);
+    }
+
+    mode.addEventListener("change", syncLimit);
+    syncLimit();
+  });
+
   // --- не давать экрану гаснуть -------------------------------------------
   // Погасший планшет — это неработающее табло: пока никто его не разбудил,
   // статусов на стене нет. «Автоблокировка → Никогда» в настройках iPad от

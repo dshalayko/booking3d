@@ -997,6 +997,49 @@ body.admin-page { padding: 0; gap: 0; }
 .admin-form-column { flex-direction: column; align-items: stretch; gap: 6px; }
 .admin-form-column .btn { margin-top: 8px; }
 .admin-form-column .admin-dim { margin-top: 6px; }
+.usage-user-card { overflow: hidden; }
+.usage-admin-state {
+  margin: 0;
+  color: var(--muted);
+  line-height: 1.35;
+}
+.usage-control-form {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  align-items: end;
+  gap: 10px;
+}
+.usage-control-form label {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  color: var(--muted);
+}
+.usage-control-form .text-input,
+.usage-control-form .btn {
+  width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+}
+.usage-control-form .btn {
+  align-self: end;
+}
+.usage-limit-disabled {
+  opacity: .55;
+}
+.usage-limit-disabled .text-input {
+  cursor: not-allowed;
+}
+@media (min-width: 820px) {
+  .usage-settings-form {
+    grid-template-columns: minmax(180px, 1fr) minmax(180px, 1fr) auto;
+  }
+  .usage-settings-form .btn {
+    width: auto;
+    min-width: 120px;
+  }
+}
 .broadcast-audience { min-width: 0; border: 0; padding: 0; }
 .broadcast-audience > label { display: flex; align-items: center; gap: 8px; margin: 12px 0; }
 .broadcast-recipients { max-height: 320px; overflow-y: auto; }

@@ -60,6 +60,10 @@ def audit(db, actor, user_id, action, before, after, reason):
     )
 
 
+def auto_reason(action: str) -> str:
+    return t.UI["usage_auto_reason_" + action]
+
+
 @router.get("/limits")
 async def page(request: Request, db: Db, user_id: int | None = None, flash: str = ""):
     policy = await db.get(UsagePolicy, 1)
@@ -125,7 +129,7 @@ async def save(
     limit_minutes: int | None = Form(None),
     limit_hours: str | None = Form(None),
     cooldown_hours: int = Form(...),
-    reason: str = Form(...),
+    reason: str = Form(""),
 ) -> Response:
     if limit_hours is not None:
         try:
@@ -136,7 +140,6 @@ async def save(
         limit_minutes is None
         or not 1 <= limit_minutes <= 525600
         or not 1 <= cooldown_hours <= 8760
-        or not reason.strip()
     ):
         raise DomainError(t.USAGE_INVALID)
     actor = await core.acting_admin(db, request)
@@ -172,7 +175,9 @@ async def save(
             state = await usage_limits.balance(db, uid, now)
             if state.cooldown_until:
                 account.cooldown_until = now + timedelta(hours=cooldown_hours)
-    audit(db, actor, None, "policy", before, snapshot(policy), reason.strip())
+    audit(
+        db, actor, None, "policy", before, snapshot(policy), reason.strip() or auto_reason("policy")
+    )
     await db.commit()
     return core.redirect("usage_saved", SECTION.path)
 
@@ -188,7 +193,7 @@ async def change_user(
     bonus_minutes: int = Form(0),
     limit_hours: str | None = Form(None),
     bonus_hours: str | None = Form(None),
-    reason: str = Form(...),
+    reason: str = Form(""),
 ) -> Response:
     try:
         if limit_hours is not None:
@@ -202,7 +207,6 @@ async def change_user(
         or mode not in {"default", "custom", "unlimited"}
         or not 1 <= limit_minutes <= 525600
         or not 0 <= bonus_minutes <= 525600
-        or not reason.strip()
         or (action == "bonus" and bonus_minutes == 0)
     ):
         raise DomainError(t.USAGE_INVALID)
@@ -244,6 +248,8 @@ async def change_user(
         state = await usage_limits.balance(db, user_id, now)
         if state.cooldown_until:
             account.cooldown_until = now + timedelta(hours=policy.cooldown_hours)
-    audit(db, actor, user_id, action, before, snapshot(account), reason.strip())
+    audit(
+        db, actor, user_id, action, before, snapshot(account), reason.strip() or auto_reason(action)
+    )
     await db.commit()
     return core.redirect("usage_saved", f"{SECTION.path}?user_id={user_id}")
