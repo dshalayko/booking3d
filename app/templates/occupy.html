@@ -50,7 +50,7 @@
       </div>
       {% if durations %}
         <p class="durations-hint">{{ t.occupy_hint }}</p>
-        <button class="btn btn-primary btn-book-now" type="submit">{{ t.occupy_submit }}</button>
+        <button class="btn btn-primary btn-book-now" type="submit">{{ t.tile_extend if extending|default(false) else t.occupy_submit }}</button>
       {% else %}
         <p class="durations-hint">{{ t.book_no_slots }}</p>
       {% endif %}

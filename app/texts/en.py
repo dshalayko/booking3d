@@ -830,6 +830,7 @@ UI = {
     "tile_busy": "Busy",
     "tile_until": "until {time}",
     "tile_release": "Free up",
+    "tile_extend": "Add time",
     "tile_done_at": "finished at {time}",
     "tile_reserved": "On hold",
     "tile_its_me": "That's me",

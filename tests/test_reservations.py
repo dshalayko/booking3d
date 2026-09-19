@@ -282,6 +282,27 @@ class TestOccupyWithBooking:
         reservation = await db.get(Reservation, booking.reservation_id)
         assert reservation.status == ReservationStatus.TAKEN
 
+
+    async def test_own_window_can_be_occupied_for_full_booking(self, db, printers, make_user):
+        user = await make_user()
+        start = tomorrow()
+        await svc.book(db, user, printers[0].id, start, 300, now=NOON)
+
+        result = await machines_svc.occupy(db, user, printers[0].id, 300, now=start)
+
+        assert result.from_reservation is True
+        assert result.eta_at == start + 5 * HOUR
+
+    async def test_own_window_still_respects_next_booking(self, db, printers, make_user):
+        user = await make_user()
+        other = await make_user()
+        start = tomorrow()
+        await svc.book(db, user, printers[0].id, start, 120, now=NOON)
+        await svc.book(db, other, printers[0].id, start + 3 * HOUR, 60, now=NOON)
+
+        with pytest.raises(MachineBooked):
+            await machines_svc.occupy(db, user, printers[0].id, 240, now=start)
+
     async def test_booking_blocks_occupying_another_machine(
         self, db, printers, make_user
     ):

@@ -212,6 +212,7 @@ async def board_context(
         "rooms": state.rooms,
         "now": state.now,
         "usage": await usage_limits.balance(db, viewer.id) if viewer else None,
+        "viewer_id": viewer.id if viewer else None,
         "can_book": bool(bookable_kinds),
         "bookable_kinds": bookable_kinds,
     }
@@ -311,17 +312,41 @@ async def occupy_page(
     # только тогда узнает, что машина занята.
     if machine.status == MachineStatus.BROKEN:
         raise MachineNotAvailable(t.ERR_MACHINE_BROKEN.format(machine=machine.name))
-    if machine.status != MachineStatus.FREE:
-        raise MachineNotAvailable(t.ERR_MACHINE_BUSY.format(machine=machine.name))
 
     now = datetime.now(UTC)
     booking = await reservations_svc.current_for_machine(db, machine.id, now)
-    if booking is not None:
+    active_session = await machines_svc.active_session_of_machine(db, machine.id)
+    extending = False
+    if machine.status != MachineStatus.FREE:
+        extending = bool(
+            viewer
+            and machine.status == MachineStatus.PRINTING
+            and active_session is not None
+            and active_session.user_id == viewer.id
+        )
+        if not extending:
+            raise MachineNotAvailable(t.ERR_MACHINE_BUSY.format(machine=machine.name))
+
+    exact_minutes = None
+    if extending and active_session is not None:
+        limit = await reservations_svc.free_minutes(
+            db, machine.id, max(now, active_session.eta_at)
+        )
+        exact_minutes = limit
+    elif booking is not None:
         # Идёт чьё-то окно. Кто перед экраном, здесь ещё неизвестно, поэтому
         # длительность ограничена концом самого окна; чужому откажет `occupy`.
-        limit = int((booking.ends_at - now).total_seconds() // 60)
+        own_booking = viewer is not None and booking.user_id == viewer.id
+        booking_left = int((booking.ends_at - now).total_seconds() // 60)
+        if own_booking:
+            limit = await reservations_svc.free_minutes(db, machine.id, now)
+            exact_minutes = min(booking_left, limit) if limit is not None else booking_left
+        else:
+            limit = booking_left
+            exact_minutes = limit
     else:
         limit = await reservations_svc.free_minutes(db, machine.id, now)
+        exact_minutes = limit
 
     # Общая кнопка «занять машину» ведёт на первую свободную единицу группы.
     # На телефоне это выглядит как автоматический выбор, поэтому при реальном
@@ -343,12 +368,22 @@ async def occupy_page(
         limit = (
             min(limit, usage.available_minutes) if limit is not None else usage.available_minutes
         )
+        if exact_minutes is None:
+            exact_minutes = limit
+        else:
+            exact_minutes = min(exact_minutes, usage.available_minutes)
     options = duration_options(now, limit_minutes=limit)
-    if usage and limit and limit >= 15 and limit <= machines_svc.MAX_DURATION_MINUTES:
-        if all(option.minutes != limit for option in options):
-            options.append(
-                schedule_svc.DurationOption(limit, t.UNIT_HOURS.format(hours=hours_text(limit)))
+    if (
+        exact_minutes
+        and exact_minutes >= machines_svc.MIN_DURATION_MINUTES
+        and exact_minutes <= machines_svc.MAX_DURATION_MINUTES
+        and all(option.minutes != exact_minutes for option in options)
+    ):
+        options.append(
+            schedule_svc.DurationOption(
+                exact_minutes, t.UNIT_HOURS.format(hours=hours_text(exact_minutes))
             )
+        )
     return templates.TemplateResponse(
         request,
         "occupy.html",
@@ -358,6 +393,7 @@ async def occupy_page(
             "durations": options,
             "usage": usage,
             "booked_until": booking.ends_at if booking else None,
+            "extending": extending,
             **client.context,
         },
     )

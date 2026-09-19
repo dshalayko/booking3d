@@ -543,6 +543,48 @@ class TestScreens:
         assert t.UI["book_machine_label"] not in form.text
         assert 'href="/app/choose-occupy-machine' not in form.text
 
+
+    async def test_owner_sees_add_time_on_active_machine(
+        self, client, db, printers, make_user
+    ):
+        user = await make_user()
+        await machines_svc.occupy(db, user, printers[0].id, 60)
+        await db.commit()
+        await open_app(client, user)
+
+        board = await client.get(f"/app/room/{printers[0].room_id}")
+        form = await client.get(f"/app/occupy/{printers[0].id}")
+
+        assert t.UI["tile_extend"] in board.text
+        assert f'href="/app/occupy/{printers[0].id}"' in board.text
+        assert form.status_code == 200
+        assert t.UI["tile_extend"] in form.text
+
+    async def test_own_current_booking_form_offers_exact_remaining_time(
+        self, client, db, printers, make_user
+    ):
+        user = await make_user()
+        now = datetime.now(UTC)
+        db.add(
+            Reservation(
+                machine_id=printers[0].id,
+                room_id=printers[0].room_id,
+                user_id=user.id,
+                starts_at=now - timedelta(minutes=1),
+                ends_at=now + timedelta(minutes=301),
+                status=ReservationStatus.BOOKED,
+                created_at=now - timedelta(hours=1),
+            )
+        )
+        await db.commit()
+        await open_app(client, user)
+
+        response = await client.get(f"/app/occupy/{printers[0].id}")
+
+        assert response.status_code == 200
+        assert 'value="300"' in response.text
+        assert ">5 ч<" in response.text
+
     async def test_occupy_from_the_phone(self, client, db, printers, make_user):
         user = await make_user()
         machine_id = printers[0].id

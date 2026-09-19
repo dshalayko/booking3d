@@ -267,6 +267,8 @@ body {
 .tile-time { margin: 0; font-size: var(--tile-time); color: var(--muted); }
 .tile-note { margin: 0; font-size: var(--tile-note); color: var(--muted); }
 .tile .btn { min-height: var(--tile-btn); font-size: var(--tile-owner); margin-top: 10px; }
+.tile-actions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; margin-top: 10px; }
+.tile-actions .btn { margin-top: 0; padding-inline: 10px; }
 
 /* --- кнопки --- */
 
@@ -1365,6 +1367,8 @@ body.admin-page { padding: 0; gap: 0; }
   /* Действие — во всю ширину плитки: это единственная кнопка, ради которой
      карточку вообще открывают, и целиться в неё не должно быть нужно. */
   .tile .btn { grid-column: 1 / -1; margin-top: 6px; font-size: 14px; }
+  .tile-actions { grid-column: 1 / -1; margin-top: 6px; }
+  .tile-actions .btn { grid-column: auto; margin-top: 0; }
 
   /* Главная доска Mini App тоже использует доступную высоту экрана. Выше
      портретное правило намеренно возвращает обычной доске высоту по содержимому

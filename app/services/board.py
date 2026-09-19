@@ -35,6 +35,7 @@ class MachineView:
     status: str
     # Кто занял — для подписи на общей доске.
     owner_name: str | None
+    owner_user_id: int | None
     eta_at: datetime | None
     done_since: datetime | None
     note: str | None
@@ -164,6 +165,7 @@ async def build(
                 kind=machine.kind,
                 status=machine.status,
                 owner_name=session_row[1] if session_row else None,
+                owner_user_id=session_row[0].user_id if session_row else None,
                 eta_at=session_row[0].eta_at if session_row else None,
                 done_since=(
                     session_row[0].eta_at

@@ -14,6 +14,7 @@ from app.services import reservations as reservations_svc
 from app.services.errors import (
     DomainError,
     InvalidDuration,
+    MachineBooked,
     MachineHasHistory,
     MachineKindUnknown,
     MachineNameInvalid,
@@ -56,6 +57,36 @@ async def test_occupy_rejects_busy_printer(db, printers, make_user):
 
     with pytest.raises(MachineNotAvailable, match="уже занят"):
         await svc.occupy(db, second, printers[0].id, 60, now=NOON)
+
+
+async def test_owner_can_extend_active_session(db, printers, make_user):
+    user = await make_user()
+    occupied = await svc.occupy(db, user, printers[0].id, 60, now=NOON)
+
+    result = await svc.occupy(
+        db, user, printers[0].id, 120, now=NOON + timedelta(minutes=30)
+    )
+
+    assert result.session_id == occupied.session_id
+    assert result.eta_at == NOON + timedelta(hours=3)
+    sessions = (
+        await db.scalars(select(MachineSession).where(MachineSession.machine_id == printers[0].id))
+    ).all()
+    assert len(sessions) == 1
+
+
+async def test_owner_cannot_extend_past_next_booking(db, printers, make_user):
+    user = await make_user()
+    next_user = await make_user()
+    await svc.occupy(db, user, printers[0].id, 60, now=NOON)
+    await reservations_svc.book(
+        db, next_user, printers[0].id, NOON + timedelta(hours=2), 60, now=NOON
+    )
+
+    with pytest.raises(MachineBooked):
+        await svc.occupy(
+            db, user, printers[0].id, 120, now=NOON + timedelta(minutes=30)
+        )
 
 
 async def test_occupy_rejects_broken_printer(db, printers, make_user):

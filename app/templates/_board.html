@@ -76,7 +76,14 @@
                     {{ t.tile_until.format(time=machine.eta_at | hhmm) }}
                   </p>
                   {% if not read_only|default(false) %}
-                    <a class="btn btn-ghost" href="{{ base }}/release/{{ machine.id }}">{{ t.tile_release }}</a>
+                    {% if viewer_id|default(none) and machine.owner_user_id == viewer_id %}
+                      <div class="tile-actions">
+                        <a class="btn btn-ghost" href="{{ base }}/occupy/{{ machine.id }}">{{ t.tile_extend }}</a>
+                        <a class="btn btn-ghost" href="{{ base }}/release/{{ machine.id }}">{{ t.tile_release }}</a>
+                      </div>
+                    {% else %}
+                      <a class="btn btn-ghost" href="{{ base }}/release/{{ machine.id }}">{{ t.tile_release }}</a>
+                    {% endif %}
                   {% endif %}
 
                 {% elif machine.status == "done_wait" %}

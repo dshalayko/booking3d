@@ -829,6 +829,7 @@ UI = {
     "tile_busy": "Занято",
     "tile_until": "до {time}",
     "tile_release": "Освободить",
+    "tile_extend": "Добавить время",
     "tile_done_at": "готово в {time}",
     "tile_reserved": "Придержано",
     "tile_its_me": "Это я",

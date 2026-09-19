@@ -142,6 +142,14 @@ async def occupy(
 
     if machine.status == MachineStatus.BROKEN:
         raise MachineNotAvailable(t.ERR_MACHINE_BROKEN.format(machine=machine.name))
+
+    active_session = await _active_session_of_machine(db, machine.id)
+    if machine.status == MachineStatus.PRINTING and active_session is not None:
+        if active_session.user_id != user.id:
+            raise MachineNotAvailable(t.ERR_MACHINE_BUSY.format(machine=machine.name))
+        return await _extend_own_session(
+            db, user, machine, active_session, duration_minutes, now
+        )
     if machine.status != MachineStatus.FREE:
         raise MachineNotAvailable(t.ERR_MACHINE_BUSY.format(machine=machine.name))
 
@@ -187,6 +195,30 @@ async def occupy(
         room_id=machine.room_id,
         eta_at=session.eta_at,
         from_reservation=reservation is not None,
+    )
+
+
+async def _extend_own_session(
+    db: AsyncSession,
+    user: User,
+    machine: Machine,
+    session: MachineSession,
+    additional_minutes: int,
+    now: datetime,
+) -> OccupyResult:
+    """Добавить время к своей активной работе без создания второй сессии."""
+    await _check_extension_allows(db, machine, session, additional_minutes, now)
+    await usage_limits.check(db, user.id, machine, additional_minutes, now)
+
+    session.eta_at = max(session.eta_at, now) + timedelta(minutes=additional_minutes)
+    await db.flush()
+    return OccupyResult(
+        session_id=session.id,
+        machine_id=machine.id,
+        machine_name=machine.name,
+        room_id=machine.room_id,
+        eta_at=session.eta_at,
+        from_reservation=session.reservation_id is not None,
     )
 
 
@@ -531,9 +563,7 @@ async def _check_booking_allows(
     машину сам) не даст его вернуть.
     """
     current = await reservations.current_for_machine(db, machine.id, now)
-    if current is not None:
-        if current.user_id == user.id:
-            return current
+    if current is not None and current.user_id != user.id:
         raise MachineBooked(
             t.ERR_MACHINE_BOOKED_NOW.format(
                 machine=machine.name, time=_hhmm(current.ends_at)
@@ -542,10 +572,34 @@ async def _check_booking_allows(
 
     upcoming = await reservations.next_for_machine(db, machine.id, now)
     if upcoming is None:
-        return None
+        return current
 
     available = int((upcoming.starts_at - now).total_seconds() // 60)
     if duration_minutes > available:
+        raise MachineBooked(
+            t.ERR_MACHINE_BOOKED_LATER.format(
+                machine=machine.name,
+                time=_hhmm(upcoming.starts_at),
+                minutes=hours_text(max(0, available)),
+            )
+        )
+    return current
+
+
+async def _check_extension_allows(
+    db: AsyncSession,
+    machine: Machine,
+    session: MachineSession,
+    additional_minutes: int,
+    now: datetime,
+) -> None:
+    start = max(session.eta_at, now)
+    upcoming = await reservations.next_for_machine(db, machine.id, start)
+    if upcoming is None:
+        return
+
+    available = int((upcoming.starts_at - start).total_seconds() // 60)
+    if additional_minutes > available:
         raise MachineBooked(
             t.ERR_MACHINE_BOOKED_LATER.format(
                 machine=machine.name,
@@ -575,6 +629,10 @@ async def _lock_machine(db: AsyncSession, machine_id: int) -> Machine:
 
 
 async def _active_session_of_machine(db: AsyncSession, machine_id: int) -> MachineSession | None:
+    return await active_session_of_machine(db, machine_id)
+
+
+async def active_session_of_machine(db: AsyncSession, machine_id: int) -> MachineSession | None:
     return await db.scalar(
         select(MachineSession).where(
             MachineSession.machine_id == machine_id,
