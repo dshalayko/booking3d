@@ -23,7 +23,7 @@ from app import assets, qr
 from app import texts as t
 from app.config import settings
 from app.enums import ROOM_KIND_MACHINE_KINDS, MachineKind, RoomKind
-from app.services.durations import hours_value
+from app.services.durations import hours_text, hours_value
 
 templates = Jinja2Templates(directory="app/templates")
 
@@ -48,6 +48,7 @@ def day(value: datetime | None) -> str:
 
 # Те же функции обработчикам нужны и без шаблона — в текстах отказов.
 templates.env.filters["hours_value"] = hours_value
+templates.env.filters["hours_text"] = hours_text
 templates.env.filters["hhmm"] = hhmm
 templates.env.filters["when"] = when
 templates.env.filters["iso"] = iso

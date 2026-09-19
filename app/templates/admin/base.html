@@ -14,16 +14,14 @@
 {% from "admin/_icons.html" import icon %}
 {% block body_class %}admin-page{% endblock %}
 
-{# Панель работает обычными ссылками и формами. JavaScript ей не нужен: так
-   киосковый service worker и его жизненный цикл вообще не могут вмешаться в
-   загрузку /admin. #}
-{% block scripts %}{% endblock %}
+{% block scripts %}{{ super() }}{% endblock %}
 
 {% block title %}{{ section.heading or section.title }}{% endblock %}
 
 {% block content %}
 <div class="ad">
-  <aside class="ad-side">
+  <div class="ad-scrim" data-admin-menu-close></div>
+  <aside class="ad-side" id="admin-menu" aria-label="{{ t.admin_title }}">
     <a class="ad-brand" href="/admin">
       <span class="ad-brand-mark">{{ icon("door") }}</span>
       <span>
@@ -63,6 +61,10 @@
 
   <main class="ad-main">
     <header class="ad-top">
+      <button class="ad-menu-btn" type="button" data-admin-menu
+              aria-controls="admin-menu" aria-expanded="false">
+        {{ icon("list") }}<span>{{ t.admin_menu }}</span>
+      </button>
       <h1>{% block heading %}{{ section.heading or section.title }}{% endblock %}</h1>
       <div class="ad-top-actions">{% block topbar %}{% endblock %}</div>
     </header>

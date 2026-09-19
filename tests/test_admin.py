@@ -66,8 +66,8 @@ class TestAccess:
 
         assert response.status_code == 200
         assert "P2S #1" in response.text
-        assert "/static/app.js" not in response.text
-        assert "<script" not in response.text
+        assert "data-admin-menu" in response.text
+        assert "/static/app.js" in response.text
 
     async def test_actions_are_closed_without_secret(self, client, printers):
         response = await client.post(f"/admin/machines/{printers[0].id}/break", data={"note": "x"})

@@ -281,7 +281,11 @@ async def test_miniapp_shows_balance_and_fitting_durations(
     await enable(db, minutes=80, now=datetime.now(UTC) - timedelta(minutes=1))
     await client.post("/app/session", data={"init_data": ""})
     response = await client.get("/app/")
-    assert response.status_code == 200 and "Доступно: 1,33 ч." in response.text
+    assert response.status_code == 200
+    assert "usage-card" in response.text
+    assert "Осталось" in response.text and "1,33 ч" in response.text
+    assert "Исп." in response.text and "0 ч" in response.text
+    assert "из 1,33 ч" in response.text
     response = await client.get(f"/app/occupy/{printers[0].id}")
     assert response.status_code == 200
     assert 'value="80"' in response.text

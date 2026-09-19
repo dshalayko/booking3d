@@ -1,6 +1,24 @@
 {% if usage is defined and usage and usage.enabled %}
-  <div class="banner">
-    <p>{{ usage.message }}</p>
+  <div class="usage-card">
+    {% if not usage.unlimited and not usage.cooldown_until %}
+      <div class="usage-metrics" aria-label="{{ t.usage_summary }}">
+        <span class="usage-metric">
+          <span class="usage-label">{{ t.usage_available }}</span>
+          <strong>{{ t.unit_hours.format(hours=usage.available_minutes | hours_text) }}</strong>
+        </span>
+        <span class="usage-metric">
+          <span class="usage-label">{{ t.usage_used }}</span>
+          <strong>{{ t.unit_hours.format(hours=(usage.used_seconds / 60) | hours_text) }}</strong>
+        </span>
+        <span class="usage-metric">
+          <span class="usage-label">{{ t.usage_reserved }}</span>
+          <strong>{{ t.unit_hours.format(hours=(usage.held_seconds / 60) | hours_text) }}</strong>
+        </span>
+        <span class="usage-limit">{{ t.usage_limit_short }} {{ t.unit_hours.format(hours=usage.limit_minutes | hours_text) }}</span>
+      </div>
+    {% else %}
+      <p>{{ usage.message }}</p>
+    {% endif %}
     {% if usage.can_forfeit_remainder %}
       <p>{{ t.usage_remainder }}</p>
       <form method="post" action="/app/usage/cooldown">

@@ -947,6 +947,7 @@ UI = {
     "admin_nav_screens": "Screens",
     "admin_nav_people": "People",
     "admin_nav_events": "Activity log",
+    "admin_menu": "Menu",
     "admin_side_note": "Access by ADMIN_SECRET. Closed from outside, SSH tunnel only.",
     "admin_side_note_app": "Signed in securely through Telegram Mini App.",
     # admin.html
@@ -1231,6 +1232,12 @@ USAGE_INVALID = "Check the limit, cooldown and reason for the change."
 UI.update(
     {
         "usage_title": "Usage limits",
+        "usage_summary": "Usage balance",
+        "usage_available": "Left",
+        "usage_used": "Used",
+        "usage_reserved": "Held",
+        "usage_limit_short": "of",
+        "unit_hours": UNIT_HOURS,
         "usage_enabled": "Enable for all users",
         "usage_limit": "Time allowance, hours",
         "usage_cooldown": "Cooldown, hours (168 = 7 days)",

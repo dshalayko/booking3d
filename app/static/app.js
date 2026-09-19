@@ -221,6 +221,36 @@
     setTimeout(function () { node.remove(); }, parseInt(node.dataset.autohide, 10) * 1000);
   });
 
+  // --- боковое меню админки -----------------------------------------------
+  // На узком экране все разделы админки живут в выезжающей панели. Ссылки
+  // остаются обычными: JS только показывает список, а не управляет навигацией.
+
+  var adminMenuButton = document.querySelector("[data-admin-menu]");
+  var adminMenuClose = document.querySelector("[data-admin-menu-close]");
+
+  function setAdminMenu(open) {
+    document.body.classList.toggle("admin-menu-open", open);
+    if (adminMenuButton) adminMenuButton.setAttribute("aria-expanded", open ? "true" : "false");
+  }
+
+  if (adminMenuButton) {
+    adminMenuButton.addEventListener("click", function () {
+      setAdminMenu(!document.body.classList.contains("admin-menu-open"));
+    });
+  }
+
+  if (adminMenuClose) {
+    adminMenuClose.addEventListener("click", function () { setAdminMenu(false); });
+  }
+
+  document.querySelectorAll(".ad-side a").forEach(function (link) {
+    link.addEventListener("click", function () { setAdminMenu(false); });
+  });
+
+  document.addEventListener("keydown", function (event) {
+    if (event.key === "Escape") setAdminMenu(false);
+  });
+
   // --- не давать экрану гаснуть -------------------------------------------
   // Погасший планшет — это неработающее табло: пока никто его не разбудил,
   // статусов на стене нет. «Автоблокировка → Никогда» в настройках iPad от

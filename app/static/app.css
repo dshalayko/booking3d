@@ -665,6 +665,56 @@ body {
 /* Тестовый вход: список людей вместо подписи Telegram. Жёлтым, чтобы включённый
    MINIAPP_OPEN_ACCESS нельзя было принять за обычный экран входа. */
 .banner-warn { color: var(--wait); }
+.usage-card {
+  width: min(100%, 560px);
+  margin: 0 auto;
+  padding: 10px 12px;
+  border: 1px solid rgba(255, 255, 255, .08);
+  border-radius: 18px;
+  background: rgba(255, 255, 255, .045);
+  color: var(--text);
+  font-size: 15px;
+}
+.usage-card p { margin: 0; text-align: center; }
+.usage-card p + p,
+.usage-card form { margin-top: 8px; }
+.usage-metrics {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 6px;
+  align-items: stretch;
+}
+.usage-metric {
+  min-width: 0;
+  padding: 8px 6px;
+  border-radius: 13px;
+  background: rgba(255, 255, 255, .05);
+  text-align: center;
+}
+.usage-label {
+  display: block;
+  margin-bottom: 2px;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: .04em;
+  text-transform: uppercase;
+}
+.usage-metric strong {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 16px;
+  line-height: 1.1;
+}
+.usage-limit {
+  grid-column: 1 / -1;
+  color: var(--muted);
+  text-align: center;
+  font-size: 12px;
+  font-weight: 700;
+}
 .app-people { display: flex; flex-direction: column; gap: 10px; }
 .bookings { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 12px; }
 .booking {
@@ -802,6 +852,8 @@ body.admin-page { padding: 0; gap: 0; }
 .ad-ico { width: 20px; height: 20px; flex: 0 0 auto; }
 
 .ad-side-note { margin: auto 12px 0; padding-top: 16px; font-size: 13px; line-height: 1.45; color: var(--muted); }
+.ad-scrim,
+.ad-menu-btn { display: none; }
 
 /* --- содержимое --- */
 
@@ -822,6 +874,19 @@ body.admin-page { padding: 0; gap: 0; }
   border-bottom: 1px solid rgba(255, 255, 255, .06);
 }
 .ad-top h1 { margin: 0; font-size: 24px; }
+.ad-menu-btn {
+  align-items: center;
+  gap: 8px;
+  min-height: 38px;
+  padding: 8px 12px;
+  border: 0;
+  border-radius: 12px;
+  background: rgba(59, 130, 246, .16);
+  color: var(--accent);
+  font: inherit;
+  font-size: 14px;
+  font-weight: 700;
+}
 .ad-top-actions { display: flex; align-items: center; gap: 12px; }
 .ad-chip {
   padding: 6px 14px;
@@ -1027,23 +1092,52 @@ body.admin-page { padding: 0; gap: 0; }
 }
 .ad-login h1 { margin: 0; font-size: 24px; }
 
-/* Узкое окно: меню ложится полосой сверху и мотается вбок. Админку открывают с
-   ноутбука, но половину экрана ей отдают часто — рядом с терминалом, из
-   которого поднят туннель. */
+/* Узкое окно: меню становится боковой панелью за кнопкой. В Mini App и на
+   телефоне горизонтальная лента с пунктами съедает слишком много места, а
+   полный список нужен только по явному действию. */
 @media (max-width: 1080px) {
-  .ad { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr); }
+  .ad { grid-template-columns: minmax(0, 1fr); min-height: 100dvh; }
   .ad-side {
-    flex-direction: row;
-    align-items: center;
-    gap: 10px;
-    padding: 10px 14px;
-    overflow-x: auto;
-    border-right: none;
-    border-bottom: 1px solid rgba(255, 255, 255, .06);
+    position: fixed;
+    z-index: 50;
+    inset: 0 auto 0 0;
+    width: min(320px, calc(100vw - 36px));
+    padding: 18px 14px max(18px, env(safe-area-inset-bottom));
+    transform: translateX(-104%);
+    transition: transform .18s ease;
+    border-right: 1px solid rgba(255, 255, 255, .1);
+    box-shadow: 24px 0 50px rgba(0, 0, 0, .36);
   }
-  .ad-group { flex-direction: row; gap: 4px; }
-  .ad-group-title, .ad-side-note, .ad-brand-sub { display: none; }
-  .ad-nav { white-space: nowrap; }
+  body.admin-menu-open .ad-side { transform: translateX(0); }
+  .ad-scrim {
+    position: fixed;
+    z-index: 49;
+    inset: 0;
+    display: block;
+    opacity: 0;
+    pointer-events: none;
+    background: rgba(0, 0, 0, .5);
+    transition: opacity .18s ease;
+  }
+  body.admin-menu-open .ad-scrim {
+    opacity: 1;
+    pointer-events: auto;
+  }
+  .ad-menu-btn { display: inline-flex; }
+  .ad-main { min-height: 100dvh; }
+  .ad-top {
+    gap: 10px;
+    padding: 12px 14px;
+  }
+  .ad-top h1 {
+    flex: 1 1 auto;
+    min-width: 0;
+    font-size: 22px;
+  }
+  .ad-group { flex-direction: column; gap: 2px; }
+  .ad-group-title { display: block; }
+  .ad-side-note { display: block; }
+  .ad-nav { white-space: normal; }
   .ad-cards, .ad-split { grid-template-columns: minmax(0, 1fr); }
 }
 

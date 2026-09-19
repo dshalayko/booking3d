@@ -947,6 +947,7 @@ UI = {
     "admin_nav_screens": "Экраны",
     "admin_nav_people": "Люди",
     "admin_nav_events": "Журнал",
+    "admin_menu": "Меню",
     "admin_side_note": "Вход по ADMIN_SECRET. Снаружи админка закрыта, только через SSH-туннель.",
     "admin_side_note_app": "Безопасный вход через Telegram Mini App.",
     # admin.html
@@ -1233,6 +1234,12 @@ USAGE_INVALID = "Проверьте значения лимита, cooldown и �
 UI.update(
     {
         "usage_title": "Лимиты использования",
+        "usage_summary": "Баланс лимита",
+        "usage_available": "Осталось",
+        "usage_used": "Исп.",
+        "usage_reserved": "Бронь",
+        "usage_limit_short": "из",
+        "unit_hours": UNIT_HOURS,
         "usage_enabled": "Включить для всех пользователей",
         "usage_limit": "Запас времени, часы",
         "usage_cooldown": "Cooldown, часы (168 = 7 суток)",
