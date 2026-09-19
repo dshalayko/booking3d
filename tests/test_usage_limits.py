@@ -363,6 +363,9 @@ async def test_admin_limits_do_not_require_reason(client, db, make_user):
     assert page.status_code == 200
     assert 'name="reason"' not in page.text
     assert "Reason for change" not in page.text
+    assert 'data-usage-search' in page.text
+    assert 'data-usage-search-empty' in page.text
+    assert f'data-usage-user="{user.name.lower()}"' in page.text
 
 
 @pytest.mark.parametrize("value", ["NaN", "Infinity", "-1", "8761", "abc", ""])

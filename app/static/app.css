@@ -998,6 +998,23 @@ body.admin-page { padding: 0; gap: 0; }
 .admin-form-column .btn { margin-top: 8px; }
 .admin-form-column .admin-dim { margin-top: 6px; }
 .usage-user-card { overflow: hidden; }
+.usage-search-card {
+  gap: 8px;
+  padding: 14px 18px;
+}
+.usage-search-label {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  color: var(--muted);
+  font-size: 15px;
+  font-weight: 700;
+}
+.usage-search-label .text-input {
+  width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+}
 .usage-admin-state {
   margin: 0;
   color: var(--muted);

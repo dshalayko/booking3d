@@ -12,8 +12,16 @@
   <p class="admin-dim">{{ t.usage_off_hint }}</p>
 </section>
 <p><a href="/admin/limits">{{ t.usage_all }}</a></p>
+<section class="ad-card usage-search-card">
+  <label class="usage-search-label">
+    <span>{{ t.usage_search_label }}</span>
+    <input class="text-input" type="search" placeholder="{{ t.usage_search_placeholder }}"
+           autocomplete="off" data-usage-search>
+  </label>
+  <p class="admin-dim" data-usage-search-empty hidden>{{ t.usage_search_empty }}</p>
+</section>
 {% for person, account, state in rows %}
-<section class="ad-card usage-user-card" id="user-{{ person.id }}">
+<section class="ad-card usage-user-card" id="user-{{ person.id }}" data-usage-user="{{ person.name | lower }}">
   <h2>{{ person.name }}</h2>
   <p class="usage-admin-state">{{ state.message }}</p>
   <form class="admin-form usage-control-form usage-settings-form" method="post" action="/admin/limits/users/{{ person.id }}">

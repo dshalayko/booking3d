@@ -272,6 +272,25 @@
     syncLimit();
   });
 
+  document.querySelectorAll("[data-usage-search]").forEach(function (input) {
+    var cards = Array.prototype.slice.call(document.querySelectorAll("[data-usage-user]"));
+    var empty = document.querySelector("[data-usage-search-empty]");
+
+    function applySearch() {
+      var query = input.value.trim().toLowerCase();
+      var shown = 0;
+      cards.forEach(function (card) {
+        var match = !query || (card.dataset.usageUser || "").indexOf(query) !== -1;
+        card.hidden = !match;
+        if (match) shown += 1;
+      });
+      if (empty) empty.hidden = shown !== 0;
+    }
+
+    input.addEventListener("input", applySearch);
+    applySearch();
+  });
+
   // --- не давать экрану гаснуть -------------------------------------------
   // Погасший планшет — это неработающее табло: пока никто его не разбудил,
   // статусов на стене нет. «Автоблокировка → Никогда» в настройках iPad от
